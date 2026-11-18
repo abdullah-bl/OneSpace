@@ -1,14 +1,19 @@
 // Sandbox analysis runs. The sandbox never talks to the database (plans/02 rule 7): `begin`
 // exports only files the user can read (access.ts) and that are in the turn's scope, `finish`
 // stores what came back from /output as files in the chosen space after checking write access
-// again. Every export and every run is audited, and each run is a row in `runs`.
+// again, and also as Phase 4 artifacts (artifactVersions.runId) for the outputs the side panel can
+// show. The target space follows Phase 4's placement rule (artifacts.ts `place`), so a run's files
+// and artifacts always live together. Every export and every run is audited, and each run is a
+// row in `runs`.
 
 import { OneBaseError, v } from "onebase/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
-import { action, internalAction, internalMutation, internalQuery, query, type MutationCtx } from "./_generated/server";
-import { actorFor, assertCan, Denied, readableSpaceIds, requireActive, requireUserId, roleAllows, spaceRoleOf } from "./access";
+import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
+import { actorFor, assertCan, Denied, readableSpaceIds, requireActive, requireUserId } from "./access";
+import { insertArtifact, normalizeContent, place, type Source } from "./artifacts";
 import { writeAudit } from "./audit";
+import { artifactKind } from "./outputsSchema";
 import { executeAnalysis, runAnalysisTool } from "./tools/run_analysis";
 import type { ToolResult } from "./tools/types";
 
@@ -19,11 +24,6 @@ const limitsV = v.object({ timeoutMs: v.number(), memoryMb: v.number(), cpus: v.
 
 function sha256(text: string) {
   return new Bun.CryptoHasher("sha256").update(text).digest("hex");
-}
-
-async function personalSpace(ctx: MutationCtx, userId: Id<"users">, workspaceId: Id<"workspaces">) {
-  const own = await ctx.db.query("spaces").withIndex("by_owner", (q) => q.eq("ownerId", userId)).collect();
-  return own.find((s) => s.kind === "personal" && s.workspaceId === workspaceId) ?? null;
 }
 
 /** Output file names: no directories, no control characters. */
@@ -80,20 +80,12 @@ export const begin = internalMutation({
       if (!scope.has(space._id)) throw new Denied();
       files.push({ file, space });
     }
-    let targetId = a.targetSpaceId;
-    if (!targetId) {
-      const inputSpaces = [...new Set(files.map((f) => f.space._id))];
-      const single = inputSpaces.length === 1 ? files[0]!.space : null;
-      const canWriteSingle = single ? roleAllows(await spaceRoleOf(ctx, a.userId, single, actor), "write") : false;
-      targetId = canWriteSingle ? single!._id : (await personalSpace(ctx, a.userId, actor.workspace._id))?._id;
-      if (!targetId) throw new OneBaseError("حدّد مساحة لحفظ المخرجات");
-    }
-    const { space: target } = await assertCan(ctx, a.userId, targetId, "write");
-    for (const { space } of files) {
-      if (space.sensitive && space._id !== target._id && !roleAllows(await spaceRoleOf(ctx, a.userId, space, actor), "manage")) {
-        throw new OneBaseError(`مخرجات مبنية على المساحة الحسّاسة «${space.name}» تُحفظ فيها، ولا تُنقل لغيرها إلا بموافقة مديرها`);
-      }
-    }
+    // Where the outputs (files and artifacts) go: Phase 4's placement rule (artifacts.ts `place`,
+    // plans/02 rule 4): one input space → it (if writable) or personal; several → personal; a
+    // sensitive one → that space only, unless the user manages it (then any writable target,
+    // still classified sensitive); write access on the target, and in the turn's scope.
+    const sources: Source[] = files.map(({ file, space }) => ({ type: "file", id: file._id, spaceId: space._id }));
+    const { space: target } = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true });
     const codeHash = sha256(a.code);
     const runId = await ctx.db.insert("runs", {
       kind: "sandbox",
@@ -137,7 +129,15 @@ const resultV = v.object({
   limits: v.optional(limitsV),
 });
 
-/** Stores the outputs as files in the target space (write re-checked now) and closes the run. */
+/**
+ * Stores the outputs as files in the target space (write re-checked now), creates an artifact
+ * (artifactVersions.runId = this run) for each output the side panel can show, and closes the run.
+ *
+ * Artifacts land in the run's target space, which `begin` chose with Phase 4's `place()`, so
+ * files and artifacts of one run are always together. Classification follows artifacts.ts:
+ * sensitive (origin = that space) when the target or an input space is sensitive. Sources = the
+ * input files as they were at export time (space recorded by `begin`).
+ */
 export const finish = internalMutation({
   args: {
     runId: v.id("runs"),
@@ -145,8 +145,10 @@ export const finish = internalMutation({
     inputSha256: v.array(v.string()),
     result: resultV,
     outputs: v.array(v.object({ storageId: v.id("_storage"), name: v.string(), size: v.number(), sha256: v.string() })),
+    /** Viewable outputs (lib/outputArtifacts.ts), by index into `outputs`. */
+    artifacts: v.optional(v.array(v.object({ output: v.number(), kind: artifactKind, content: v.string() }))),
   },
-  handler: async (ctx, { runId, inputSha256, result, outputs }) => {
+  handler: async (ctx, { runId, inputSha256, result, outputs, artifacts }) => {
     const run = await ctx.db.get(runId);
     if (!run || run.status !== "running") throw new Denied();
     let canWrite = true;
@@ -156,6 +158,7 @@ export const finish = internalMutation({
       canWrite = false;
     }
     const saved: { fileId: string; name: string; sha256: string; size: number }[] = [];
+    const artifactIds: string[] = [];
     if (canWrite) {
       const now = Date.now();
       for (const o of outputs) {
@@ -178,6 +181,36 @@ export const finish = internalMutation({
         await writeAudit(ctx, { userId: run.userId, action: "file.upload", resourceType: "file", resourceId: fileId, spaceId: run.spaceId, detail: { fileName: name, size: o.size, via: "sandbox", runId } });
         saved.push({ fileId, name, sha256: o.sha256, size: o.size });
       }
+      if (artifacts?.length) {
+        const target = (await ctx.db.get(run.spaceId))!;
+        const inputSpaces = (await Promise.all([...new Set(run.inputs.map((i) => i.spaceId).filter((s): s is Id<"spaces"> => !!s))].map((id) => ctx.db.get(id)))).filter(Boolean) as Doc<"spaces">[];
+        const origin = target.sensitive ? target : (inputSpaces.find((s) => s.sensitive) ?? null);
+        const sources: Source[] = run.inputs.filter((i) => i.fileId && i.spaceId).map((i) => ({ type: "file", id: i.fileId!, spaceId: i.spaceId! }));
+        for (const art of artifacts) {
+          const file = saved[art.output];
+          if (!file) continue;
+          let content: string;
+          try {
+            content = normalizeContent(art.kind, art.content);
+          } catch {
+            continue; // too large / malformed for an artifact: the output stays a file only
+          }
+          const artifactId = await insertArtifact(ctx, {
+            spaceId: run.spaceId,
+            ownerId: run.userId,
+            kind: art.kind,
+            title: file.name,
+            content,
+            sources,
+            classification: origin ? "sensitive" : "normal",
+            originSpaceId: origin?._id,
+            threadId: run.threadId,
+            runId,
+            via: "sandbox",
+          });
+          artifactIds.push(artifactId);
+        }
+      }
     } else {
       for (const o of outputs) await ctx.storage.delete(o.storageId);
     }
@@ -186,6 +219,7 @@ export const finish = internalMutation({
       status: result.ok && canWrite ? "done" : "failed",
       inputs: run.inputs.map((input, i) => ({ ...input, sha256: inputSha256[i] ?? input.sha256 })),
       outputs: saved,
+      artifactIds,
       exit: { code: result.exitCode, timedOut: result.timedOut, oomKilled: result.oomKilled, durationMs: result.durationMs, outputTruncated: result.outputTruncated, ...(error ? { error } : {}) },
       stdout: result.stdout.slice(0, 64 * 1024),
       stderr: result.stderr.slice(0, 64 * 1024),
@@ -193,7 +227,7 @@ export const finish = internalMutation({
       ...(result.limits ? { limits: result.limits } : {}),
       finishedAt: Date.now(),
     });
-    return saved;
+    return { files: saved, artifactIds };
   },
 });
 
@@ -233,6 +267,7 @@ export const run = action({
       stderr: r.stderr,
       targetSpaceId: r.targetSpaceId,
       outputs: r.outputs,
+      artifactIds: r.artifactIds,
     };
   },
 });
@@ -261,6 +296,7 @@ export const myRuns = query({
         createdAt: r.createdAt,
         inputs: r.inputs.map((i) => ({ fileId: i.fileId ?? null, name: i.name })),
         outputs: r.outputs,
+        artifactIds: r.artifactIds ?? [],
         exit: r.exit ?? null,
       }));
   },

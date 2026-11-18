@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must, type Result } from "./harness";
 import { ACTORS, addFile, buildFixture, expectedAllowed, expectedRole, SPACES, type ActorKey, type Fixture, type SpaceKey } from "./fixture";
+import { xlsxBase64 } from "./outputsFixture";
 import { sandboxAvailable, startRunner, type Runner } from "./sandbox";
 
 const HAS_SANDBOX = await sandboxAvailable();
@@ -22,8 +23,15 @@ const SPEC = {
   tieBreak: [],
 };
 
-/** Per space: a data file, an approved criteria version, a draft one, and a ranking run. */
-const setup = {} as Record<SpaceKey, { owner: string; file: string; approved: string; draft: string; run: string }>;
+/** The same data as an imported Phase 4 record set (record sets live in shared spaces only). */
+const RECORD_COLS = [
+  { key: "id", header: "id", type: "text", required: true },
+  { key: "name", header: "name", type: "text", required: true },
+  { key: "score", header: "score", type: "number", required: true },
+];
+
+/** Per space: a data file, a record set (P_mem: S_plain's, so the same-space rule refuses it), an approved criteria version, a draft one, and a ranking run. */
+const setup = {} as Record<SpaceKey, { owner: string; file: string; recordSet: string; approved: string; draft: string; run: string }>;
 
 beforeAll(async () => {
   if (HAS_SANDBOX) runner = await startRunner();
@@ -36,8 +44,15 @@ beforeAll(async () => {
     must(await s.call("mutation", "ranking:approveCriteria", { criteriaId: approved }, owner));
     const draft = must(await s.call("mutation", "ranking:createCriteria", { spaceId: f.spaces[sp], ...SPEC, name: "مسودة" }, owner));
     const run = must(await s.call("action", "ranking:createRun", { criteriaId: approved, fileId: file }, owner));
-    setup[sp] = { owner, file, approved, draft, run };
+    setup[sp] = { owner, file, recordSet: "", approved, draft, run };
   }
+  const data = await xlsxBase64(["id", "name", "score"], [["1", "أ", 90], ["2", "ب", 80]]);
+  for (const sp of ["S_plain", "S_every", "S_sens"] as const) {
+    const id = must(await s.call("mutation", "records:createSet", { spaceId: f.spaces[sp], name: "بيانات", columns: RECORD_COLS, subjectColumn: "id", subjectKind: "employeeNo" }, f.tokens.mgr));
+    must(await s.call("action", "records:commitImport", { recordSetId: id, fileName: "data.xlsx", dataBase64: data }, f.tokens.mgr));
+    setup[sp].recordSet = id;
+  }
+  setup.P_mem.recordSet = setup.S_plain.recordSet;
 }, 120_000);
 
 afterAll(async () => {
@@ -73,6 +88,12 @@ const OPS: Op[] = [
     },
   },
   { name: "ranking:createRun", allowed: need("write"), run: (a, sp) => s.call("action", "ranking:createRun", { criteriaId: setup[sp].approved, fileId: setup[sp].file }, tok(a)) },
+  {
+    // Phase 4 records as input: write on the criteria's space, and the set must be in that space (P_mem gets S_plain's set → always refused).
+    name: "ranking:createRun (record set)",
+    allowed: (a, sp) => sp !== "P_mem" && expectedAllowed(a, sp, "write"),
+    run: (a, sp) => s.call("action", "ranking:createRun", { criteriaId: setup[sp].approved, recordSetId: setup[sp].recordSet }, tok(a)),
+  },
   { name: "ranking:rerun", allowed: need("write"), run: (a, sp) => s.call("action", "ranking:rerun", { rankingRunId: setup[sp].run }, tok(a)) },
   {
     name: "ranking:approveRun",

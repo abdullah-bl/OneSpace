@@ -6,8 +6,14 @@ export const userStatus = v.union(v.literal("pending"), v.literal("active"), v.l
 export const memberRole = v.union(v.literal("manager"), v.literal("member"), v.literal("reader"));
 export const taskStatus = v.union(v.literal("new"), v.literal("inProgress"), v.literal("review"), v.literal("done"));
 export const taskPriority = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
-// "artifact" targets come from Phase 4; until its table exists such links are refused (fail-closed).
+// A task link: a file or a Phase 4 artifact, always in the task's own space (tasks.ts).
 export const taskLinkType = v.union(v.literal("file"), v.literal("artifact"));
+// Where a ranking snapshot came from (lib/records.ts): a CSV/XLSX file version, or one import
+// version of a Phase 4 record set. sha256 = the file's / the imported Excel file's hash.
+export const snapshotSource = v.union(
+  v.object({ kind: v.literal("file"), fileId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
+  v.object({ kind: v.literal("records"), recordSetId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
+);
 
 export default defineSchema({
   // The built-in auth fields plus OneSpace's account status. A missing status counts as
@@ -144,6 +150,7 @@ export default defineSchema({
     codeHash: v.string(),
     inputs: v.array(v.object({ fileId: v.optional(v.string()), name: v.string(), sha256: v.union(v.string(), v.null()), size: v.number(), spaceId: v.optional(v.id("spaces")) })),
     outputs: v.array(v.object({ fileId: v.string(), name: v.string(), sha256: v.string(), size: v.number() })),
+    artifactIds: v.optional(v.array(v.string())), // Phase 4 artifacts created from the outputs (artifactVersions.runId = this run)
     limits: v.optional(v.object({ timeoutMs: v.number(), memoryMb: v.number(), cpus: v.number(), pids: v.number(), outputMb: v.number() })),
     exit: v.optional(
       v.object({
@@ -201,7 +208,7 @@ export default defineSchema({
   // The exact input of a ranking: the parsed table, stored as canonical JSON with its hash.
   rankingSnapshots: defineTable({
     spaceId: v.id("spaces"),
-    source: v.object({ kind: v.literal("file"), fileId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
+    source: snapshotSource,
     storageId: v.id("_storage"),
     sha256: v.string(),
     fields: v.array(v.string()),

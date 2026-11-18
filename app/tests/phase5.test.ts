@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must } from "./harness";
 import { addFile, buildFixture, type Fixture } from "./fixture";
+import { xlsxBase64 } from "./outputsFixture";
 import { makeXlsx, sandboxAvailable, startRunner, type Runner } from "./sandbox";
 
 const HAS_SANDBOX = await sandboxAvailable();
@@ -81,6 +82,74 @@ onespace.arabic_plots(); plt.bar(df["item"], df["price"]); plt.title(onespace.ar
       expect((await audit("sandbox.run", f.ids.mem!)).some((a: any) => a.detail.runId === run._id)).toBe(true);
       // someone else can't see this run
       expect((await s.call("query", "analysis:getRun", { runId: run._id }, f.tokens.mgr)).ok).toBe(false);
+    },
+    T,
+  );
+
+  test(
+    "viewable outputs also become artifacts (artifactVersions.runId), next to the files; artifactIds are returned",
+    async () => {
+      const code = `
+import pandas as pd, matplotlib.pyplot as plt, onespace
+df = pd.read_csv("/input/عروض.csv")
+df.to_csv("/output/summary.csv", index=False)
+open("/output/report.md", "w").write("# تقرير\\n\\nالمجموع 40")
+open("/output/raw.json", "w").write("{}")
+onespace.arabic_plots(); plt.bar(df["item"], df["price"]); plt.savefig("/output/chart.png")
+`;
+      const r = must(await tool("mem", { code, fileIds: [csvPlain] }));
+      expect(r.artifactIds.length).toBe(3); // csv → table, md → markdown, png → markdown image; json stays a file only
+      expect(r.content).toContain(`artifactId=${r.artifactIds[0]}`);
+      const runs = must(await s.call("query", "analysis:myRuns", {}, f.tokens.mem));
+      expect(runs[0].artifactIds).toEqual(r.artifactIds);
+      expect(runs[0].outputs.length).toBe(4);
+      const listed = must(await s.call("query", "artifacts:list", { spaceId: f.spaces.S_plain }, f.tokens.rdr));
+      const mine = listed.filter((a: any) => r.artifactIds.includes(a._id));
+      expect(mine.map((a: any) => [a.title, a.kind, a.classification]).sort()).toEqual([
+        ["chart.png", "markdown", "normal"],
+        ["report.md", "markdown", "normal"],
+        ["summary.csv", "table", "normal"],
+      ]);
+      for (const id of r.artifactIds) {
+        const v = must(await s.call("query", "artifacts:versions", { artifactId: id }, f.tokens.mem));
+        expect(v.versions[0].runId).toBe(runs[0]._id);
+      }
+      const table = must(await s.call("mutation", "artifacts:open", { artifactId: mine.find((a: any) => a.title === "summary.csv")._id }, f.tokens.mem));
+      expect(JSON.parse(table.content)).toEqual({ columns: ["item", "price"], rows: [["A", "10"], ["B", "30"]] }); // CSV cells stay text, as in the file
+      const chart = must(await s.call("mutation", "artifacts:open", { artifactId: mine.find((a: any) => a.title === "chart.png")._id }, f.tokens.mem));
+      expect(chart.content).toStartWith("![chart.png](data:image/png;base64,");
+      const created = (await audit("artifact.create", f.ids.mem!)).filter((a: any) => r.artifactIds.includes(a.resourceId));
+      expect(created.map((a: any) => a.detail.via)).toEqual(["sandbox", "sandbox", "sandbox"]);
+      // the UI action returns them too
+      const ui = must(await s.call("action", "analysis:run", { code: "open('/output/t.csv','w').write('a\\n1\\n')", fileIds: [csvPlain] }, f.tokens.mem));
+      expect(ui.artifactIds.length).toBe(1);
+    },
+    T,
+  );
+
+  test(
+    "run artifacts follow Phase 4 placement: sensitive inputs make sensitive artifacts; several spaces → personal",
+    async () => {
+      const out = "open('/output/t.csv','w').write('a\\n1\\n')";
+      // sensitive input, default target = the sensitive space; classified sensitive
+      const sens = must(await tool("mem", { code: out, fileIds: [f.files.S_sens] }));
+      expect(sens.spaceIds).toEqual([f.spaces.S_sens]);
+      const inSens = must(await s.call("query", "artifacts:list", { spaceId: f.spaces.S_sens }, f.tokens.mem)).find((a: any) => a._id === sens.artifactIds[0]);
+      expect(inSens).toMatchObject({ classification: "sensitive", spaceId: f.spaces.S_sens });
+      // its manager may send outputs elsewhere; they stay classified sensitive, so a member can't move them on
+      const exported = must(await tool("mgr", { code: out, fileIds: [f.files.S_sens], targetSpaceId: f.spaces.S_plain }));
+      const inPlain = must(await s.call("query", "artifacts:list", { spaceId: f.spaces.S_plain }, f.tokens.mem)).find((a: any) => a._id === exported.artifactIds[0]);
+      expect(inPlain).toMatchObject({ classification: "sensitive", spaceId: f.spaces.S_plain });
+      const moved = await s.call("mutation", "artifacts:move", { artifactId: exported.artifactIds[0], toSpaceId: f.spaces.P_mem }, f.tokens.mem);
+      expect(moved.ok ? "" : moved.error).toContain("حسّاسة");
+      // sensitive mixed with another space: refused before anything is exported
+      expect((await tool("mgr", { code: out, fileIds: [f.files.S_sens, csvPlain] })).ok).toBe(false);
+      // inputs from several spaces: personal space by default, and a shared target is refused (plans/02 rule 4)
+      const multi = must(await tool("mem", { code: out, fileIds: [csvPlain, f.files.S_every] }));
+      expect(multi.spaceIds).toContain(f.spaces.P_mem);
+      expect(must(await s.call("query", "artifacts:list", { spaceId: f.spaces.P_mem }, f.tokens.mem)).some((a: any) => a._id === multi.artifactIds[0])).toBe(true);
+      const shared = await tool("mem", { code: out, fileIds: [csvPlain, f.files.S_every], targetSpaceId: f.spaces.S_plain });
+      expect(shared.ok).toBe(false);
     },
     T,
   );
@@ -342,5 +411,87 @@ describe("ranking", () => {
     const noCols = await addFile(s, f.tokens.mgr!, f.spaces.S_sens, "ناقص.csv", "رقم الهوية,الاسم\n1,أ\n");
     const e2 = await s.call("action", "ranking:createRun", { criteriaId, fileId: noCols }, f.tokens.mgr);
     expect(e2.ok ? "" : e2.error).toContain("المعدل");
+  });
+
+  describe("input from an imported record set (Phase 4 records)", () => {
+    const COLS = [
+      { key: "nid", header: "رقم الهوية", type: "text", required: true },
+      { key: "name", header: "الاسم", type: "text", required: true },
+      { key: "gpa", header: "المعدل", type: "number", required: true },
+      { key: "exam", header: "الاختبار", type: "number", required: false },
+      { key: "absence", header: "الغياب", type: "number", required: true },
+    ];
+    // the same students as CSV, in the same order
+    const ROWS = [
+      ["103", "سارة", 4.5, 80, 2],
+      ["101", "أحمد", 4.5, 80, 2],
+      ["102", "خالد", 4.5, 90, 12],
+      ["104", "منى", 5, null, 0],
+      ["105", "ريم", 4, 100, 0],
+    ];
+    const newSet = async (spaceKey: "S_sens" | "S_plain", rows: unknown[][] = ROWS) => {
+      const id = must(await s.call("mutation", "records:createSet", { spaceId: f.spaces[spaceKey], name: `طلاب-سجلات-${spaceKey}`, columns: COLS, subjectColumn: "nid", subjectKind: "nationalId" }, f.tokens.mgr));
+      must(await s.call("action", "records:commitImport", { recordSetId: id, fileName: "طلاب.xlsx", dataBase64: await xlsxBase64(COLS.map((c) => c.header), rows) }, f.tokens.mgr));
+      return id as string;
+    };
+    let setId: string;
+    beforeAll(async () => {
+      setId = await newSet("S_sens");
+    });
+
+    test("ranks the current import version; same numbers as the file; snapshot hash is deterministic", async () => {
+      const id = must(await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId }, f.tokens.mem));
+      const run = must(await s.call("query", "ranking:getRun", { rankingRunId: id }, f.tokens.rdr));
+      expect(run).toMatchObject({ status: "draft", count: 5, source: { kind: "records", recordSetId: setId, name: "طلاب-سجلات-S_sens", version: 1, fileId: null } });
+      expect(run.results.map((r: any) => [r.key, r.rank, r.total])).toEqual([
+        ["105", 1, 88],
+        ["101", 2, 87],
+        ["103", 2, 87],
+        ["102", 4, 85],
+        ["104", 5, 70],
+      ]);
+      // a second run on the same version: byte-identical snapshot and results
+      const again = must(await s.call("query", "ranking:getRun", { rankingRunId: must(await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId, recordVersion: 1 }, f.tokens.mem)) }, f.tokens.mem));
+      expect(again.snapshotHash).toBe(run.snapshotHash);
+      expect(again.resultsHash).toBe(run.resultsHash);
+      // rerun verifies the stored snapshot by hash and reproduces the results
+      const rerun = must(await s.call("query", "ranking:getRun", { rankingRunId: must(await s.call("action", "ranking:rerun", { rankingRunId: id }, f.tokens.mem)) }, f.tokens.mem));
+      expect(rerun).toMatchObject({ snapshotHash: run.snapshotHash, resultsHash: run.resultsHash, correctsRunId: id });
+      // the justification shows the student's data as imported
+      const j = must(await s.call("query", "ranking:justification", { rankingRunId: id, key: "102" }, f.tokens.rdr));
+      expect(j.student).toMatchObject({ rank: 4, total: 85 });
+      expect(j.run.source).toMatchObject({ kind: "records", version: 1 });
+      // the run is recorded in `runs` with the set (no file) and audited
+      const audit = must(await s.call("query", "audit:list", { spaceId: f.spaces.S_sens }, f.tokens.mgr)).filter((a: any) => a.action === "ranking.run");
+      expect(audit.some((a: any) => a.resourceId === id && a.detail.snapshotHash === run.snapshotHash)).toBe(true);
+    });
+
+    test("a new import is a new version: the default follows it, an older version can still be named", async () => {
+      const v1 = must(await s.call("query", "ranking:getRun", { rankingRunId: must(await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId }, f.tokens.mem)) }, f.tokens.mem));
+      must(await s.call("action", "records:commitImport", { recordSetId: setId, fileName: "طلاب2.xlsx", dataBase64: await xlsxBase64(COLS.map((c) => c.header), [...ROWS.slice(0, 4), ["105", "ريم", 3, 100, 0]]) }, f.tokens.mgr));
+      const v2 = must(await s.call("query", "ranking:getRun", { rankingRunId: must(await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId }, f.tokens.mem)) }, f.tokens.mem));
+      expect(v2.source.version).toBe(2);
+      expect(v2.snapshotHash).not.toBe(v1.snapshotHash);
+      const old = must(await s.call("query", "ranking:getRun", { rankingRunId: must(await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId, recordVersion: 1 }, f.tokens.mem)) }, f.tokens.mem));
+      expect(old.snapshotHash).toBe(v1.snapshotHash);
+      expect((await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId, recordVersion: 3 }, f.tokens.mem)).ok).toBe(false);
+    });
+
+    test("same-space rule and read access: a set in another space, or one the user can't read, is refused", async () => {
+      const plainSet = await newSet("S_plain");
+      const e1 = await s.call("action", "ranking:createRun", { criteriaId, recordSetId: plainSet }, f.tokens.mgr);
+      expect(e1.ok ? "" : e1.error).toContain("مساحة المعايير نفسها");
+      // readers can't run (write on the criteria's space); outsiders get "not found"
+      expect((await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId }, f.tokens.rdr)).ok).toBe(false);
+      expect((await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId }, f.tokens.out)).ok).toBe(false);
+      // exactly one source
+      expect((await s.call("action", "ranking:createRun", { criteriaId }, f.tokens.mem)).ok).toBe(false);
+      expect((await s.call("action", "ranking:createRun", { criteriaId, recordSetId: setId, fileId: csvId }, f.tokens.mem)).ok).toBe(false);
+      expect((await s.call("action", "ranking:createRun", { criteriaId, recordSetId: "not-an-id" }, f.tokens.mem)).ok).toBe(false);
+      // an empty set (nothing imported yet)
+      const empty = must(await s.call("mutation", "records:createSet", { spaceId: f.spaces.S_sens, name: "فارغة", columns: COLS, subjectColumn: "nid", subjectKind: "nationalId" }, f.tokens.mgr));
+      const e2 = await s.call("action", "ranking:createRun", { criteriaId, recordSetId: empty }, f.tokens.mem);
+      expect(e2.ok ? "" : e2.error).toContain("لم تُستورد");
+    });
   });
 });

@@ -224,7 +224,7 @@ describe("✓ attachments come from the task's own space only, so a task never e
     denied(await m("tasks:addLink", { taskId, type: "file", id: f.files.S_sens }, "mem"));
     denied(await m("tasks:addLink", { taskId, type: "file", id: f.files.S_every }, "mgr"));
     denied(await m("tasks:addLink", { taskId, type: "file", id: "not-an-id" }, "mem"));
-    // artifacts arrive in Phase 4: until then nothing resolves, so nothing can be linked
+    // a file id is not an artifact id: the artifact lookup finds nothing
     denied(await m("tasks:addLink", { taskId, type: "artifact", id: f.files.S_plain }, "mem"));
     must(await m("tasks:addLink", { taskId, type: "file", id: f.files.S_plain }, "mem"));
     const links = must(await q("tasks:get", { taskId }, "rdr")).links;
@@ -244,6 +244,83 @@ describe("✓ attachments come from the task's own space only, so a task never e
     // removing the dangling link still works
     must(await m("tasks:removeLink", { taskId, type: "file", id: fileId }, "mgr"));
     expect(must(await q("tasks:get", { taskId }, "mgr")).links).toEqual([]);
+  });
+});
+
+describe("✓ a task links an output (Phase 4 artifact) of its own space only", () => {
+  const artifact = async (who: string, title: string, spaceKey?: keyof Fixture["spaces"]) =>
+    must(await m("artifacts:create", { title, kind: "markdown", content: `# ${title}`, ...(spaceKey ? { spaceId: f.spaces[spaceKey] } : {}) }, who)).artifactId as string;
+
+  test("the assignee attaches an output of the space; every task viewer sees its name, and the manager reviews it", async () => {
+    const taskId = await newTask("مخرج-AR01");
+    const art = await artifact("mem", "تقرير-العروض-AR01", "S_plain");
+    // a member who isn't the assignee can't attach (same rule as files)…
+    must(await m("tasks:assign", { taskId, assigneeId: f.ids.mgr }, "mgr"));
+    expect((await m("tasks:addLink", { taskId, type: "artifact", id: art }, "mem")).ok).toBe(false);
+    must(await m("tasks:assign", { taskId, assigneeId: f.ids.mem }, "mgr"));
+    // …the assignee can
+    must(await m("tasks:addLink", { taskId, type: "artifact", id: art }, "mem"));
+    must(await m("tasks:addLink", { taskId, type: "artifact", id: art }, "mem")); // idempotent
+    for (const who of ["mgr", "mem", "rdr"]) {
+      const t = must(await q("tasks:get", { taskId }, who));
+      expect(t.links).toEqual([expect.objectContaining({ type: "artifact", id: art, name: "تقرير-العروض-AR01", available: true, sensitive: false })]);
+      expect(t.linkCount).toBe(1);
+    }
+    // people who can't see the task learn nothing about the output
+    for (const who of ["out", "admin"]) denied(await q("tasks:get", { taskId }, who));
+    expect((await q("tasks:get", { taskId }, "anon")).ok).toBe(false);
+    // the linked output opens through artifacts.ts for a viewer of the task
+    expect(must(await m("artifacts:open", { artifactId: art }, "rdr")).content).toBe("# تقرير-العروض-AR01");
+    must(await m("tasks:removeLink", { taskId, type: "artifact", id: art }, "mem"));
+    expect(must(await q("tasks:get", { taskId }, "mgr")).links).toEqual([]);
+  });
+
+  test("outputs from my personal space, another shared space or a sensitive space are refused like a missing one", async () => {
+    const taskId = await newTask("مخرج-AR02");
+    const mine = await artifact("mem", "مسودتي-AR02");
+    const every = await artifact("mgr", "سياسة-AR02", "S_every");
+    const sens = await artifact("mgr", "درجات-AR02", "S_sens");
+    for (const id of [mine, every, sens, "not-an-id", f.tasks.S_plain]) denied(await m("tasks:addLink", { taskId, type: "artifact", id }, "mem"));
+    for (const id of [every, sens]) denied(await m("tasks:addLink", { taskId, type: "artifact", id }, "mgr"));
+    const t = must(await q("tasks:get", { taskId }, "mgr"));
+    expect(t.links).toEqual([]);
+    for (const name of ["مسودتي-AR02", "سياسة-AR02", "درجات-AR02"]) expect(JSON.stringify(t)).not.toContain(name);
+  });
+
+  test("a sensitive output links only to a task in its sensitive space, is flagged, and stops showing once moved out", async () => {
+    const taskId = await newTask("مخرج-حساس-AR03", "S_sens");
+    // built on a sensitive file → saved in that space, classified sensitive
+    const created = must(await m("artifacts:create", { title: "كشف-الدرجات-AR03", kind: "markdown", content: "سري", sources: [{ type: "file", id: f.files.S_sens }] }, "mem"));
+    expect(created).toMatchObject({ spaceId: f.spaces.S_sens, classification: "sensitive" });
+    must(await m("tasks:addLink", { taskId, type: "artifact", id: created.artifactId }, "mem"));
+    for (const who of ["mgr", "mem", "rdr"]) {
+      expect(must(await q("tasks:get", { taskId }, who)).links).toEqual([expect.objectContaining({ id: created.artifactId, name: "كشف-الدرجات-AR03", available: true, sensitive: true })]);
+    }
+    // a task in a non-sensitive space can never pick it up
+    const plainTask = await newTask("مخرج-AR03b");
+    denied(await m("tasks:addLink", { taskId: plainTask, type: "artifact", id: created.artifactId }, "mgr"));
+    // opening it from the task is audited (sensitive output)
+    must(await m("artifacts:open", { artifactId: created.artifactId }, "rdr"));
+    const log = must(await s.call("query", "audit:list", { userId: f.ids.rdr, limit: 200 }, T("admin")));
+    expect(log.some((r: any) => r.action === "artifact.open" && r.resourceId === created.artifactId)).toBe(true);
+    // the member can't move it out; its manager can — and then the S_sens task no longer shows it
+    expect((await m("artifacts:move", { artifactId: created.artifactId, toSpaceId: f.spaces.S_plain }, "mem")).ok).toBe(false);
+    must(await m("artifacts:move", { artifactId: created.artifactId, toSpaceId: f.spaces.S_plain }, "mgr"));
+    for (const who of ["mgr", "mem", "rdr"]) {
+      const t = must(await q("tasks:get", { taskId }, who));
+      expect(t.links).toEqual([expect.objectContaining({ id: created.artifactId, available: false, name: null, sensitive: false })]);
+      expect(JSON.stringify(t)).not.toContain("كشف-الدرجات-AR03");
+    }
+  });
+
+  test("a deleted output shows as unavailable and the dangling link can be removed", async () => {
+    const taskId = await newTask("مخرج-AR04");
+    const art = await artifact("mgr", "مؤقت-AR04", "S_plain");
+    must(await m("tasks:addLink", { taskId, type: "artifact", id: art }, "mgr"));
+    must(await m("artifacts:remove", { artifactId: art }, "mgr"));
+    expect(must(await q("tasks:get", { taskId }, "mem")).links).toEqual([expect.objectContaining({ id: art, available: false, name: null })]);
+    must(await m("tasks:removeLink", { taskId, type: "artifact", id: art }, "mgr"));
+    expect(must(await q("tasks:get", { taskId }, "mem")).links).toEqual([]);
   });
 });
 

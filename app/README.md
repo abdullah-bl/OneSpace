@@ -87,8 +87,13 @@ proxies `/api` + WebSocket + `/download` to :8090).
   Closed tasks are locked for attachments until a manager reopens them.
 - **Links** are `{type: "file" | "artifact", id}` and must be in the task's own space: checked when
   added (a file from another space gets the same answer as a missing one) and again on every read (a
-  file moved out later shows as "unavailable", no name). `artifact` resolves against an `artifacts`
-  table with `spaceId` + `title` (Phase 4); until that exists, artifact links are refused.
+  file moved out later shows as "unavailable", no name). `artifact` links resolve against Phase 4's
+  `artifacts` table the same way: only an output of the task's own space can be attached (another
+  space's, a personal one's or a sensitive space's output answers like a missing one), and an output
+  later moved out (e.g. a sensitive output transferred with its manager's approval) or deleted
+  shows as unavailable with no title. Sensitive outputs are flagged on the task; opening one goes
+  through `artifacts:open`, which audits it. The task screen has "🧩 إرفاق مخرج" and opens linked
+  outputs in the sandboxed side panel.
   `threadId` is a generic string for the Phase 2 chat thread (`tasks:setThread`); it grants nothing.
 - "اعمل عليها مع الوكيل" links to `/chat?taskId=<id>` (placeholder; Phase 2's chat reads it).
 - **Notifications**: `@onebase/notifications` mounted as `notes`; `onebase/notifications.ts` wraps it
@@ -149,13 +154,27 @@ with Docker access. OneBase reads `SANDBOX_URL` + `SANDBOX_SECRET` from its envi
 
 - `onebase/tools/run_analysis.ts` — the agent tool (`requiresConfirmation: true`). `run(t, {code, fileIds, targetSpaceId?, timeoutSeconds?})`:
   `analysis:begin` (internal mutation) checks every file with `assertCan(read)` **for the user**,
-  requires it to be in `t.scopeSpaceIds`, checks `write` on the target, keeps outputs of a
-  `sensitive` space in that space unless the user manages it, records the `runs` row and audits
+  requires it to be in `t.scopeSpaceIds`, picks the target with Phase 4's placement rule
+  (`artifacts.ts` `place()`, see below), records the `runs` row and audits
   `sandbox.export` (per file) + `sandbox.run`. Only then are those files' bytes read from storage
-  and sent to the runner. `analysis:finish` re-checks `write` and stores `/output` files as regular
-  files in the target space (audited `file.upload` via sandbox).
-  **Phase 4 integration point:** outputs are plain files for now; after the merge `finish` should
-  also create an artifact (`artifactVersions.runId`) and the tool should return `artifactIds`.
+  and sent to the runner. `analysis:finish` re-checks `write`, stores `/output` files as regular
+  files in the target space (audited `file.upload` via sandbox) **and** creates a Phase 4 artifact
+  for each output the side panel can show (`lib/outputArtifacts.ts`: `.csv`/`.xlsx` → table,
+  `.md` → markdown, `.html` → html, `.txt` → markdown code block, png/jpg/gif/webp/svg ≤ 300 KB →
+  markdown with a `data:` image; others such as pdf/json stay files only; at most 20 per run), with
+  `artifactVersions.runId = run`, sources = the input files, audited `artifact.create` via
+  `sandbox`. `run_analysis` returns their ids in `artifactIds` (and lists them in its text);
+  `analysis:run` / `myRuns` return them too, and 🧪 التحليل opens them in the side panel.
+- **Placement (decision at the Phase 4 merge).** Before the merge the target was any writable
+  space (sensitive inputs pinned to their space unless the user manages it). That conflicts with
+  plans/02 rule 4 ("an output is saved where its sources are"), which Phase 4 enforces for
+  artifacts, so outputs (files and artifacts alike) now follow `place()`: inputs from one space →
+  that space (if writable) or the personal space; from several → the personal space; none → any
+  writable space in scope; a sensitive input → that space only, and it can't be mixed with other
+  spaces. The one kept Phase 5 behaviour: a **manager** of the sensitive space may name another
+  target directly (`place(…, { managerMayExport: true })`), which is what create-then-`move` would
+  allow them anyway; such artifacts stay classified `sensitive` with that origin, so nobody else
+  can move them on. Files and artifacts of a run therefore always live in the same space.
 - `analysis:run` (public action, the UI's "شغّل"), `analysis:myRuns`, `analysis:getRun` (runs are
   private to who ran them: a run names inputs from spaces others may not read).
   `analysis:runToolAs` (internal) calls `tool.run()` with a ToolContext — used by tests and by the
@@ -179,8 +198,16 @@ with Docker access. OneBase reads `SANDBOX_URL` + `SANDBOX_SECRET` from its envi
   version) → a new draft with `correctsRunId`. `rankingResults` — per student rank, total, per-criterion breakdown.
 - `ranking:justification` — the per-student page: their data as in the snapshot, the formula, each
   criterion's line (`60 × (4.5 − 0) ÷ (5 − 0) = 54`), total, rank of N, ties, hashes, approval.
-- Input: a CSV/XLSX file in the criteria's space, parsed by code (`lib/tabular.ts`, no deps).
-  `lib/records.ts` is the seam for Phase 4's `records_*` tables (add a `RecordRef` kind; nothing else changes).
+- Input (`lib/records.ts`, `RecordRef`): a CSV/XLSX file in the criteria's space, parsed by code
+  (`lib/tabular.ts`, no deps), **or an imported Phase 4 record set** in the criteria's space
+  (`ranking:createRun({criteriaId, recordSetId, recordVersion?})`, exactly one of `fileId` /
+  `recordSetId`). Same rules for both: `read` on the source's space through `access.ts`, and it must
+  be in the criteria's space (`ranking:recordsForRanking`). A record set is ranked as its Excel file
+  looked: fields = the column **headers** in the set's column order, rows in import row order,
+  booleans as 1/0, one exact import version (the current one unless `recordVersion` is named), so
+  the same version always gives the same snapshot hash. The snapshot records
+  `{kind: "records", recordSetId, version, name, sha256 of the imported file}`; `rerun` works on it
+  like on a file snapshot. ⚖️ المفاضلة offers both kinds in one "مصدر البيانات" list.
 
 UI: `src/AnalysisView.tsx` (🧪 التحليل) and `src/RankingView.tsx` (⚖️ المفاضلة, with the
 justification page). Tests: `tests/phase5.test.ts` (acceptance), `tests/phase5.permissions.test.ts`

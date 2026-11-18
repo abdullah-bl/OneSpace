@@ -4,6 +4,7 @@
 
 import { useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "onebase/react";
+import { ArtifactPanel } from "./ArtifactPanel";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
 
 export const STATUS: Record<string, { label: string; tone: string }> = {
@@ -205,7 +206,9 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState("");
-  const [picking, setPicking] = useState(false);
+  const [picking, setPicking] = useState<"" | "file" | "artifact">("");
+  const [openArtifact, setOpenArtifact] = useState<string | null>(null);
+  const spaces = useQuery(api.spaces.mine);
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
@@ -257,8 +260,19 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
         {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
       </div>
 
-      <Section title="المرفقات" action={task.canAttach && <button className="btn-ghost" onClick={() => setPicking(!picking)}>📎 إرفاق ملف من المساحة</button>}>
-        {picking && <FilePicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => { await addLink({ taskId: task._id, type: "file", id }); setPicking(false); })} />}
+      <Section
+        title="المرفقات"
+        action={
+          task.canAttach && (
+            <span className="flex gap-1">
+              <button className="btn-ghost" onClick={() => setPicking(picking === "file" ? "" : "file")}>📎 إرفاق ملف من المساحة</button>
+              <button className="btn-ghost" onClick={() => setPicking(picking === "artifact" ? "" : "artifact")}>🧩 إرفاق مخرج</button>
+            </span>
+          )
+        }
+      >
+        {picking === "file" && <FilePicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => { await addLink({ taskId: task._id, type: "file", id }); setPicking(""); })} />}
+        {picking === "artifact" && <ArtifactPicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => { await addLink({ taskId: task._id, type: "artifact", id }); setPicking(""); })} />}
         {task.links.length === 0 && <div className="text-sm text-slate-400">لا مرفقات.</div>}
         <ul className="space-y-1">
           {task.links.map((l) => (
@@ -268,7 +282,10 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
                 l.type === "file" ? (
                   <button className="text-teal-700 hover:underline" onClick={() => run(async () => window.open(await requestDownload({ fileId: l.id as any, inline: true }), "_blank", "noopener"))}>{l.name}</button>
                 ) : (
-                  <span>{l.name}</span>
+                  <button className="text-teal-700 hover:underline" onClick={() => setOpenArtifact(l.id)}>
+                    {l.name}
+                    {l.sensitive && <span className="ms-1 text-xs text-red-700">(حسّاس)</span>}
+                  </button>
                 )
               ) : (
                 <span className="text-slate-400">غير متاح (نُقل خارج المساحة أو حُذف)</span>
@@ -278,6 +295,7 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
             </li>
           ))}
         </ul>
+        {openArtifact && <ArtifactPanel key={openArtifact} artifactId={openArtifact} spaces={spaces ?? []} onClose={() => setOpenArtifact(null)} />}
       </Section>
 
       <Section title="التعليقات">
@@ -323,6 +341,21 @@ function FilePicker({ spaceId, exclude, onPick }: { spaceId: string; exclude: st
       {files && choices.length === 0 && <div className="text-xs text-slate-400">لا ملفات أخرى.</div>}
       <div className="flex flex-wrap gap-1">
         {choices.map((f) => <button key={f._id} className="btn-ghost border border-slate-200 text-xs" onClick={() => onPick(f._id)}>📄 {f.name}</button>)}
+      </div>
+    </div>
+  );
+}
+
+/** Outputs (Phase 4 artifacts) of this space only; the server checks the space again on add and on read. */
+function ArtifactPicker({ spaceId, exclude, onPick }: { spaceId: string; exclude: string[]; onPick: (artifactId: string) => void }) {
+  const artifacts = useQuery(api.artifacts.list, { spaceId: spaceId as any });
+  const choices = (artifacts ?? []).filter((a) => !exclude.includes(a._id));
+  return (
+    <div className="rounded-lg border border-slate-200 p-2">
+      <div className="mb-1 text-xs text-slate-500">مخرجات هذه المساحة</div>
+      {artifacts && choices.length === 0 && <div className="text-xs text-slate-400">لا مخرجات أخرى.</div>}
+      <div className="flex flex-wrap gap-1">
+        {choices.map((a) => <button key={a._id} className="btn-ghost border border-slate-200 text-xs" onClick={() => onPick(a._id)}>🧩 {a.title}</button>)}
       </div>
     </div>
   );

@@ -3,6 +3,7 @@
 
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
+import { ArtifactPanel } from "./ArtifactPanel";
 import { api, errorText, formatDate, formatSize, type SpaceInfo } from "./lib";
 
 const SAMPLE = `import pandas as pd, matplotlib.pyplot as plt, onespace
@@ -106,7 +107,7 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span>حفظ المخرجات في</span>
           <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">تلقائي (مساحة الملفات إن أمكن، وإلا مساحتي)</option>
+            <option value="">تلقائي (مساحة الملفات إن أمكن، وإلا مساحتي؛ ملفات من عدة مساحات: مساحتي)</option>
             {writable.map((s) => (
               <option key={s._id} value={s._id}>
                 {spaceLabel(s)}
@@ -161,8 +162,20 @@ function OutputLink({ fileId, name }: { fileId: string; name: string }) {
   );
 }
 
+/** An artifact made from a run output; opens in the side panel (sandboxed rendering). */
+function ArtifactChip({ artifactId, onOpen }: { artifactId: string; onOpen: (id: string) => void }) {
+  const meta = useQuery(api.artifacts.versions, { artifactId: artifactId as any });
+  if (!meta) return null;
+  return (
+    <button className="btn-ghost px-1 text-teal-700" onClick={() => onOpen(artifactId)}>
+      🗂 {meta.artifact.title}
+    </button>
+  );
+}
+
 function RunResult({ r, spaces }: { r: any; spaces: SpaceInfo[] }) {
   const space = spaces.find((s) => s._id === r.targetSpaceId);
+  const [openId, setOpenId] = useState<string | null>(null);
   return (
     <section className="card space-y-2 p-4 text-sm">
       <div className="flex items-center gap-2 font-semibold">
@@ -180,6 +193,17 @@ function RunResult({ r, spaces }: { r: any; spaces: SpaceInfo[] }) {
           </div>
         </div>
       )}
+      {r.artifactIds?.length > 0 && (
+        <div>
+          <div className="text-xs text-slate-500">تُعرض في لوحة المخرجات:</div>
+          <div className="flex flex-wrap gap-1">
+            {r.artifactIds.map((id: string) => (
+              <ArtifactChip key={id} artifactId={id} onOpen={setOpenId} />
+            ))}
+          </div>
+        </div>
+      )}
+      {openId && <ArtifactPanel key={openId} artifactId={openId} spaces={spaces} onClose={() => setOpenId(null)} />}
     </section>
   );
 }

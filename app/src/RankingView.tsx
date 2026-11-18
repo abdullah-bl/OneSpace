@@ -212,13 +212,20 @@ function RunsPanel({ space, canApprove, onOpen }: { space: SpaceInfo; canApprove
   const criteria = useQuery(api.ranking.listCriteria, { spaceId: space._id });
   const files = useQuery(api.files.list, { spaceId: space._id as any });
   const runs = useQuery(api.ranking.listRuns, { spaceId: space._id });
+  const recordSets = useQuery(api.records.sets, { spaceId: space._id as any });
   const createRun = useAction(api.ranking.createRun);
   const approveRun = useMutation(api.ranking.approveRun);
   const [criteriaId, setCriteriaId] = useState("");
-  const [fileId, setFileId] = useState("");
+  // "file:<id>" or "records:<id>": a CSV/XLSX file or an imported record set, both in this space.
+  const [source, setSource] = useState("");
   const { busy, error, run } = useRunner();
   const approved = criteria?.filter((c: any) => c.status === "approved") ?? [];
   const tables = files?.filter((x: any) => /\.(csv|xlsx|txt)$/i.test(x.name)) ?? [];
+  const sets = recordSets?.filter((x: any) => x.currentVersion > 0) ?? [];
+  const sourceArgs = () => {
+    const [kind, id] = [source.slice(0, source.indexOf(":")), source.slice(source.indexOf(":") + 1)];
+    return kind === "records" ? { recordSetId: id } : { fileId: id };
+  };
 
   return (
     <section className="card space-y-3 p-4">
@@ -233,15 +240,28 @@ function RunsPanel({ space, canApprove, onOpen }: { space: SpaceInfo; canApprove
               </option>
             ))}
           </select>
-          <select className="input" value={fileId} onChange={(e) => setFileId(e.target.value)}>
-            <option value="">ملف البيانات (CSV / XLSX)…</option>
-            {tables.map((x: any) => (
-              <option key={x._id} value={x._id}>
-                {x.name} (ن{x.version})
-              </option>
-            ))}
+          <select className="input" value={source} onChange={(e) => setSource(e.target.value)}>
+            <option value="">مصدر البيانات…</option>
+            {tables.length > 0 && (
+              <optgroup label="ملف (CSV / XLSX)">
+                {tables.map((x: any) => (
+                  <option key={x._id} value={`file:${x._id}`}>
+                    {x.name} (ن{x.version})
+                  </option>
+                ))}
+              </optgroup>
+            )}
+            {sets.length > 0 && (
+              <optgroup label="سجلات مستوردة (أسماء الأعمدة كما في Excel)">
+                {sets.map((x: any) => (
+                  <option key={x._id} value={`records:${x._id}`}>
+                    {x.name} (النسخة الحالية {x.currentVersion})
+                  </option>
+                ))}
+              </optgroup>
+            )}
           </select>
-          <button className="btn-primary" disabled={busy || !criteriaId || !fileId} onClick={() => run(async () => onOpen(await createRun({ criteriaId, fileId })))}>
+          <button className="btn-primary" disabled={busy || !criteriaId || !source} onClick={() => run(async () => onOpen(await createRun({ criteriaId, ...sourceArgs() })))}>
             احسب الترتيب
           </button>
         </div>
@@ -371,6 +391,7 @@ function RunMeta({ r }: { r: any }) {
     <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg bg-slate-50 p-3 text-xs text-slate-600 md:grid-cols-4">
       <dt>البيانات</dt>
       <dd>
+        {r.source?.kind === "records" ? "سجلات: " : ""}
         {r.source?.name} (النسخة {r.source?.version})
       </dd>
       <dt>بصمة اللقطة</dt>
