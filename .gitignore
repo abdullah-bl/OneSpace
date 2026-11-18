@@ -9,3 +9,4 @@ app/.test-data/
 app/.backup-test/
 *.log
 .DS_Store
+app/.demo-users.md
