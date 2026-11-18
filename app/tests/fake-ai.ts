@@ -12,7 +12,9 @@
 
 import { keywordQuery, tokens } from "../onebase/lib/arabic";
 
-export const OCR_TEXT = "# صفحة ممسوحة\nنص مستخرج بالرؤية OCRWORD-4471 عن لائحة الأرشفة";
+export const GENERAL_ANSWER = "إجابة عامة من معرفة النموذج GENERALANSWER-1.";
+export const FAKE_TITLE = "عنوان مقترح";
+export const OCR_TEXT ="# صفحة ممسوحة\nنص مستخرج بالرؤية OCRWORD-4471 عن لائحة الأرشفة";
 
 export type FakeAI = { url: string; dims: number; requests: any[]; stop: () => void };
 
@@ -69,7 +71,11 @@ function answerFor(body: any): { text: string; toolCalls: { name: string; args: 
     if (calls.length) return { text: "", toolCalls: calls };
   }
   const question = contentText(messages.at(-1)?.role === "user" ? messages.at(-1).content : messages.findLast((m: any) => m.role === "user")?.content);
-  if (/ABSTAIN-PLEASE/.test(question) || sources.size === 0) return { text: "لم أجد هذا في المستندات المتاحة لك.", toolCalls: [] };
+  // A general ("open") assistant answers from general knowledge when no file passage was given
+  // (UX redesign); a document-only agent abstains. The general answer never echoes the question.
+  const openMode = messages.some((m) => m.role === "system" && contentText(m.content).includes("تجيب عن أي سؤال"));
+  if (/ABSTAIN-PLEASE/.test(question)) return { text: "لم أجد هذا في المستندات المتاحة لك.", toolCalls: [] };
+  if (sources.size === 0) return { text: openMode ? GENERAL_ANSWER : "لم أجد هذا في المستندات المتاحة لك.", toolCalls: [] };
   const parts = [...sources].slice(0, 4).map(([n, t]) => `${t.split("\n").slice(1).join(" ").slice(0, 160)} [${n}]`);
   return { text: `حسب المستندات: ${parts.join(" ")}`, toolCalls: [] };
 }
@@ -106,6 +112,7 @@ export function startFakeAI(dims = 64): FakeAI {
         let text: string;
         let toolCalls: { name: string; args: string }[] = [];
         if (messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"))) text = OCR_TEXT;
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
         else if (body.response_format) text = JSON.stringify({ query: /السؤال الأخير: (.*)$/s.exec(last)?.[1]?.trim() ?? last });
         else ({ text, toolCalls } = answerFor(body));
         const usage = { prompt_tokens: 100, completion_tokens: 20 };

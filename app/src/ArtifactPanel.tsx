@@ -22,7 +22,7 @@ export function saveBase64(fileName: string, mime: string, base64: string) {
 
 export function SandboxedFrame({ html, title }: { html: string; title: string }) {
   const attrs = useMemo(() => frameAttributes(html), [html]);
-  return <iframe title={title} className="h-[60vh] w-full rounded-lg border border-slate-200 bg-white" {...attrs} />;
+  return <iframe title={title} className="h-[60vh] w-full rounded-lg border border-neutral-200 bg-white" {...attrs} />;
 }
 
 export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: string; spaces: SpaceInfo[]; onClose: () => void }) {
@@ -66,7 +66,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
       <div className="flex items-start gap-2">
         <div className="flex-1">
           <h2 className="font-semibold">{meta?.artifact.title ?? "…"}</h2>
-          <div className="text-xs text-slate-500">
+          <div className="text-xs text-neutral-500">
             {meta && `${KIND_LABEL[meta.artifact.kind]} · النسخة ${wanted} من ${current}`}
             {meta?.artifact.classification === "sensitive" && <span className="ms-2 rounded bg-amber-100 px-1.5 text-amber-800">مبني على مساحة حسّاسة</span>}
           </div>
@@ -81,15 +81,15 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
           </select>
         )}
         <button className="btn-ghost" onClick={onClose}>
-          ✕
+          إغلاق
         </button>
       </div>
       {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      {note && <p className="rounded-lg bg-teal-50 p-2 text-sm text-teal-800">{note}</p>}
+      {note && <p className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-900">{note}</p>}
       {doc && doc.kind === "markdown" && <SandboxedFrame title={doc.title} html={marked.parse(doc.content, { async: false }) as string} />}
       {doc && doc.kind === "html" && (
         <>
-          <p className="text-xs text-slate-500">صفحة مولَّدة تُعرض معزولة: بلا سكربتات ولا اتصال بالشبكة ولا وصول لجلستك.</p>
+          <p className="text-xs text-neutral-500">صفحة مولَّدة تُعرض معزولة: بلا سكربتات ولا اتصال بالشبكة ولا وصول لجلستك.</p>
           <SandboxedFrame title={doc.title} html={doc.content} />
         </>
       )}
@@ -112,7 +112,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
           ))}
         </div>
       )}
-      {doc && <div className="text-[10px] text-slate-400" dir="ltr">sha256 {doc.sha256}</div>}
+      {doc && <div className="text-[10px] text-neutral-400" dir="ltr">sha256 {doc.sha256}</div>}
       {meta && writable.length > 0 && (
         <select
           className="input"
@@ -158,9 +158,9 @@ function TableView({ content }: { content: string }) {
     }
   }, [content]);
   return (
-    <div className="max-h-[60vh] overflow-auto rounded-lg border border-slate-200">
+    <div className="max-h-[60vh] overflow-auto rounded-lg border border-neutral-200">
       <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-slate-50">
+        <thead className="sticky top-0 bg-neutral-50">
           <tr>
             {t.columns.map((c, i) => (
               <th key={i} className="th">
@@ -171,7 +171,7 @@ function TableView({ content }: { content: string }) {
         </thead>
         <tbody>
           {t.rows.map((r, i) => (
-            <tr key={i} className="border-t border-slate-100">
+            <tr key={i} className="border-t border-neutral-100">
               {t.columns.map((_, j) => (
                 <td key={j} className="td">
                   {r[j] === null || r[j] === undefined ? "" : String(r[j])}
@@ -215,12 +215,12 @@ export function OutputsTab({ space, spaces }: { space: SpaceInfo; spaces: SpaceI
             ))}
           </div>
         )}
-        <div className="card divide-y divide-slate-100">
+        <div className="card divide-y divide-neutral-100">
           {list?.map((a) => (
-            <div key={a._id} className={`flex items-center gap-2 p-3 text-sm ${openId === a._id ? "bg-teal-50" : ""}`}>
+            <div key={a._id} className={`flex items-center gap-2 p-3 text-sm ${openId === a._id ? "bg-neutral-100" : ""}`}>
               <button className="flex-1 text-start" onClick={() => setOpenId(a._id)}>
                 <div className="font-semibold">{a.title}</div>
-                <div className="text-xs text-slate-500">
+                <div className="text-xs text-neutral-500">
                   {KIND_LABEL[a.kind]} · النسخة {a.currentVersion} · {formatDate(a.updatedAt)}
                 </div>
               </button>
@@ -231,7 +231,7 @@ export function OutputsTab({ space, spaces }: { space: SpaceInfo; spaces: SpaceI
               )}
             </div>
           ))}
-          {list?.length === 0 && <div className="p-3 text-sm text-slate-400">لا مخرجات في هذه المساحة بعد. ينشئها الوكيل من المحادثة.</div>}
+          {list?.length === 0 && <div className="p-3 text-sm text-neutral-400">لا مخرجات في هذه المساحة بعد. ينشئها الوكيل من المحادثة.</div>}
         </div>
       </div>
       {openId && <ArtifactPanel key={openId} artifactId={openId} spaces={spaces} onClose={() => setOpenId(null)} />}

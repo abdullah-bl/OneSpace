@@ -42,9 +42,14 @@ export async function proposalsOf(s: Server, token: string, threadId: string): P
   return r.messages.flatMap((m: any) => m.proposals ?? []);
 }
 
-/** Chat requests whose messages contain `marker` (system prompt, question or sources). */
+/** Chat requests whose messages contain `marker` (system prompt, question or sources). The fast
+ * model's chat-title requests (JSON with a "title" field, UX redesign) are not answer requests. */
 export function chatRequestsWith(ai: FakeAI, marker: string) {
-  return ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.messages ?? []).includes(marker));
+  return ai.requests.filter((r) => r.path === "/v1/chat/completions" && !isTitleRequest(r) && JSON.stringify(r.body.messages ?? []).includes(marker));
+}
+
+export function isTitleRequest(r: any) {
+  return !!r.body.response_format && JSON.stringify(r.body.response_format).includes('"title"');
 }
 
 /** The tool names offered in a chat request. */

@@ -335,11 +335,17 @@ export default defineSchema({
     taskId: v.optional(v.string()), // Phase 6: opened from a task ("اعمل عليها مع الوكيل")
     test: v.optional(v.boolean()), // an admin's "جرّب الوكيل" run: hidden from the chat list
     agentDraft: v.optional(v.boolean()), // test runs use the agent's unpublished draft
+    // UX redesign: a chat started inside a space belongs to it (listed on the space page, scoped
+    // to it, with its instructions and file list as context). Still private to its owner.
+    spaceId: v.optional(v.id("spaces")),
+    titlePending: v.optional(v.boolean()), // the fast model names the chat after its first answer
+    scheduleId: v.optional(v.string()), // the results thread of a scheduled task (schedules.ts)
     createdAt: v.number(),
     lastAt: v.number(),
   })
     .index("by_thread", ["threadId"])
-    .index("by_user", ["userId", "lastAt"]),
+    .index("by_user", ["userId", "lastAt"])
+    .index("by_user_space", ["userId", "spaceId", "lastAt"]),
 
   // Structured citations, tool runs and feedback for an assistant message.
   messageMeta: defineTable({
@@ -372,12 +378,62 @@ export default defineSchema({
     streamId: v.optional(v.string()),
     messageId: v.optional(v.string()),
     error: v.optional(v.string()),
+    // @mentions in the question: files/spaces that narrow this turn's scope (never widen it).
+    mentions: v.optional(v.array(v.object({ kind: v.union(v.literal("file"), v.literal("space")), id: v.string() }))),
+    scheduleId: v.optional(v.string()), // a scheduled run (schedules.ts)
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
   })
     .index("by_thread", ["threadId", "queuedAt"])
     .index("by_state", ["state", "queuedAt"]),
+
+  // ---- UX redesign: mentions inbox and scheduled tasks ----
+
+  // "@person" in a task comment. Shown in the mentioned person's "الإشارات" list only while they
+  // can still view the task (checked on every read, like notifications).
+  mentions: defineTable({
+    userId: v.id("users"), // who was mentioned
+    byId: v.id("users"),
+    taskId: v.id("tasks"),
+    spaceId: v.id("spaces"),
+    commentId: v.id("taskComments"),
+    excerpt: v.string(),
+    createdAt: v.number(),
+    readAt: v.optional(v.number()),
+  })
+    .index("by_user", ["userId", "createdAt"])
+    .index("by_comment", ["commentId"]),
+
+  // A prompt that runs on a recurrence as its creator (permissions re-checked on every run), with
+  // an agent and an optional space scope. Results land in the creator's own thread (threadId);
+  // write tools only ever become pending proposals there.
+  schedules: defineTable({
+    userId: v.id("users"),
+    title: v.string(),
+    prompt: v.string(),
+    agentId: v.optional(v.string()),
+    spaceId: v.optional(v.id("spaces")),
+    recurrence: v.object({
+      kind: v.union(v.literal("daily"), v.literal("weekly"), v.literal("monthly"), v.literal("cron")),
+      time: v.optional(v.string()), // "HH:MM", workspace time
+      weekday: v.optional(v.number()), // 0 = Sunday
+      monthDay: v.optional(v.number()), // 1..28
+      cron: v.optional(v.string()), // 5 fields, workspace time
+    }),
+    enabled: v.boolean(),
+    stoppedReason: v.optional(v.string()),
+    nextRunAt: v.number(),
+    lastRunAt: v.optional(v.number()),
+    lastTurnId: v.optional(v.string()),
+    lastStatus: v.optional(v.union(v.literal("running"), v.literal("done"), v.literal("failed"))),
+    runs: v.number(),
+    threadId: v.string(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_user", ["userId", "createdAt"])
+    .index("by_due", ["enabled", "nextRunAt"]),
 
   aiSettings: defineTable({ key: v.string(), value: v.any(), updatedAt: v.number() }).index("by_key", ["key"]),
 });

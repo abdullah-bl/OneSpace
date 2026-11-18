@@ -24,6 +24,10 @@ export const agentConfig = v.object({
   modelRole,
   maxSteps: v.number(),
   visibility: agentVisibility,
+  // UX redesign: "open" = a general assistant that answers anything and uses the documents as a
+  // tool (cites when it does); "documents" = answers only from the documents and abstains when
+  // they don't cover the question (Phase 2 behaviour). Missing = "documents" (agents from before).
+  grounding: v.optional(v.union(v.literal("open"), v.literal("documents"))),
 });
 
 export const proposalState = v.union(v.literal("pending"), v.literal("running"), v.literal("executed"), v.literal("failed"), v.literal("cancelled"), v.literal("expired"));

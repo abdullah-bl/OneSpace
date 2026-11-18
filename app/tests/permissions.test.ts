@@ -8,6 +8,7 @@ import { PHASE5_COVERED } from "./phase5.coverage";
 import { PHASE4_PUBLIC } from "./phase4-coverage";
 import { PHASE2_COVERED } from "./phase2-covered";
 import { PHASE6_COVERED } from "./phase6.coverage";
+import { UX_COVERED } from "./ux.coverage";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -312,6 +313,7 @@ describe("workspace-level functions", () => {
       ...PHASE5_COVERED,
       ...PHASE2_COVERED,
       ...PHASE6_COVERED, // checked in phase6.permissions.test.ts
+      ...UX_COVERED, // checked in ux.test.ts
     ]);
     expect(publicFns.filter((n) => !covered.has(n))).toEqual([]);
     // Nothing public writes or deletes audit rows, and no component function is exposed.

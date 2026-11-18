@@ -21,7 +21,7 @@ export function RecordsTab({ space }: { space: SpaceInfo }) {
   return (
     <div className="space-y-4">
       {space.canManage && space.kind === "shared" && <NewSetForm spaceId={space._id} />}
-      {sets?.length === 0 && <p className="text-sm text-slate-400">لا توجد سجلات في هذه المساحة.</p>}
+      {sets?.length === 0 && <p className="text-sm text-neutral-400">لا توجد سجلات في هذه المساحة.</p>}
       {sets && sets.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {sets.map((s) => (
@@ -63,7 +63,7 @@ function NewSetForm({ spaceId }: { spaceId: string }) {
       }}
     >
       <input className="input w-full" placeholder="اسم المجموعة (مثلاً: دورات الموظفين)" value={name} onChange={(e) => setName(e.target.value)} required />
-      <p className="text-xs text-slate-500">الأعمدة كما تظهر في الصف الأول من ملف Excel. المفتاح بحروف لاتينية ويُستخدم في ربط القوالب.</p>
+      <p className="text-xs text-neutral-500">الأعمدة كما تظهر في الصف الأول من ملف Excel. المفتاح بحروف لاتينية ويُستخدم في ربط القوالب.</p>
       {cols.map((c, i) => (
         <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
           <input className="input w-40" placeholder="عنوان العمود في Excel" value={c.header} onChange={(e) => setCols(cols.map((x, j) => (j === i ? { ...x, header: e.target.value } : x)))} required />
@@ -86,7 +86,7 @@ function NewSetForm({ spaceId }: { spaceId: string }) {
           </label>
           {cols.length > 1 && (
             <button type="button" className="btn-ghost" onClick={() => setCols(cols.filter((_, j) => j !== i))}>
-              ✕
+              إزالة
             </button>
           )}
         </div>
@@ -117,12 +117,12 @@ function SetView({ set, canManage }: { set: SetInfo; canManage: boolean }) {
   return (
     <div className="space-y-3">
       {canManage && <ImportBox set={set} />}
-      <div className="text-sm text-slate-500">
+      <div className="text-sm text-neutral-500">
         النسخة الحالية: {set.currentVersion || "—"} · {rows?.total ?? 0} صف
       </div>
       <div className="card max-h-[50vh] overflow-auto">
         <table className="w-full text-sm">
-          <thead className="sticky top-0 bg-slate-50">
+          <thead className="sticky top-0 bg-neutral-50">
             <tr>
               {set.columns.map((c) => (
                 <th key={c.key} className="th">
@@ -133,7 +133,7 @@ function SetView({ set, canManage }: { set: SetInfo; canManage: boolean }) {
           </thead>
           <tbody>
             {rows?.rows.map((r) => (
-              <tr key={r.recordId} className="border-t border-slate-100">
+              <tr key={r.recordId} className="border-t border-neutral-100">
                 {set.columns.map((c) => (
                   <td key={c.key} className="td">
                     {r.data[c.key] === null || r.data[c.key] === undefined ? "" : String(r.data[c.key])}
@@ -146,7 +146,7 @@ function SetView({ set, canManage }: { set: SetInfo; canManage: boolean }) {
       </div>
       {imports && imports.length > 0 && (
         <details className="text-sm">
-          <summary className="cursor-pointer text-slate-500">سجل الاستيراد ({imports.length})</summary>
+          <summary className="cursor-pointer text-neutral-500">سجل الاستيراد ({imports.length})</summary>
           <ul className="mt-2 space-y-1">
             {imports.map((i) => (
               <li key={i.version}>
@@ -171,7 +171,7 @@ function ImportBox({ set }: { set: SetInfo }) {
   return (
     <div className="card space-y-2 p-3">
       <div className="text-sm font-semibold">استيراد من Excel</div>
-      <p className="text-xs text-slate-500">الأعمدة المطلوبة: {set.columns.map((c) => c.header).join("، ")}. أي خطأ يرفض الملف كله، وكل استيراد ناجح نسخة جديدة مؤرّخة.</p>
+      <p className="text-xs text-neutral-500">الأعمدة المطلوبة: {set.columns.map((c) => c.header).join("، ")}. أي خطأ يرفض الملف كله، وكل استيراد ناجح نسخة جديدة مؤرّخة.</p>
       <input
         type="file"
         accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -192,7 +192,7 @@ function ImportBox({ set }: { set: SetInfo }) {
           }
         }}
       />
-      {busy && <p className="text-sm text-slate-500">جارٍ الفحص…</p>}
+      {busy && <p className="text-sm text-neutral-500">جارٍ الفحص…</p>}
       {result && !result.ok && (
         <div className="rounded-lg bg-red-50 p-2 text-sm text-red-700">
           <div className="font-semibold">رُفض الملف ولن يُستورد منه شيء:</div>
@@ -208,9 +208,9 @@ function ImportBox({ set }: { set: SetInfo }) {
           <p className="text-sm">
             الملف سليم: {result.rowCount} صف. معاينة أول {result.sample.length}:
           </p>
-          <div className="max-h-60 overflow-auto rounded border border-slate-200">
+          <div className="max-h-60 overflow-auto rounded border border-neutral-200">
             <table className="w-full text-xs">
-              <thead className="bg-slate-50">
+              <thead className="bg-neutral-50">
                 <tr>
                   {set.columns.map((c) => (
                     <th key={c.key} className="th">
@@ -221,7 +221,7 @@ function ImportBox({ set }: { set: SetInfo }) {
               </thead>
               <tbody>
                 {result.sample.map((r, i) => (
-                  <tr key={i} className="border-t border-slate-100">
+                  <tr key={i} className="border-t border-neutral-100">
                     {set.columns.map((c) => (
                       <td key={c.key} className="td">
                         {r[c.key] === null || r[c.key] === undefined ? "" : String(r[c.key])}
@@ -253,7 +253,7 @@ function ImportBox({ set }: { set: SetInfo }) {
           </button>
         </div>
       )}
-      {message && <p className="text-sm text-slate-700">{message}</p>}
+      {message && <p className="text-sm text-neutral-700">{message}</p>}
     </div>
   );
 }

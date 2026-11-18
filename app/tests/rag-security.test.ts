@@ -298,7 +298,9 @@ describe("removal test: a removed member's search stops returning that space imm
     must(await s.call("mutation", "spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp }, tok("mgr")));
     const after = await ask(s, tok("tmp")!, t, "ما قرار لجنة المشتريات REMOVALKEY3318 بشأن أجهزة الحاسب؟");
     expect(after.citations.some((c: any) => c.fileId === fileId)).toBe(false);
-    expect(after.abstained).toBe(true);
+    // UX redesign: the default (general) agent no longer abstains; what matters is that nothing
+    // from the space is retrieved or cited any more.
+    expect(after.toolRuns.find((r: any) => r.name === "search_documents")?.summary ?? "0 مقطعاً").toBe("0 مقطعاً");
     expect(after.text).not.toContain("120 ألف");
     // The old answer stays in tmp's own history (it is theirs), but the space-scoped thread is gone too.
     const scoped = await s.call("mutation", "chat:createThread", { scope: { kind: "space", id: f.spaces.S_plain } }, tok("tmp"));

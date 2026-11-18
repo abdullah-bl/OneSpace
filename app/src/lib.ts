@@ -15,10 +15,23 @@ export type SpaceInfo = {
   canManage: boolean;
 };
 
+/** The space's kind, as a label and an icon name (icons.tsx). */
 export function badge(space: { kind: string; everyone: boolean }) {
-  if (space.kind === "personal") return { icon: "🔒", label: "خاصة" };
-  if (space.everyone) return { icon: "🌐", label: "للجميع" };
-  return { icon: "👥", label: "مشتركة" };
+  if (space.kind === "personal") return { icon: "lock" as const, label: "خاصة" };
+  if (space.everyone) return { icon: "globe" as const, label: "للجميع" };
+  return { icon: "users" as const, label: "مشتركة" };
+}
+
+export const spaceName = (s: { kind: string; name: string }) => (s.kind === "personal" ? "مساحتي" : s.name);
+
+/** Uploads a file the way the browser does: an upload URL from the backend, then POST the bytes. */
+export async function uploadBytes(getUrl: () => Promise<string>, file: File): Promise<string> {
+  // Same-origin path: the server's --url may differ from the address the page was opened on.
+  const u = new URL(await getUrl(), location.origin);
+  const res = await fetch(u.pathname + u.search, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
+  const body = await res.json();
+  if (!body.storageId) throw new Error(body.error ?? "فشل الرفع");
+  return body.storageId;
 }
 
 export const ROLE_LABELS: Record<string, string> = {
