@@ -146,3 +146,50 @@ export async function readableSpaceIds(ctx: Ctx, userId: Id<"users">): Promise<I
     return [];
   }
 }
+
+// ---- Tasks (Phase 3) ------------------------------------------------------------------------
+// A task lives in one shared space and is seen only by the space's *named* members: manager,
+// member and reader. The implicit readers of an "everyone" space, the owner of a personal space
+// and the workspace admin (unless named) get nothing. Readers only view; managers and members
+// comment; only a manager creates, assigns, edits, reviews and closes. What the assignee may do
+// on top of that is decided per task in tasks.ts (isAssignee).
+
+export type TaskAction = "view" | "comment" | "manage";
+
+const TASK_ALLOWED: Record<SpaceRole, TaskAction[]> = {
+  owner: [],
+  manager: ["view", "comment", "manage"],
+  member: ["view", "comment"],
+  reader: ["view"],
+  everyone: [],
+};
+
+export function taskRoleAllows(role: SpaceRole | null, action: TaskAction): boolean {
+  return role !== null && (TASK_ALLOWED[role]?.includes(action) ?? false);
+}
+
+/** Roles a task may be assigned to: people who can write in the space (and so attach output). */
+export function canBeAssignee(role: SpaceRole | null): boolean {
+  return role === "manager" || role === "member";
+}
+
+/** Throws Denied (same message as a missing space) unless `userId` may do `action` on tasks of the space. */
+export async function assertTaskCan(
+  ctx: Ctx,
+  userId: Id<"users">,
+  spaceId: Id<"spaces"> | string,
+  action: TaskAction,
+): Promise<{ space: Doc<"spaces">; role: SpaceRole }> {
+  const { space, role } = await assertCan(ctx, userId, spaceId, "read");
+  if (space.kind !== "shared" || !taskRoleAllows(role, action)) throw new Denied();
+  return { space, role };
+}
+
+/** The role `userId` holds in the space right now, or null (inactive, not a member, any error). */
+export async function currentSpaceRole(ctx: Ctx, userId: Id<"users">, space: Doc<"spaces">): Promise<SpaceRole | null> {
+  try {
+    return await spaceRoleOf(ctx, userId, space);
+  } catch {
+    return null;
+  }
+}

@@ -4,6 +4,8 @@ import { api, badge, errorText, ROLE_LABELS, STATUS_LABELS } from "./lib";
 import { SpaceView } from "./SpaceView";
 import { AdminView } from "./AdminView";
 import { AuditView } from "./AuditView";
+import { MyTasksView } from "./TasksView";
+import { NotificationBell } from "./NotificationBell";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -85,7 +87,7 @@ function Gate() {
   return <Shell me={me} />;
 }
 
-type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" };
+type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" } | { kind: "tasks"; taskId: string | null };
 
 function Shell({ me }: { me: { name: string | null; email: string | null; workspaceRole: string | null; workspaceName: string | null } }) {
   const spaces = useQuery(api.spaces.mine);
@@ -103,11 +105,17 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
     <div className="flex h-full">
       <aside className="flex w-64 shrink-0 flex-col border-e border-slate-200 bg-white">
         <div className="border-b border-slate-200 p-4">
-          <div className="text-lg font-semibold text-teal-800">مساحة</div>
+          <div className="flex items-center justify-between">
+            <div className="text-lg font-semibold text-teal-800">مساحة</div>
+            <NotificationBell onOpenTask={(taskId) => setRoute({ kind: "tasks", taskId })} />
+          </div>
           <div className="text-xs text-slate-500">{me.workspaceName}</div>
         </div>
         <nav className="flex-1 space-y-4 overflow-y-auto p-3">
           <div className="space-y-1">
+            <NavItem active={current?.kind === "tasks"} onClick={() => setRoute({ kind: "tasks", taskId: null })}>
+              ✅ مهامي
+            </NavItem>
             {personal.map((s) => (
               <NavItem key={s._id} active={current?.kind === "space" && current.id === s._id} onClick={() => setRoute({ kind: "space", id: s._id })}>
                 🔒 مساحتي
@@ -153,6 +161,7 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
           {current?.kind === "space" && spaces && <SpaceView spaceId={current.id} spaces={spaces} />}
           {current?.kind === "admin" && <AdminView />}
           {current?.kind === "audit" && <AuditView isAdmin={isAdmin} spaces={spaces ?? []} />}
+          {current?.kind === "tasks" && <MyTasksView openTaskId={current.taskId} onOpenTask={(taskId) => setRoute({ kind: "tasks", taskId })} />}
         </ErrorBoundary>
       </main>
     </div>

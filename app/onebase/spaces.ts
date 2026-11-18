@@ -41,7 +41,19 @@ export const get = query({
   handler: async (ctx, { spaceId }) => {
     const me = await requireActive(ctx);
     const { space, role } = await assertCan(ctx, me.userId, spaceId, "read");
-    return shape(space, role);
+    return { ...shape(space, role), instructions: space.instructions ?? null, instructionsUpdatedAt: space.instructionsUpdatedAt ?? null };
+  },
+});
+
+/** Phase 3: the space as a "project". Its optional instructions (for the agent) are set by a manager of a shared space. */
+export const setInstructions = mutation({
+  args: { spaceId: v.id("spaces"), instructions: v.string() },
+  handler: async (ctx, { spaceId, instructions }) => {
+    const { me } = await requireSharedManage(ctx, spaceId);
+    const text = instructions.trim();
+    if (text.length > 20_000) throw new OneBaseError("التعليمات أطول من المسموح");
+    await ctx.db.patch(spaceId, { instructions: text || undefined, instructionsUpdatedAt: Date.now() });
+    await writeAudit(ctx, { userId: me.userId, action: "space.instructions", resourceType: "space", resourceId: spaceId, spaceId, detail: { length: text.length } });
   },
 });
 

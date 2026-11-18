@@ -64,6 +64,51 @@ proxies `/api` + WebSocket + `/download` to :8090).
   (user/space/period); file names in spaces the admin can't read are shown as `•••`. A space
   manager sees their space's log.
 
+## Phase 3: tasks, notifications, space instructions
+
+- `onebase/tasks.ts` — a task lives in one **shared** space (`spaceId`, title, body, assignee, due,
+  priority `low|normal|high|urgent`, status `new → inProgress → review → done`, links, threadId) with
+  `taskComments`. Checks go through `access.ts` (`assertTaskCan`, `canBeAssignee`), fail-closed, and
+  every lookup by id answers with the same "not found" message.
+
+  | | view | comment | attach / thread | forward (new→inProgress→review) | close / return / reopen | create / assign / edit / delete |
+  |---|---|---|---|---|---|---|
+  | space manager | ✓ | ✓ | ✓ | ✓ | ✓ | ✓ |
+  | assignee | ✓ | ✓ | ✓ | ✓ | – | – |
+  | member | ✓ | ✓ | – | – | – | – |
+  | reader | ✓ | – | – | – | – | – |
+  | "everyone" readers, workspace admin (unless named), non-members | – (not even existence) | | | | | |
+
+  Decisions: readers *see* tasks (they are named members) but don't comment; tasks are **not** shown
+  to the implicit readers of an "everyone" space (it's for publishing, not work allocation); personal
+  spaces have no tasks. A task is assigned only to an active **manager or member** of its space
+  (readers can't write, so they couldn't attach output). Removing someone from the space removes the
+  task (and its notifications) from them at once; the board flags the assignee as no longer a member.
+  Closed tasks are locked for attachments until a manager reopens them.
+- **Links** are `{type: "file" | "artifact", id}` and must be in the task's own space: checked when
+  added (a file from another space gets the same answer as a missing one) and again on every read (a
+  file moved out later shows as "unavailable", no name). `artifact` resolves against an `artifacts`
+  table with `spaceId` + `title` (Phase 4); until that exists, artifact links are refused.
+  `threadId` is a generic string for the Phase 2 chat thread (`tasks:setThread`); it grants nothing.
+- "اعمل عليها مع الوكيل" links to `/chat?taskId=<id>` (placeholder; Phase 2's chat reads it).
+- **Notifications**: `@onebase/notifications` mounted as `notes`; `onebase/notifications.ts` wraps it
+  (subject = session user only; the component's functions are not public). Sent on: assigned
+  (assignee), status → review (space managers), closed / returned / reopened (assignee), comment
+  (assignee + managers), never to the actor and only to people who can still view the task. The feed
+  hides notifications for tasks the reader can no longer see. No email channel.
+- **Audit**: `task.assign` (create and reassign), `task.close`, `task.reopen`, `task.delete`,
+  `space.instructions`. `taskTitle` is redacted (`•••`) for viewers who can't read the space.
+- **Space instructions** (`spaces:setInstructions`, returned by `spaces:get`): optional text for the
+  space as a "project", set by its manager, read by anyone who reads the space.
+- UI: `src/TasksView.tsx` (مهامي, board, detail), `src/NotificationBell.tsx`,
+  `src/SpaceInstructions.tsx`; one nav entry + the bell in `App.tsx`, two tabs in `SpaceView.tsx`.
+
+**`@onebase/email` resolution (upstream issue).** `@onebase/notifications` imports its sibling
+`@onebase/email` by package name, which only resolves inside the monorepo's own workspace, not when
+the repo is installed as a git dependency. `onebase/components.ts` registers `@onebase/email` as a Bun
+virtual module (pointing at `onebase-components/packages/email/src/index.ts`) and then imports
+notifications dynamically; `tsconfig.json` has a matching `paths` entry for `tsc`.
+
 ## Tests
 
 ```bash
@@ -76,6 +121,10 @@ bun test tests          # starts real onebase servers on temp dirs; ~5 s
   role model (`tests/fixture.ts`). A final test asserts every public function is covered.
 - `tests/acceptance.test.ts`: one block per Phase 1 acceptance checkbox, the storage-URL finding,
   move/copy with versions, audit log behaviour, guard rails.
+- `tests/tasks.test.ts`: one block per Phase 3 acceptance checkbox (assign → notified → attach →
+  review → close; visibility and assignment limits; same-space attachments), status rules,
+  notifications, space instructions. The matrix covers every task function with a separate task
+  role model (`taskView|taskComment|taskManage|taskWork` in `tests/fixture.ts`).
 
 ## Backup and restore
 

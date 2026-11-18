@@ -23,6 +23,11 @@ const ACTION_LABELS: Record<string, string> = {
   "file.copy_in": "نسخ ملف إلى المساحة",
   "file.open": "فتح ملف حسّاس",
   "file.download": "تنزيل ملف حسّاس",
+  "space.instructions": "تعديل تعليمات المساحة",
+  "task.assign": "إسناد مهمة",
+  "task.close": "إغلاق مهمة",
+  "task.reopen": "إعادة فتح مهمة",
+  "task.delete": "حذف مهمة",
 };
 
 /** Workspace admin: everything with filters. Space manager: pick one of the spaces they manage. */
