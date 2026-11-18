@@ -5,6 +5,7 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must, type Result } from "./harness";
 import { PHASE5_COVERED } from "./phase5.coverage";
+import { PHASE4_PUBLIC } from "./phase4-coverage";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -285,6 +286,7 @@ describe("workspace-level functions", () => {
     const covered = new Set([
       ...OPS.flatMap((o) => o.name.split(/[ +]/).filter((w) => /^[a-z]+:[a-zA-Z]+$/.test(w))),
       ...ADMIN_ONLY.map(([n]) => n),
+      ...PHASE4_PUBLIC, // checked in outputs-permissions.test.ts
       "files:generateUploadUrl",
       "spaces:mine",
       "files:move",

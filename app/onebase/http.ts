@@ -2,6 +2,7 @@ import { httpRouter } from "onebase/server";
 import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { requireUserId } from "./access";
+import { registerDocumentRoutes } from "./documentsHttp";
 
 const http = httpRouter();
 
@@ -61,5 +62,8 @@ http.route({
     });
   }),
 });
+
+// Phase 4: issued documents (/document) and public verification (/verify).
+registerDocumentRoutes(http);
 
 export default http;

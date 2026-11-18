@@ -7,6 +7,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { actorFor, Denied, getWorkspace, requireAdmin, statusOf } from "./access";
 import { writeAudit } from "./audit";
+import { assignIdentifiers } from "./identifiers";
 
 const wsRole = v.union(v.literal("admin"), v.literal("member"));
 
@@ -66,6 +67,7 @@ export const users = query({
         status: statusOf(u),
         workspaceRole: role as "admin" | "member" | null,
         employeeNo: u.employeeNo ?? null,
+        nationalId: u.nationalId ?? null,
         createdAt: u._creationTime,
       });
     }
@@ -83,7 +85,8 @@ export const activate = mutation({
     const current = await ctx.components.workspace.role({ teamId: me.workspace.teamId, userId });
     if (!current) await ctx.components.workspace.addMember({ teamId: me.workspace.teamId, userId, role: role ?? "member", by: me.userId });
     else if (role && role !== current) await ctx.components.workspace.setRole({ teamId: me.workspace.teamId, userId, role, by: me.userId });
-    await ctx.db.patch(userId, { status: "active", ...(employeeNo !== undefined ? { employeeNo } : {}) });
+    await ctx.db.patch(userId, { status: "active" });
+    if (employeeNo !== undefined) await assignIdentifiers(ctx, userId, { employeeNo });
     await ensurePersonalSpace(ctx, me.workspace, { ...user, status: "active" });
     await writeAudit(ctx, {
       userId: me.userId,
@@ -91,6 +94,28 @@ export const activate = mutation({
       resourceType: "user",
       resourceId: userId,
       detail: { email: user.email ?? null, role: role ?? current ?? "member" },
+    });
+  },
+});
+
+/**
+ * Sets an employee's national id and/or employee number (Phase 4). Admin only: the employee
+ * can't set their own, so my_records can't be pointed at someone else's records.
+ * null clears a value; omitted leaves it unchanged.
+ */
+export const setIdentifiers = mutation({
+  args: { userId: v.id("users"), nationalId: v.optional(v.union(v.string(), v.null())), employeeNo: v.optional(v.union(v.string(), v.null())) },
+  handler: async (ctx, { userId, nationalId, employeeNo }) => {
+    const me = await requireAdmin(ctx);
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Denied();
+    const patch = await assignIdentifiers(ctx, userId, { nationalId, employeeNo });
+    await writeAudit(ctx, {
+      userId: me.userId,
+      action: "user.identifiers",
+      resourceType: "user",
+      resourceId: userId,
+      detail: { nationalId: "nationalId" in patch ? (patch.nationalId ? "set" : "cleared") : null, employeeNo: "employeeNo" in patch ? (patch.employeeNo ? "set" : "cleared") : null },
     });
   },
 });

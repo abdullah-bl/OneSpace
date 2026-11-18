@@ -3,8 +3,20 @@
 
 import type { AppTool } from "./types";
 import { runAnalysisTool } from "./run_analysis";
+import { create_artifact } from "./create_artifact";
+import { update_artifact } from "./update_artifact";
+import { query_records } from "./query_records";
+import { my_records } from "./my_records";
+import { fill_template } from "./fill_template";
 
 export const tools: Record<string, AppTool> = {
+  // Phase 4: outputs, records, templates
+  create_artifact,
+  update_artifact,
+  query_records,
+  my_records,
+  fill_template,
+  // Phase 5: sandbox analysis
   run_analysis: runAnalysisTool,
 };
 

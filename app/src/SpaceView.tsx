@@ -4,10 +4,13 @@ import { api, badge, errorText, formatDate, formatSize, ROLE_LABELS, type SpaceI
 import { AuditTable } from "./AuditView";
 import { TaskBoard } from "./TasksView";
 import { SpaceInstructions } from "./SpaceInstructions";
+import { OutputsTab } from "./ArtifactPanel";
+import { RecordsTab } from "./RecordsView";
+import { DocumentsTab } from "./DocumentsView";
 
 export function SpaceView({ spaceId, spaces }: { spaceId: string; spaces: SpaceInfo[] }) {
   const space = spaces.find((s) => s._id === spaceId)!;
-  const [tab, setTab] = useState<"files" | "members" | "audit" | "tasks" | "instructions">("files");
+  const [tab, setTab] = useState<"files" | "members" | "audit" | "tasks" | "instructions" | "outputs" | "records" | "documents">("files");
   // Tasks are for the space's named members (not "everyone" readers); the server enforces it too.
   const hasTasks = space.kind === "shared" && ["manager", "member", "reader"].includes(space.myRole);
   const b = badge(space);
@@ -22,16 +25,20 @@ export function SpaceView({ spaceId, spaces }: { spaceId: string; spaces: SpaceI
         <span className="text-xs text-slate-500">دورك: {ROLE_LABELS[space.myRole] ?? space.myRole}</span>
       </header>
       {space.kind === "personal" && <p className="text-sm text-slate-500">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. المشاركة تكون بنقل الملف أو نسخه لمساحة مشتركة.</p>}
-      {space.kind === "shared" && (
-        <div className="flex gap-1 border-b border-slate-200">
-          <Tab on={tab === "files"} onClick={() => setTab("files")}>الملفات</Tab>
-          {hasTasks && <Tab on={tab === "tasks"} onClick={() => setTab("tasks")}>المهام</Tab>}
-          <Tab on={tab === "members"} onClick={() => setTab("members")}>الأعضاء</Tab>
-          <Tab on={tab === "instructions"} onClick={() => setTab("instructions")}>التعليمات</Tab>
-          {space.canManage && <Tab on={tab === "audit"} onClick={() => setTab("audit")}>سجل المساحة</Tab>}
-        </div>
-      )}
+      <div className="flex gap-1 border-b border-slate-200">
+        <Tab on={tab === "files"} onClick={() => setTab("files")}>الملفات</Tab>
+        <Tab on={tab === "outputs"} onClick={() => setTab("outputs")}>المخرجات</Tab>
+        {hasTasks && <Tab on={tab === "tasks"} onClick={() => setTab("tasks")}>المهام</Tab>}
+        {space.kind === "shared" && <Tab on={tab === "records"} onClick={() => setTab("records")}>السجلات</Tab>}
+        {space.kind === "shared" && <Tab on={tab === "documents"} onClick={() => setTab("documents")}>القوالب والمستندات</Tab>}
+        {space.kind === "shared" && <Tab on={tab === "members"} onClick={() => setTab("members")}>الأعضاء</Tab>}
+        {space.kind === "shared" && <Tab on={tab === "instructions"} onClick={() => setTab("instructions")}>التعليمات</Tab>}
+        {space.kind === "shared" && space.canManage && <Tab on={tab === "audit"} onClick={() => setTab("audit")}>سجل المساحة</Tab>}
+      </div>
       {tab === "files" && <FilesPanel space={space} spaces={spaces} />}
+      {tab === "outputs" && <OutputsTab space={space} spaces={spaces} />}
+      {tab === "records" && space.kind === "shared" && <RecordsTab space={space} />}
+      {tab === "documents" && space.kind === "shared" && <DocumentsTab space={space} />}
       {tab === "members" && space.kind === "shared" && <MembersPanel space={space} />}
       {tab === "audit" && space.canManage && <AuditTable args={{ spaceId: space._id }} />}
       {tab === "tasks" && hasTasks && <TaskBoard space={space} />}
