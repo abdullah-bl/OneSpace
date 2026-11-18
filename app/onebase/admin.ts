@@ -8,6 +8,7 @@ import { internalMutation, mutation, query, type MutationCtx } from "./_generate
 import { actorFor, Denied, getWorkspace, requireAdmin, statusOf } from "./access";
 import { writeAudit } from "./audit";
 import { assignIdentifiers } from "./identifiers";
+import { seedStarters } from "./agents";
 
 const wsRole = v.union(v.literal("admin"), v.literal("member"));
 
@@ -46,6 +47,7 @@ export const bootstrap = internalMutation({
     await ctx.db.patch(user._id, { status: "active" });
     const workspace = (await ctx.db.get(workspaceId))!;
     await ensurePersonalSpace(ctx, workspace, { ...user, status: "active" });
+    await seedStarters(ctx, user._id); // Phase 6: the default agent and the three starters
     await writeAudit(ctx, { userId: user._id, action: "workspace.bootstrap", resourceType: "user", resourceId: user._id, detail: { email: user.email ?? null } });
     return { workspaceId, userId: user._id };
   },

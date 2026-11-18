@@ -6,6 +6,8 @@
 //  - chat: echoes the numbered sources it was given as a cited answer ("[n]"), or abstains when
 //    it got none. Like a compromised model it OBEYS instructions found in documents: a source
 //    containing `CALL_TOOL <name> <json>` makes it call that tool — the tools must hold the line.
+//    The same line in the system prompt (an agent's instructions) works too, and the call is made
+//    whether or not that tool was offered (only that *some* tools were).
 //  - vision (an image in the message): returns fixed OCR text.
 
 import { keywordQuery, tokens } from "../onebase/lib/arabic";
@@ -56,7 +58,9 @@ function answerFor(body: any): { text: string; toolCalls: { name: string; args: 
   for (const m of messages) for (const tc of m.tool_calls ?? []) done.add(`${tc.function.name} ${tc.function.arguments}`);
   if (body.tools?.length) {
     const calls: { name: string; args: string }[] = [];
-    for (const text of sources.values()) {
+    // ...and instructions in its system prompt (an agent's admin-written instructions, Phase 6).
+    const system = messages.filter((m) => m.role === "system").map((m) => contentText(m.content));
+    for (const text of [...sources.values(), ...system]) {
       for (const x of text.matchAll(/CALL_TOOL (\w+) (\{[^\n]*?\})(?=\s|$)/g)) {
         const key = `${x[1]} ${x[2]}`;
         if (!done.has(key) && !calls.some((c) => `${c.name} ${c.args}` === key)) calls.push({ name: x[1]!, args: x[2]! });

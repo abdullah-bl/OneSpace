@@ -10,6 +10,7 @@ import { AnalysisView } from "./AnalysisView";
 import { RankingView } from "./RankingView";
 import { MyRecordsView } from "./MyRecordsView";
 import { ChatView, type Scope } from "./ChatView";
+import { AgentsView } from "./AgentsView";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -99,18 +100,37 @@ type Route =
   | { kind: "analysis" }
   | { kind: "ranking" }
   | { kind: "mine" }
-  | { kind: "chat" };
+  | { kind: "chat"; taskId?: string | null }
+  | { kind: "agents" };
+
+/** "اعمل عليها مع الوكيل" links to /chat?taskId=…: read it once on load, then clean the address bar. */
+function initialRoute(): Route | null {
+  try {
+    const taskId = new URLSearchParams(window.location.search).get("taskId");
+    if (window.location.pathname.startsWith("/chat") || taskId) {
+      window.history.replaceState(null, "", "/");
+      return { kind: "chat", taskId: taskId || null };
+    }
+  } catch {}
+  return null;
+}
 
 function Shell({ me }: { me: { name: string | null; email: string | null; workspaceRole: string | null; workspaceName: string | null } }) {
   const spaces = useQuery(api.spaces.mine);
   const { signOut } = useAuthActions();
-  const [route, setRoute] = useState<Route | null>(null);
+  const [route, setRoute] = useState<Route | null>(initialRoute);
   const [askScope, setAskScope] = useState<Scope | null>(null);
   // "اسأل عن هذا الملف" (SpaceView) opens the chat scoped to that file.
   useEffect(() => {
     const onAsk = (e: Event) => (setAskScope((e as CustomEvent<Scope>).detail), setRoute({ kind: "chat" }));
+    // "اعمل عليها مع الوكيل" (TasksView) opens the task's thread.
+    const onTask = (e: Event) => (setAskScope(null), setRoute({ kind: "chat", taskId: (e as CustomEvent<string>).detail }));
     window.addEventListener("onespace:ask", onAsk);
-    return () => window.removeEventListener("onespace:ask", onAsk);
+    window.addEventListener("onespace:task-chat", onTask);
+    return () => {
+      window.removeEventListener("onespace:ask", onAsk);
+      window.removeEventListener("onespace:task-chat", onTask);
+    };
   }, []);
   const isAdmin = me.workspaceRole === "admin";
   // A space I lose access to (removed, space deleted) drops out of the list: fall back to my own space.
@@ -175,6 +195,11 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
                   ⚙️ إدارة مساحة العمل
                 </NavItem>
               )}
+              {isAdmin && (
+                <NavItem active={current?.kind === "agents"} onClick={() => setRoute({ kind: "agents" })}>
+                  🤖 الوكلاء
+                </NavItem>
+              )}
               <NavItem active={current?.kind === "audit"} onClick={() => setRoute({ kind: "audit" })}>
                 📜 سجل التدقيق
               </NavItem>
@@ -198,7 +223,8 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
           {current?.kind === "tasks" && <MyTasksView openTaskId={current.taskId} onOpenTask={(taskId) => setRoute({ kind: "tasks", taskId })} />}
           {current?.kind === "analysis" && spaces && <AnalysisView spaces={spaces} />}
           {current?.kind === "ranking" && spaces && <RankingView spaces={spaces} />}
-          {current?.kind === "chat" && <ChatView spaces={spaces ?? []} initialScope={askScope} />}
+          {current?.kind === "chat" && <ChatView spaces={spaces ?? []} initialScope={askScope} taskId={current.taskId ?? null} />}
+          {current?.kind === "agents" && <AgentsView spaces={spaces ?? []} />}
         </ErrorBoundary>
       </main>
     </div>

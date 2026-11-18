@@ -29,6 +29,18 @@ const ACTION_LABELS: Record<string, string> = {
   "task.reopen": "إعادة فتح مهمة",
   "task.delete": "حذف مهمة",
   "ai.turn": "سؤال للمساعد استخدم محتوى المساحة",
+  "ai.confirm": "تنفيذ إجراء اقترحه الوكيل",
+  "ai.cancel": "إلغاء إجراء اقترحه الوكيل",
+  "agent.create": "إنشاء وكيل",
+  "agent.draft": "تعديل مسودة وكيل",
+  "agent.discardDraft": "تجاهل مسودة وكيل",
+  "agent.publish": "نشر نسخة وكيل",
+  "agent.revert": "استرجاع نسخة سابقة من وكيل",
+  "agent.enable": "تفعيل وكيل",
+  "agent.disable": "تعطيل وكيل",
+  "agent.default": "تغيير الوكيل الافتراضي",
+  "agent.test": "تجربة وكيل",
+  "agent.testQuestions": "تعديل أسئلة اختبار وكيل",
 };
 
 /** Workspace admin: everything with filters. Space manager: pick one of the spaces they manage. */

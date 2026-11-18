@@ -1,0 +1,22 @@
+// Phase 6 public functions; each is checked per actor (× space where it applies) in phase6.permissions.test.ts.
+export const PHASE6_COVERED = [
+  "agents:available",
+  "agents:toolRegistry",
+  "agents:list",
+  "agents:versions",
+  "agents:create",
+  "agents:saveDraft",
+  "agents:discardDraft",
+  "agents:publish",
+  "agents:revert",
+  "agents:setEnabled",
+  "agents:setDefault",
+  "agents:seedStarterAgents",
+  "agents:setTestQuestions",
+  "agents:runTests",
+  "agents:testResults",
+  "chat:setAgent",
+  "chat:openTaskThread",
+  "chat:confirmProposal",
+  "chat:cancelProposal",
+];
