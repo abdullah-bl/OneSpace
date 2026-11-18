@@ -3,6 +3,10 @@ import { v } from "onebase/values";
 
 export const userStatus = v.union(v.literal("pending"), v.literal("active"), v.literal("disabled"));
 export const memberRole = v.union(v.literal("manager"), v.literal("member"), v.literal("reader"));
+export const taskStatus = v.union(v.literal("new"), v.literal("inProgress"), v.literal("review"), v.literal("done"));
+export const taskPriority = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
+// "artifact" targets come from Phase 4; until its table exists such links are refused (fail-closed).
+export const taskLinkType = v.union(v.literal("file"), v.literal("artifact"));
 
 export default defineSchema({
   // The built-in auth fields plus OneSpace's account status. A missing status counts as
@@ -35,6 +39,9 @@ export default defineSchema({
     sensitive: v.boolean(), // every open/download is audited
     createdBy: v.optional(v.id("users")),
     createdAt: v.number(),
+    // Phase 3: the space as a "project". Optional instructions for the agent, edited by a manager.
+    instructions: v.optional(v.string()),
+    instructionsUpdatedAt: v.optional(v.number()),
   })
     .index("by_owner", ["ownerId"])
     .index("by_workspace_kind", ["workspaceId", "kind"]),
@@ -91,6 +98,34 @@ export default defineSchema({
   })
     .index("by_hash", ["tokenHash"])
     .index("by_expiry", ["expiresAt"]),
+
+  // Phase 3: a task lives in one shared space and is assigned to one of its members (manager or
+  // member). Links point at things in the same space only (checked when added and again when read).
+  // threadId is the chat thread opened for the task (Phase 2); a generic string until chat exists.
+  tasks: defineTable({
+    spaceId: v.id("spaces"),
+    title: v.string(),
+    body: v.optional(v.string()),
+    createdBy: v.id("users"),
+    assigneeId: v.id("users"),
+    due: v.optional(v.number()),
+    priority: taskPriority,
+    status: taskStatus,
+    links: v.array(v.object({ type: taskLinkType, id: v.string(), addedBy: v.id("users"), addedAt: v.number() })),
+    threadId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    closedAt: v.optional(v.number()),
+  })
+    .index("by_space", ["spaceId"])
+    .index("by_assignee", ["assigneeId"]),
+
+  taskComments: defineTable({
+    taskId: v.id("tasks"),
+    authorId: v.id("users"),
+    body: v.string(),
+    createdAt: v.number(),
+  }).index("by_task", ["taskId", "createdAt"]),
 
   // Append-only: nothing in the app patches or deletes these rows.
   auditLog: defineTable({

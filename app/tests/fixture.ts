@@ -27,7 +27,16 @@ export type Fixture = {
   ids: Record<string, string>;
   spaces: Record<SpaceKey, string>;
   files: Record<SpaceKey, string>;
+  /** Phase 3: one task per shared space (created by mgr, assigned to mem); P_mem gets a deleted task's id. */
+  tasks: Record<SpaceKey, string>;
   emails: Record<string, string>;
+};
+
+export const TASK_TITLES: Record<SpaceKey, string> = {
+  P_mem: "مهمة-محذوفة-TK00",
+  S_plain: "مهمة-المشتريات-TK71",
+  S_every: "مهمة-السياسات-TK22",
+  S_sens: "مهمة-الطلبة-TK93",
 };
 
 export async function buildFixture(s: Server): Promise<Fixture> {
@@ -61,8 +70,15 @@ export async function buildFixture(s: Server): Promise<Fixture> {
   const files = {} as Record<SpaceKey, string>;
   files.P_mem = await addFile(s, tokens.mem!, undefined, FILE_NAMES.P_mem, "PERSONAL-CONTENT-PF55");
   for (const sp of ["S_plain", "S_every", "S_sens"] as const) files[sp] = await addFile(s, tokens.mgr!, spaces[sp], FILE_NAMES[sp], `CONTENT-${sp}`);
+  const tasks = {} as Record<SpaceKey, string>;
+  for (const sp of ["S_plain", "S_every", "S_sens"] as const) {
+    tasks[sp] = must(await s.call("mutation", "tasks:create", { spaceId: spaces[sp], title: TASK_TITLES[sp], assigneeId: ids.mem }, tokens.mgr));
+  }
+  const dead = must(await s.call("mutation", "tasks:create", { spaceId: spaces.S_plain, title: TASK_TITLES.P_mem, assigneeId: ids.mem }, tokens.mgr));
+  must(await s.call("mutation", "tasks:remove", { taskId: dead }, tokens.mgr));
+  tasks.P_mem = dead; // tasks can't live in a personal space: every call with this id must be denied
   must(await s.call("mutation", "admin:disable", { userId: ids.dis }, admin));
-  return { s, tokens, ids, spaces, files, emails };
+  return { s, tokens, ids, spaces, files, tasks, emails };
 }
 
 export async function addFile(s: Server, token: string, spaceId: string | undefined, name: string, content: string) {
@@ -81,10 +97,22 @@ export function expectedRole(actor: ActorKey, space: SpaceKey): "owner" | "manag
   return null;
 }
 
-export type Need = "read" | "write" | "manage" | "audit";
+/** Phase 3: taskView = named members (manager, member, reader); taskComment = manager, member;
+ *  taskManage = manager; taskWork = manager or the task's assignee (mem in the fixture). */
+export type TaskNeed = "taskView" | "taskComment" | "taskManage" | "taskWork";
+export type Need = "read" | "write" | "manage" | "audit" | TaskNeed;
 
 export function expectedAllowed(actor: ActorKey, space: SpaceKey, need: Need): boolean {
   const role = expectedRole(actor, space);
+  if (need.startsWith("task")) {
+    // Tasks live in shared spaces and are seen by named members only (not "everyone" readers,
+    // not the workspace admin unless named, not a personal space's owner).
+    if (space === "P_mem" || role === null || role === "everyone" || role === "owner") return false;
+    if (need === "taskView") return true;
+    if (need === "taskComment") return role === "manager" || role === "member";
+    if (need === "taskManage") return role === "manager";
+    return role === "manager" || actor === "mem";
+  }
   if (need === "audit") return actor === "admin" || role === "manager";
   if (role === null) return false;
   if (need === "read") return true;

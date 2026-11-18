@@ -12,7 +12,8 @@
     "types": ["bun"],
     "esModuleInterop": true,
     "resolveJsonModule": true,
-    "isolatedModules": true
+    "isolatedModules": true,
+    "paths": { "@onebase/email": ["./node_modules/onebase-components/packages/email/src/index.ts"] }
   },
   "include": ["onebase", "src", "tests", "scripts", "vite.config.ts"]
 }

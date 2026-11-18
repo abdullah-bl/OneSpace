@@ -11,7 +11,11 @@ import type * as module3 from "../audit";
 import type * as module4 from "../crons";
 import type * as module5 from "../files";
 import type * as module6 from "../http";
-import type * as module7 from "../spaces";
+import type * as module7 from "../notifications";
+import type * as module8 from "../spaces";
+import type * as module9 from "../tasks";
+import type * as module10 from "../tools/index";
+import type * as module11 from "../tools/types";
 
 /** References to public functions, e.g. `api.messages.list`. */
 export const api: {
@@ -22,7 +26,13 @@ export const api: {
   crons: ApiFromModule<typeof module4, "public">;
   files: ApiFromModule<typeof module5, "public">;
   http: ApiFromModule<typeof module6, "public">;
-  spaces: ApiFromModule<typeof module7, "public">;
+  notifications: ApiFromModule<typeof module7, "public">;
+  spaces: ApiFromModule<typeof module8, "public">;
+  tasks: ApiFromModule<typeof module9, "public">;
+  tools: {
+    index: ApiFromModule<typeof module10, "public">;
+    types: ApiFromModule<typeof module11, "public">;
+  };
 } & { components: ComponentsApi<typeof components, "public"> } = anyApi;
 
 /** References to internal functions (callable from other functions only). */
@@ -34,5 +44,11 @@ export const internal: {
   crons: ApiFromModule<typeof module4, "internal">;
   files: ApiFromModule<typeof module5, "internal">;
   http: ApiFromModule<typeof module6, "internal">;
-  spaces: ApiFromModule<typeof module7, "internal">;
+  notifications: ApiFromModule<typeof module7, "internal">;
+  spaces: ApiFromModule<typeof module8, "internal">;
+  tasks: ApiFromModule<typeof module9, "internal">;
+  tools: {
+    index: ApiFromModule<typeof module10, "internal">;
+    types: ApiFromModule<typeof module11, "internal">;
+  };
 } & { components: ComponentsApi<typeof components, "internal"> } = anyApi;

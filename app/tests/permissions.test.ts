@@ -121,8 +121,81 @@ const OPS: Op[] = [
     },
   },
   { name: "audit:list (space log)", need: "audit", run: (a, sp) => s.call("query", "audit:list", { spaceId: f.spaces[sp] }, tok(a)) },
+
+  // ---- Phase 3: space instructions and tasks ----
+  {
+    name: "spaces:setInstructions",
+    need: "manage",
+    run: (a, sp) => s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces[sp], instructions: "تعليمات المشروع" }, tok(a)),
+  },
+  { name: "tasks:board", need: "taskView", run: (a, sp) => s.call("query", "tasks:board", { spaceId: f.spaces[sp] }, tok(a)) },
+  { name: "tasks:get", need: "taskView", run: (a, sp) => s.call("query", "tasks:get", { taskId: f.tasks[sp] }, tok(a)) },
+  { name: "tasks:assignees", need: "taskManage", run: (a, sp) => s.call("query", "tasks:assignees", { spaceId: f.spaces[sp] }, tok(a)) },
+  {
+    name: "tasks:create",
+    need: "taskManage",
+    run: async (a, sp) => {
+      const r = await s.call("mutation", "tasks:create", { spaceId: f.spaces[sp], title: "مهمة اختبار", assigneeId: f.ids.mem, priority: "high", due: Date.now() + 86_400_000 }, tok(a));
+      if (r.ok) must(await s.call("mutation", "tasks:remove", { taskId: r.value }, tok("mgr")));
+      return r;
+    },
+  },
+  {
+    name: "tasks:update",
+    need: "taskManage",
+    run: (a, sp) => s.call("mutation", "tasks:update", { taskId: f.tasks[sp], priority: "normal", due: null }, tok(a)),
+  },
+  {
+    name: "tasks:assign",
+    need: "taskManage",
+    run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:assign", { taskId, assigneeId: f.ids.mgr }, tok(a))),
+  },
+  {
+    name: "tasks:setStatus (new → inProgress)",
+    need: "taskWork",
+    run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:setStatus", { taskId, status: "inProgress" }, tok(a))),
+  },
+  {
+    name: "tasks:addLink (a file of the same space)",
+    need: "taskWork",
+    run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:addLink", { taskId, type: "file", id: f.files[sp] }, tok(a))),
+  },
+  {
+    name: "tasks:removeLink",
+    need: "taskWork",
+    run: (a, sp) =>
+      withTask(sp, async (taskId) => {
+        if (sp !== "P_mem") must(await s.call("mutation", "tasks:addLink", { taskId, type: "file", id: f.files[sp] }, tok("mgr")));
+        return s.call("mutation", "tasks:removeLink", { taskId, type: "file", id: f.files[sp] }, tok(a));
+      }),
+  },
+  {
+    name: "tasks:setThread",
+    need: "taskWork",
+    run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:setThread", { taskId, threadId: "thread-123" }, tok(a))),
+  },
+  { name: "tasks:comment", need: "taskComment", run: (a, sp) => s.call("mutation", "tasks:comment", { taskId: f.tasks[sp], body: `تعليق من ${a}` }, tok(a)) },
+  {
+    name: "tasks:remove",
+    need: "taskManage",
+    run: (a, sp) =>
+      withTask(sp, async (taskId) => {
+        const r = await s.call("mutation", "tasks:remove", { taskId }, tok(a));
+        return r;
+      }),
+  },
 ];
 
+/** Runs `fn` on a fresh task in the space (mgr creates it for mem, removes it after). P_mem: a dead id. */
+async function withTask(sp: SpaceKey, fn: (taskId: string) => Promise<Result>): Promise<Result> {
+  if (sp === "P_mem") return fn(f.tasks.P_mem);
+  const taskId = must(await s.call("mutation", "tasks:create", { spaceId: f.spaces[sp], title: "مهمة مؤقتة", assigneeId: f.ids.mem }, tok("mgr")));
+  try {
+    return await fn(taskId);
+  } finally {
+    await s.call("mutation", "tasks:remove", { taskId }, tok("mgr"));
+  }
+}
 describe("permission matrix", () => {
   for (const op of OPS) {
     for (const sp of SPACES) {
@@ -168,7 +241,41 @@ describe("workspace-level functions", () => {
     test(`spaces:mine | ${a} → ${allowed ? "allowed" : "denied"}`, async () => {
       expect((await s.call("query", "spaces:mine", {}, tok(a))).ok).toBe(allowed);
     });
+    // Phase 3: per-user lists. Who may call them; what they contain is checked below and in acceptance.
+    for (const [fn, kind] of [
+      ["tasks:mine", "query"],
+      ["notifications:list", "query"],
+      ["notifications:unreadCount", "query"],
+      ["notifications:markAllRead", "mutation"],
+    ] as const) {
+      test(`${fn} | ${a} → ${allowed ? "allowed" : "denied"}`, async () => {
+        expect((await s.call(kind, fn, {}, tok(a))).ok).toBe(allowed);
+      });
+    }
   }
+
+  test("tasks:mine lists exactly the visible tasks assigned to me", async () => {
+    for (const a of ACTORS) {
+      const r = await s.call("query", "tasks:mine", {}, tok(a));
+      if (!r.ok) continue;
+      const ids = r.value.map((t: any) => t._id);
+      const expected = a === "mem" ? [f.tasks.S_plain, f.tasks.S_every, f.tasks.S_sens] : [];
+      for (const id of expected) expect(ids).toContain(id);
+      if (a !== "mem") for (const sp of SPACES) expect(ids).not.toContain(f.tasks[sp]);
+      expect(ids).not.toContain(f.tasks.P_mem);
+    }
+  });
+
+  test("notifications:list shows a task notification only to people who can view the task", async () => {
+    for (const sp of SPACES) {
+      for (const a of ACTORS) {
+        const r = await s.call("query", "notifications:list", {}, tok(a));
+        if (!r.ok) continue;
+        const has = r.value.some((n: any) => n.taskId === f.tasks[sp]);
+        if (has) expect(expectedAllowed(a, sp, "taskView")).toBe(true);
+      }
+    }
+  });
 
   test("every public function is covered by this matrix", async () => {
     const res = await fetch(`${s.url}/_admin/api/functions`, { method: "POST", headers: { Authorization: `Bearer ${s.adminKey}` }, body: "{}" });
@@ -182,6 +289,10 @@ describe("workspace-level functions", () => {
       "files:move",
       "files:copy",
       "account:me",
+      "tasks:mine",
+      "notifications:list",
+      "notifications:unreadCount",
+      "notifications:markAllRead",
     ]);
     expect(publicFns.filter((n) => !covered.has(n))).toEqual([]);
     // Nothing public writes or deletes audit rows, and no component function is exposed.

@@ -17,7 +17,7 @@ export async function writeAudit(
 }
 
 /** Detail fields that name file contents; hidden from viewers who can't read the space. */
-const NAME_FIELDS = new Set(["fileName", "name", "fromName", "toName"]);
+const NAME_FIELDS = new Set(["fileName", "name", "fromName", "toName", "taskTitle"]);
 
 export const list = query({
   args: {

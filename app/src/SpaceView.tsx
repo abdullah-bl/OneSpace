@@ -2,10 +2,14 @@ import { useRef, useState } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { api, badge, errorText, formatDate, formatSize, ROLE_LABELS, type SpaceInfo } from "./lib";
 import { AuditTable } from "./AuditView";
+import { TaskBoard } from "./TasksView";
+import { SpaceInstructions } from "./SpaceInstructions";
 
 export function SpaceView({ spaceId, spaces }: { spaceId: string; spaces: SpaceInfo[] }) {
   const space = spaces.find((s) => s._id === spaceId)!;
-  const [tab, setTab] = useState<"files" | "members" | "audit">("files");
+  const [tab, setTab] = useState<"files" | "members" | "audit" | "tasks" | "instructions">("files");
+  // Tasks are for the space's named members (not "everyone" readers); the server enforces it too.
+  const hasTasks = space.kind === "shared" && ["manager", "member", "reader"].includes(space.myRole);
   const b = badge(space);
   return (
     <div className="mx-auto max-w-5xl space-y-4">
@@ -21,13 +25,17 @@ export function SpaceView({ spaceId, spaces }: { spaceId: string; spaces: SpaceI
       {space.kind === "shared" && (
         <div className="flex gap-1 border-b border-slate-200">
           <Tab on={tab === "files"} onClick={() => setTab("files")}>الملفات</Tab>
+          {hasTasks && <Tab on={tab === "tasks"} onClick={() => setTab("tasks")}>المهام</Tab>}
           <Tab on={tab === "members"} onClick={() => setTab("members")}>الأعضاء</Tab>
+          <Tab on={tab === "instructions"} onClick={() => setTab("instructions")}>التعليمات</Tab>
           {space.canManage && <Tab on={tab === "audit"} onClick={() => setTab("audit")}>سجل المساحة</Tab>}
         </div>
       )}
       {tab === "files" && <FilesPanel space={space} spaces={spaces} />}
       {tab === "members" && space.kind === "shared" && <MembersPanel space={space} />}
       {tab === "audit" && space.canManage && <AuditTable args={{ spaceId: space._id }} />}
+      {tab === "tasks" && hasTasks && <TaskBoard space={space} />}
+      {tab === "instructions" && space.kind === "shared" && <SpaceInstructions space={space} />}
     </div>
   );
 }
