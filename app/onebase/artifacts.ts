@@ -7,6 +7,7 @@
 //   - any source in a sensitive space S ..... S only, classification "sensitive"; it leaves S
 //                                             only with a transfer approved by a manager of S.
 //   - sensitive sources mixed with others ... refused
+//   - anything saved in a sensitive space ... classified sensitive with that space as origin
 // Content is returned by mutations (open/export) so opens of sensitive outputs are audited.
 
 import { OneBaseError, v } from "onebase/values";

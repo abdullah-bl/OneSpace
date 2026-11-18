@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, STATUS_LABELS } from "./lib";
+import { IdentifiersCell } from "./MyRecordsView";
 
 export function AdminView() {
   const users = useQuery(api.admin.users);
@@ -40,6 +41,7 @@ export function AdminView() {
                 <th className="th">البريد</th>
                 <th className="th">الحالة</th>
                 <th className="th">الدور</th>
+                <th className="th" title="تُطابَق بها سجلات الموظف (بياناتي). يضعها المدير فقط">الهوية / الوظيفي</th>
                 <th className="th">أُنشئ</th>
                 <th className="th"></th>
               </tr>
@@ -63,6 +65,9 @@ export function AdminView() {
                     ) : (
                       "—"
                     )}
+                  </td>
+                  <td className="td">
+                    <IdentifiersCell key={`${u.nationalId}|${u.employeeNo}`} userId={u._id} nationalId={u.nationalId} employeeNo={u.employeeNo} onError={setError} />
                   </td>
                   <td className="td text-xs text-slate-500">{formatDate(u.createdAt)}</td>
                   <td className="td">

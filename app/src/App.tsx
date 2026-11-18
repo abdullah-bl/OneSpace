@@ -4,6 +4,7 @@ import { api, badge, errorText, ROLE_LABELS, STATUS_LABELS } from "./lib";
 import { SpaceView } from "./SpaceView";
 import { AdminView } from "./AdminView";
 import { AuditView } from "./AuditView";
+import { MyRecordsView } from "./MyRecordsView";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -85,7 +86,7 @@ function Gate() {
   return <Shell me={me} />;
 }
 
-type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" };
+type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" } | { kind: "mine" };
 
 function Shell({ me }: { me: { name: string | null; email: string | null; workspaceRole: string | null; workspaceName: string | null } }) {
   const spaces = useQuery(api.spaces.mine);
@@ -113,6 +114,9 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
                 🔒 مساحتي
               </NavItem>
             ))}
+            <NavItem active={current?.kind === "mine"} onClick={() => setRoute({ kind: "mine" })}>
+              📇 بياناتي
+            </NavItem>
           </div>
           <div>
             <div className="mb-1 px-2 text-xs font-semibold text-slate-400">المساحات المشتركة</div>
@@ -152,6 +156,7 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
         <ErrorBoundary key={JSON.stringify(current)}>
           {current?.kind === "space" && spaces && <SpaceView spaceId={current.id} spaces={spaces} />}
           {current?.kind === "admin" && <AdminView />}
+          {current?.kind === "mine" && <MyRecordsView />}
           {current?.kind === "audit" && <AuditView isAdmin={isAdmin} spaces={spaces ?? []} />}
         </ErrorBoundary>
       </main>
