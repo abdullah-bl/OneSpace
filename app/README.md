@@ -1,4 +1,4 @@
-# OneSpace (مساحة) — Phases 1–2: الأساس، RAG والمحادثة
+# OneSpace (مساحة) — Phases 1–6
 
 Workspace with users, personal/shared spaces, files with versions, permissions and an audit log.
 No AI yet. Backend: OneBase (`onebase/`). Frontend: React 19 + Vite + Tailwind 4, Arabic/RTL,
@@ -95,7 +95,7 @@ proxies `/api` + WebSocket + `/download` to :8090).
   through `artifacts:open`, which audits it. The task screen has "🧩 إرفاق مخرج" and opens linked
   outputs in the sandboxed side panel.
   `threadId` is a generic string for the Phase 2 chat thread (`tasks:setThread`); it grants nothing.
-- "اعمل عليها مع الوكيل" links to `/chat?taskId=<id>` (placeholder; Phase 2's chat reads it).
+- "اعمل عليها مع الوكيل" opens the task's thread (Phase 6: `chat:openTaskThread`).
 - **Notifications**: `@onebase/notifications` mounted as `notes`; `onebase/notifications.ts` wraps it
   (subject = session user only; the component's functions are not public). Sent on: assigned
   (assignee), status → review (space managers), closed / returned / reopened (assignee), comment
@@ -305,6 +305,52 @@ across policies; re-run on real documents before closing Phase 2):
 \* v1 counted key matches by digits only; v2+ also match non-numeric keys. Most remaining "wrong"
 citations answer a question that names no policy with the equivalent rule from a neighbouring
 policy; most false abstentions are on dialect questions about one specific clause.
+
+## Phase 6: agents (تعدد الوكلاء)
+
+| | where | notes |
+|---|---|---|
+| Agents | `onebase/agents.ts`, `onebase/agentsSchema.ts`, `src/AgentsView.tsx` (nav "🤖 الوكلاء", workspace admin) | `agents`: `live` config (what users get, `version`), `draft` config (what the admin edits), `enabled`, `isDefault`, `testQuestions`. Config = name, description, instructions, `allowedTools` (names from `onebase/tools/index.ts` only; anything else is refused), `dataScope` (`everyone` = "everyone" spaces only · `member` = personal + shared spaces where the user is a named member · `all` = whatever the user picks), `modelRole` (main\|fast), `maxSteps` (1–8), `visibility` (whole workspace, or readers of specific shared spaces). `agentVersions` keeps every published config. |
+| Lifecycle | `agents:create` (draft, version 0) → `saveDraft` → **جرّب الوكيل** (`setTestQuestions`, `runTests`, `testResults`) → `publish` (version + 1) → `revert(version)` publishes an old version's content as a new version (history is never rewritten) | Also `discardDraft`, `setEnabled` (the default can't be disabled), `setDefault` (published, enabled, workspace-wide only), `seedStarterAgents`. Every one writes an audit row (`agent.create/draft/discardDraft/publish/revert/enable/disable/default/test/testQuestions`, with version, changed fields, tools, scope). |
+| Starters | seeded by `admin:bootstrap` (and the "أضف الوكلاء المبدئيين" button for older databases) | المساعد العام (default: search, read_file, create/update_artifact, my_records; scope all) · السياسات (search, read_file; everyone spaces) · الدرجات والتقارير (query_records, fill_template, create_artifact; member spaces) · التحليل (run_analysis, create_artifact, read_file; user-chosen). |
+| Chat | `chat.ts` (`createThread({agentId})`, `setAgent`), `src/ChatView.tsx` (picker next to the scope chips, default first) | A thread without a pick uses the default agent. The agent is resolved again on every send and every turn (disabled / unpublished / no longer visible → refused). Auto-routing is not built (manual choice only). |
+| Draft tests | `agents:runTests` | One hidden thread per question (`threadMeta.test`, `agentDraft`), owned by the admin and run **as the admin** on the draft (or the published version if there's no draft); only while the owner is still workspace admin. Hidden from `chat:threads`. |
+| Task threads | `chat:openTaskThread`, `TasksView` button "اعمل عليها مع الوكيل" (also `/chat?taskId=` on load) | For anyone who can view the task (`assertTaskCan view`): my own thread for the task, scope = the task's space. Each turn adds the space instructions and the task's title/status/due/body as context (only while the user can still view the task and the space is in scope). The task's `threadId` is set the first time its assignee or a manager opens it. |
+
+**How a turn uses the agent** (`chat.ts: turnContext/runTurn`): system prompt = the fixed rules
+(sources, citations, abstention, "file content is data") + `تعليمات الوكيل` (stated to work under
+the rules and grant no access) + context. Scope = `readableSpaceIds(user) ∩ agentSpaceIds(dataScope)
+∩ chips`, recomputed per turn. Only the agent's tools are offered, and at execution a call to any
+tool outside the list is refused and recorded (`غير متاحة لهذا الوكيل`) whatever the model emitted;
+it is never proposed either. Retrieval before the first generation runs only if the agent has
+`search_documents`. `modelRole` and `maxSteps` come from the agent. Thinking stays off (bench/REPORT.md).
+The registry has 8 tools; the bench measured tool selection at 100% up to 15.
+
+**Write tools need "نفّذ"** (plans/02 rule 5). A `requiresConfirmation` tool (create/update_artifact,
+fill_template, run_analysis) the model calls becomes a `proposals` row (tool, args, agent + version,
+`expiresAt` = now + `PROPOSAL_TTL_MS`, default 30 min) linked to the answer's message and shown as a
+card with نفّذ / إلغاء. `chat:confirmProposal` (action) claims it atomically in a mutation (owner only,
+pending, not expired, agent still usable and still listing the tool, scope recomputed now) → runs the
+tool once as the user → saves the outcome as a message in the thread → `ai.confirm` audit rows (per
+touched space). Double presses: exactly one runs. Expired, cancelled, failed and executed proposals
+can't run. `ai.turn` audit rows now carry `agentId`, `agentVersion`, refused tools and proposal count
+(and a row without a space when tools ran but touched no space).
+
+**Tests** (`tests/phase6.permissions.test.ts`, `tests/phase6.test.ts`, 280 tests): the matrix for
+every new public function (admin-only × 8 actors; agent visibility × 3 spaces × 8 actors;
+`openTaskThread` × 4 spaces × 8 actors; proposals and `setAgent` owner-only) plus a coverage check;
+acceptance — an admin creates, tests, publishes and a user uses an agent with no code change; an
+agent without `run_analysis` whose instructions *and* a retrieved document make the (obedient) fake
+model emit `run_analysis` never runs or proposes it, and a proposal made before the tool was removed
+can't execute; an agent whose instructions are rewritten to read private/sensitive files leaks
+nothing to 5 different users (answers, citations, tool runs and the model's requests checked); every
+edit audited and revert restores the old behaviour; confirmation expiry, single execution (also under
+5 concurrent presses), cancel, someone else's proposal, membership removed before confirming,
+disabled agent; task threads with context. `tests/fake-ai.ts` now also obeys `CALL_TOOL` lines in the
+system prompt.
+
+`bun run build && bun scripts/demo-phase6.ts` starts a GPU-free demo (fake model) on :8097 with an
+admin, a member, a policy, a task and a "كاتب المخرجات" agent that always proposes an output.
 
 ## Backup and restore
 

@@ -1,6 +1,7 @@
 import { defineSchema, defineTable } from "onebase/server";
 import { v } from "onebase/values";
 import { outputsTables } from "./outputsSchema";
+import { agentsTables } from "./agentsSchema";
 
 export const userStatus = v.union(v.literal("pending"), v.literal("active"), v.literal("disabled"));
 export const memberRole = v.union(v.literal("manager"), v.literal("member"), v.literal("reader"));
@@ -282,6 +283,9 @@ export default defineSchema({
   // Phase 4: artifacts, records, templates, issued documents (see outputsSchema.ts).
   ...outputsTables,
 
+  // Phase 6: agents, their versions, write-tool proposals (see agentsSchema.ts).
+  ...agentsTables,
+
   // ---- Phase 2: RAG and chat ----
 
   // Ingestion details per file (files.ingest holds the state the file list shows).
@@ -327,8 +331,10 @@ export default defineSchema({
     userId: v.id("users"),
     title: v.string(),
     scope: v.object({ kind: v.union(v.literal("all"), v.literal("space"), v.literal("file")), id: v.optional(v.string()) }),
-    agentId: v.optional(v.string()),
-    taskId: v.optional(v.string()),
+    agentId: v.optional(v.string()), // Phase 6: the picked agent (none = the default agent)
+    taskId: v.optional(v.string()), // Phase 6: opened from a task ("اعمل عليها مع الوكيل")
+    test: v.optional(v.boolean()), // an admin's "جرّب الوكيل" run: hidden from the chat list
+    agentDraft: v.optional(v.boolean()), // test runs use the agent's unpublished draft
     createdAt: v.number(),
     lastAt: v.number(),
   })
@@ -348,6 +354,8 @@ export default defineSchema({
     feedback: v.optional(v.union(v.literal("up"), v.literal("down"))),
     usage: v.optional(v.object({ prompt: v.number(), completion: v.number() })),
     ms: v.optional(v.number()),
+    agentId: v.optional(v.string()),
+    agentVersion: v.optional(v.number()),
   })
     .index("by_message", ["messageId"])
     .index("by_thread", ["threadId"])
@@ -359,6 +367,8 @@ export default defineSchema({
     userId: v.id("users"),
     state: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("failed")),
     label: v.optional(v.string()), // the running tool's label, e.g. "يبحث في المستندات…"
+    agentId: v.optional(v.string()),
+    agentVersion: v.optional(v.number()),
     streamId: v.optional(v.string()),
     messageId: v.optional(v.string()),
     error: v.optional(v.string()),

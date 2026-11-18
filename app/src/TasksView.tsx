@@ -30,9 +30,14 @@ function moveLabel(from: string, to: string) {
   return STATUS[to]?.label ?? to;
 }
 
-/** Placeholder for "اعمل عليها مع الوكيل": the chat (Phase 2) reads ?taskId= from this route. */
+/** "اعمل عليها مع الوكيل": a link to the task's thread (App reads ?taskId= on load; in-app clicks use an event). */
 export function chatUrlForTask(taskId: string) {
   return `/chat?taskId=${encodeURIComponent(taskId)}`;
+}
+
+function openTaskChat(e: { preventDefault: () => void }, taskId: string) {
+  e.preventDefault();
+  window.dispatchEvent(new CustomEvent("onespace:task-chat", { detail: taskId }));
 }
 
 type TaskRow = {
@@ -245,8 +250,8 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
               {moveLabel(task.status, s)}
             </button>
           ))}
-          {(task.isAssignee || task.canManage) && task.status !== "done" && (
-            <a className="btn-ghost border border-teal-200 text-teal-800" href={chatUrlForTask(task._id)} title="يفتح محادثة بسياق المهمة (تأتي مع المحادثات)">
+          {task.status !== "done" && (
+            <a className="btn-ghost border border-teal-200 text-teal-800" href={chatUrlForTask(task._id)} onClick={(e) => openTaskChat(e, task._id)} title="يفتح محادثتك الخاصة بهذه المهمة: نطاقها مساحة المهمة، وسياقها تعليمات المساحة ونص المهمة">
               🤖 اعمل عليها مع الوكيل
             </a>
           )}
