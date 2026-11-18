@@ -386,15 +386,28 @@ export const setThread = mutation({
 });
 
 export const comment = mutation({
-  args: { taskId: v.id("tasks"), body: v.string() },
-  handler: async (ctx, { taskId, body }) => {
+  // mentions: user ids picked from mentions:people. Only people who can view the task are
+  // notified and get a "الإشارات" row; anyone else is ignored silently (mentions.ts).
+  args: { taskId: v.id("tasks"), body: v.string(), mentions: v.optional(v.array(v.string())) },
+  handler: async (ctx, { taskId, body, mentions }) => {
     const me = await requireActive(ctx);
     const { task, space } = await taskAccess(ctx, me, taskId, "comment");
     const text = cleanBody(body, COMMENT_MAX);
     if (!text) throw new OneBaseError("التعليق فارغ");
-    const id = await ctx.db.insert("taskComments", { taskId: task._id, authorId: me.userId, body: text, createdAt: Date.now() });
+    if ((mentions?.length ?? 0) > 20) throw new OneBaseError("إشارات كثيرة في تعليق واحد");
+    const now = Date.now();
+    const id = await ctx.db.insert("taskComments", { taskId: task._id, authorId: me.userId, body: text, createdAt: now });
     const preview = text.length > 140 ? text.slice(0, 140) + "…" : text;
-    await notifyMany(ctx, me, space, task, [task.assigneeId, ...(await managersOf(ctx, space._id))], "task.comment", `تعليق من ${who(me)} على: ${task.title}`, preview);
+    const mentioned = new Set<string>();
+    for (const raw of new Set(mentions ?? [])) {
+      const uid = ctx.db.normalizeId("users", raw);
+      if (!uid || uid === me.userId || !(await canView(ctx, uid, space))) continue;
+      mentioned.add(uid);
+      await ctx.db.insert("mentions", { userId: uid, byId: me.userId, taskId: task._id, spaceId: space._id, commentId: id, excerpt: preview, createdAt: now });
+      await notify(ctx, uid, { kind: "task.mention", title: `أشار إليك ${who(me)} في: ${task.title}`, body: preview, taskId: task._id, spaceId: space._id });
+    }
+    const others = [task.assigneeId, ...(await managersOf(ctx, space._id))].filter((u) => !mentioned.has(u));
+    await notifyMany(ctx, me, space, task, others, "task.comment", `تعليق من ${who(me)} على: ${task.title}`, preview);
     return id;
   },
 });

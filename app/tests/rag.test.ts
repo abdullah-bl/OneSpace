@@ -137,7 +137,9 @@ describe("the index follows the files", () => {
     must(await s.call("mutation", "files:remove", { fileId: id }, tok("mgr")));
     const after = await ask(s, tok("mem"), t, "DELKEY-555 الجرد السنوي");
     expect(after.citations.some((c: any) => c.fileId === id)).toBe(false);
-    expect(after.abstained).toBe(true);
+    // UX redesign: the default agent is a general assistant, so it answers in general terms
+    // instead of abstaining; the deleted file's content still never reaches the answer.
+    expect(after.text).not.toContain("مذكرة مؤقتة");
   });
 
   test("a file moved from my space to a shared one: its members find it, others still don't", async () => {
@@ -154,8 +156,25 @@ describe("the index follows the files", () => {
 });
 
 describe("answers", () => {
-  test("a question outside the documents gets a clear abstention, without calling the model", async () => {
+  // UX redesign (intentional change): chats are free-form. The default agent answers a general
+  // question from general knowledge, with no citations and no abstention; a document-only agent
+  // (السياسات) keeps the Phase 2 behaviour below.
+  test("the default agent answers a general question without documents (no citations, no abstention)", async () => {
     const t = await newThread(s, tok("mem"));
+    const before = ai.requests.length;
+    const a = await ask(s, tok("mem"), t, "ما عاصمة البرازيل؟");
+    expect(a.abstained).toBe(false);
+    expect(a.citations).toEqual([]);
+    expect(a.text).toContain("GENERALANSWER-1");
+    const chats = ai.requests.slice(before).filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format);
+    expect(chats.length).toBe(1);
+    // No unrelated passage was put in front of the model.
+    expect(JSON.stringify(chats[0].body.messages)).not.toContain("(ملف:");
+  });
+
+  test("a document-only agent: a question outside the documents gets a clear abstention, without calling the model", async () => {
+    const policies = must(await s.call("query", "agents:available", {}, tok("mem"))).find((a: any) => a.name === "السياسات")._id;
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: policies }, tok("mem")));
     const before = ai.requests.length;
     const a = await ask(s, tok("mem"), t, "ما عاصمة البرازيل؟");
     expect(a.abstained).toBe(true);

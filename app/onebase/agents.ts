@@ -47,13 +47,15 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
     isDefault: true,
     config: {
       name: "المساعد العام",
-      description: "يجيب من مستنداتك المتاحة لك باستشهادات، ويُنشئ مخرجات عند طلبك.",
-      instructions: "ساعد الموظف في عمله اليومي من مستنداته. إن طلب مخرجاً (ملخصاً، جدولاً، مسودة) فاقترح إنشاءه، وسيؤكده بنفسه.",
+      description: "مساعد لكل شيء: يكتب ويترجم ويلخّص ويجيب، ويرجع إلى ملفاتك ويستشهد بها حين يكون السؤال عنها.",
+      instructions:
+        "ساعد الموظف في أي طلب: كتابة، صياغة، ترجمة، تلخيص، شرح، أسئلة عامة. حين يسأل عن ملفاته أو أنظمة الإدارة فارجع إلى ملفاته واستشهد بها. إن طلب مخرجاً محفوظاً (ملخصاً، جدولاً، مسودة) فاقترح إنشاءه، وسيؤكده بنفسه.",
       allowedTools: ["search_documents", "read_file", "create_artifact", "update_artifact", "my_records"],
       dataScope: "all",
       modelRole: "main",
       maxSteps: 4,
       visibility: workspaceWide,
+      grounding: "open",
     },
     testQuestions: ["ما مدة إجازة الأمومة؟"],
   },
@@ -69,6 +71,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       modelRole: "main",
       maxSteps: 4,
       visibility: workspaceWide,
+      grounding: "documents",
     },
     testQuestions: ["ما مدة إجازة الأمومة؟", "كم ساعة الدوام في رمضان؟"],
   },
@@ -85,6 +88,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       modelRole: "main",
       maxSteps: 5,
       visibility: workspaceWide,
+      grounding: "documents",
     },
     testQuestions: ["كم عدد المتدربين في السجل؟"],
   },
@@ -101,6 +105,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       modelRole: "main",
       maxSteps: 5,
       visibility: workspaceWide,
+      grounding: "open",
     },
     testQuestions: ["حلّل ملف الدرجات وأعطني المتوسط"],
   },
@@ -128,7 +133,23 @@ export async function seedStarters(ctx: MutationCtx, by?: Id<"users">): Promise<
     await writeAudit(ctx, { userId: by, action: "agent.create", resourceType: "agent", resourceId: agentId, detail: { name: s.config.name, version: 1, tools: s.config.allowedTools.join(","), starter: true } });
     added++;
   }
+  // UX redesign: the starter default agent from before (no `grounding`) becomes a general
+  // assistant ("open") as a new published version, keeping whatever else the admin changed.
+  const def = await ctx.db.query("agents").withIndex("by_key", (q) => q.eq("key", "default")).first();
+  if (def?.live && def.live.grounding === undefined) {
+    const now = Date.now();
+    const config = { ...def.live, grounding: "open" as const };
+    const version = def.version + 1;
+    await ctx.db.insert("agentVersions", { agentId: def._id, version, config, publishedBy: by, publishedAt: now });
+    await ctx.db.patch(def._id, { live: config, version, updatedAt: now });
+    await writeAudit(ctx, { userId: by, action: "agent.publish", resourceType: "agent", resourceId: def._id, detail: { name: config.name, version, previousVersion: def.version, changes: "grounding", upgrade: true } });
+  }
   return added;
+}
+
+/** "open" unless the agent was explicitly made document-only (or predates the setting). */
+export function groundingOf(cfg: AgentConfig): "open" | "documents" {
+  return cfg.grounding === "open" ? "open" : "documents";
 }
 
 // ---------------------------------------------------------------- validation
@@ -164,6 +185,7 @@ async function normalizeConfig(ctx: Ctx, workspaceId: Id<"workspaces">, c: Agent
     modelRole: c.modelRole,
     maxSteps: steps,
     visibility: c.visibility.kind === "spaces" ? { kind: "spaces", spaceIds } : workspaceWide,
+    ...(c.grounding ? { grounding: c.grounding } : {}),
   };
 }
 
@@ -272,6 +294,34 @@ export async function effectiveScope(
   return { spaceIds: allowed };
 }
 
+/**
+ * Narrows a turn's scope to what the question @mentions. Only ever an intersection with `base`
+ * (readable ∩ agent scope ∩ thread scope), so a mention can't widen anything:
+ *   files only  → just those files (each must already be inside `base`)
+ *   any space   → those spaces plus the spaces of any mentioned files (∩ base)
+ */
+export async function narrowByMentions(
+  ctx: Ctx,
+  base: { spaceIds: Id<"spaces">[]; fileIds?: string[] },
+  mentions: { kind: "file" | "space"; id: string }[] | undefined,
+): Promise<{ spaceIds: Id<"spaces">[]; fileIds?: string[] }> {
+  if (!mentions?.length) return base;
+  const spaces = new Set(mentions.filter((m) => m.kind === "space").map((m) => m.id));
+  const files: { id: string; spaceId: string }[] = [];
+  for (const m of mentions) {
+    if (m.kind !== "file") continue;
+    const id = ctx.db.normalizeId("files", m.id);
+    const f = id ? await ctx.db.get(id) : null;
+    if (f && f.status === "active") files.push({ id: f._id, spaceId: f.spaceId });
+  }
+  if (spaces.size) {
+    for (const f of files) spaces.add(f.spaceId);
+    return { spaceIds: base.spaceIds.filter((s) => spaces.has(s)), fileIds: base.fileIds };
+  }
+  const ok = files.filter((f) => base.spaceIds.includes(f.spaceId as Id<"spaces">) && (!base.fileIds || base.fileIds.includes(f.id)));
+  return { spaceIds: base.spaceIds.filter((s) => ok.some((f) => f.spaceId === s)), fileIds: ok.map((f) => f.id) };
+}
+
 // ---------------------------------------------------------------- public: users
 
 /** Agents I may pick in the chat box (published, enabled, visible to me). The default comes first. */
@@ -289,6 +339,7 @@ export const available = query({
         isDefault: a.isDefault,
         tools: a.live.allowedTools.map((t) => registry[t]?.label ?? t),
         dataScope: DATA_SCOPE_LABELS[a.live.dataScope],
+        grounding: groundingOf(a.live),
       });
     }
     return out.sort((x, y) => Number(y.isDefault) - Number(x.isDefault) || x.name.localeCompare(y.name, "ar"));
