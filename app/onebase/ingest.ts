@@ -79,6 +79,13 @@ export async function moveIndex(ctx: MutationCtx, fileId: Id<"files">) {
   const row = await indexRow(ctx, fileId);
   if (!file || !row) return;
   if (row.entryId) await ctx.components.docs.delete({ entryId: row.entryId });
+  if (row.state === "pending" || row.state === "processing") {
+    // Moved mid-ingest: start over in the new space (keyword rows go too, so nothing serves from the old one).
+    for (const c of await ctx.db.query("chunks").withIndex("by_file", (q) => q.eq("fileId", fileId)).collect()) await ctx.db.delete(c._id);
+    await ctx.db.patch(row._id, { spaceId: file.spaceId, entryId: undefined });
+    await scheduleIngest(ctx, fileId);
+    return;
+  }
   const rows = await ctx.db.query("chunks").withIndex("by_file", (q) => q.eq("fileId", fileId)).collect();
   for (const c of rows) await ctx.db.patch(c._id, { spaceId: file.spaceId });
   let entryId: string | undefined;
