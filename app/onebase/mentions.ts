@@ -1,9 +1,9 @@
 // @mentions (UX redesign).
 //
 // Two kinds, decided deliberately differently:
-//  - In the chat composer, "@" lists files, spaces and agents. Mentioning a file or a space only
+//  - In the chat composer, "@" lists files and spaces (agents are chosen in the picker). Mentioning a file or a space only
 //    *narrows* that question's scope (chat.send → turn.mentions → agents.narrowByMentions, always
-//    intersected with readable ∩ agent scope ∩ thread scope); mentioning an agent picks it. Chats
+//    intersected with readable ∩ agent scope ∩ thread scope). Chats
 //    are private, so there are no people to mention there.
 //  - In a task comment, "@" lists people: the task space's named members who can view the task.
 //    A mention notifies them and lands in their "الإشارات" list, shown only while they can still
@@ -16,12 +16,11 @@ import { v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type QueryCtx } from "./_generated/server";
 import { assertCan, assertTaskCan, currentSpaceRole, Denied, readableSpaceIds, requireActive, taskRoleAllows } from "./access";
-import { visibleTo } from "./agents";
 
 const norm = (s: string) => s.toLowerCase().replace(/[ً-ْـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
 const matches = (name: string, q: string) => !q || norm(name).includes(q);
 
-/** What "@" offers in the chat composer: files and spaces I can read (in the space, for a space chat) and agents I may use. */
+/** What "@" offers in the chat composer: files and spaces I can read (in the space, for a space chat). */
 export const suggest = query({
   args: { q: v.optional(v.string()), spaceId: v.optional(v.string()) },
   handler: async (ctx, { q, spaceId }) => {
@@ -41,12 +40,9 @@ export const suggest = query({
         if (f.status === "active" && matches(f.name, needle)) files.push({ kind: "file", id: f._id, name: f.name, detail: name, updatedAt: f.updatedAt });
       }
     }
+    // Agents are not offered here: they're picked in the composer's agent picker. Mixing them with
+    // files made "@name" switch the whole chat to an agent the user took for a file.
     const agents: { kind: "agent"; id: string; name: string; detail: string }[] = [];
-    for (const a of await ctx.db.query("agents").collect()) {
-      if (!a.enabled || !a.live || !matches(a.live.name, needle)) continue;
-      if (!(await visibleTo(ctx, me.userId, a.live))) continue;
-      agents.push({ kind: "agent", id: a._id, name: a.live.name, detail: a.live.description.slice(0, 80) });
-    }
     return {
       files: files.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8).map(({ updatedAt: _, ...f }) => f),
       spaces: spaces.slice(0, 6),

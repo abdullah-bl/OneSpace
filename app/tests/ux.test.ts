@@ -191,6 +191,32 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
     expect(must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).agentId).toBe(policies);
   }, 30_000);
 
+  test("an agent that can't read the @file says so and points to the general assistant (no bare 'not found', no model call)", async () => {
+    const agents = must(await s.call("query", "agents:available", {}, tok("mem")));
+    const grades = agents.find((x: any) => x.name === "الدرجات والتقارير")._id;
+    const def = agents.find((x: any) => x.isDefault);
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: grades }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: t, text: "لخّص الملف NOREADQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    const r = await waitAnswers(tok("mem")!, t, 1);
+    const text: string = r.messages.at(-1).text;
+    expect(text).toContain("لا يستطيع قراءة");
+    expect(text).toContain(FILE_NAMES.P_mem);
+    expect(text).toContain(def.name);
+    expect(text).not.toContain("لم أجد هذا");
+    expect(chatRequestsWith(ai, "NOREADQ-1")).toEqual([]);
+    // The same question with the default agent reads and cites the file.
+    const t2 = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: t2, text: "لخّص الملف NOREADQ-2", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    const r2 = await waitAnswers(tok("mem")!, t2, 1);
+    expect(r2.messages.at(-1).citations.every((c: any) => c.fileId === f.files.P_mem)).toBe(true);
+    expect(r2.messages.at(-1).citations.length).toBeGreaterThan(0);
+  }, 30_000);
+
+  test("mentions:suggest offers files and spaces only (agents are picked in the agent picker)", async () => {
+    const r = must(await s.call("query", "mentions:suggest", { q: "" }, tok("mem")));
+    expect(r.agents).toEqual([]);
+  });
+
   test("mentions:suggest lists only what I can read", async () => {
     for (const a of ACTORS) {
       const r = await s.call("query", "mentions:suggest", {}, tok(a));

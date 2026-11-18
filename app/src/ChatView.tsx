@@ -1,6 +1,6 @@
 // The chat (UX redesign): one conversation column like Claude. A new chat starts from the empty
 // state (a few starters) or from a space; the composer has attachments (uploaded to the space or
-// to "مساحتي"), a quiet agent picker and an "@" list of files, spaces and agents. Mentioning a
+// to "مساحتي"), a quiet agent picker and an "@" list of files and spaces. Mentioning a
 // file or a space narrows that question to it (the server intersects; it never widens).
 // Answers stream, render as Markdown with small citation chips that open the source, and can be
 // copied or retried. Write tools arrive as proposal cards ("نفّذ"); their outputs open in a side

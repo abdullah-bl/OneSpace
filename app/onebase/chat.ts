@@ -587,11 +587,23 @@ export const turnContext = internalQuery({
     const base = { turn: { state: turn.state, threadId: turn.threadId, userId: turn.userId } };
     // The agent, resolved now (an admin may have disabled or narrowed it since the question was sent).
     const agent = await resolveAgent(ctx, turn.userId, meta);
-    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], spaceIds: [] as string[], fileIds: undefined, focused: false, titlePending: false, scheduled: false };
+    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false };
     // Scope = readable spaces right now ∩ the agent's data scope ∩ the thread's scope chips
     // (∩ what the question @mentions: narrowing only).
     const { spaceIds, fileIds } = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId, agent.config.dataScope, meta.scope), turn.mentions);
     const context = [...(await turnExtraContext(ctx, turn.userId, meta, spaceIds)), ...(await mentionContext(ctx, turn.mentions, spaceIds, fileIds))];
+    // What the question explicitly points at (@file / @space / a file chat). The sender could read
+    // each of these when sending (checkMentions / thread creation), so naming them back is safe.
+    const asked: string[] = [];
+    const askedFileIds = (turn.mentions ?? []).filter((m) => m.kind === "file").map((m) => m.id);
+    if (meta.scope.kind === "file" && meta.scope.id) askedFileIds.push(meta.scope.id);
+    for (const id of askedFileIds) {
+      const fid = ctx.db.normalizeId("files", id);
+      const f = fid ? await ctx.db.get(fid) : null;
+      if (f && f.status === "active") asked.push(f.name);
+    }
+    const askedSpace = (turn.mentions ?? []).some((m) => m.kind === "space");
+    const defaultAgent = (await ctx.db.query("agents").collect()).find((a) => a.isDefault && a.enabled && a.live);
     const page = await ctx.components.chat.listMessages({ threadId: turn.threadId, paginationOpts: { numItems: 500, cursor: null } });
     const msgs = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text).map((m) => ({ role: m.role as "user" | "assistant", text: m.text! }));
     const lastUser = msgs.map((m) => m.role).lastIndexOf("user");
@@ -616,6 +628,10 @@ export const turnContext = internalQuery({
       fileIds,
       // The question is about specific files (a file-scoped chat or @file mentions): show their best passages whatever their score.
       focused: !!fileIds?.length,
+      // Pointed-at files/spaces, and whether this agent's scope reaches any of them.
+      asked: asked.length || askedSpace ? { files: asked, reachable: spaceIds.length > 0 } : null,
+      defaultAgentName: defaultAgent?.live?.name ?? null,
+      isDefaultAgent: !!defaultAgent && defaultAgent._id === agent.agentId,
       titlePending: !!meta.titlePending,
       scheduled: !!turn.scheduleId,
     };
@@ -870,6 +886,18 @@ export const runTurn = internalAction({
 
     const open = agent.grounding === "open";
     try {
+      // The question names files (or a space) this agent can't read: say so plainly instead of a
+      // bare "not found", and point to the agent that can. No model call, nothing retrieved.
+      const readsFiles = allowed.has("search_documents") || allowed.has("read_file");
+      if (c.asked && (!readsFiles || !c.asked.reachable)) {
+        const what = c.asked.files.length ? (c.asked.files.length === 1 ? `الملف «${c.asked.files[0]}»` : `الملفات ${c.asked.files.map((n) => `«${n}»`).join("، ")}`) : "المساحة التي أشرت إليها";
+        const why = readsFiles ? "لأنها خارج نطاق بياناته" : "لأنه لا يقرأ الملفات";
+        const hint = c.defaultAgentName && !c.isDefaultAgent ? ` اختر «${c.defaultAgentName}» من قائمة الوكيل أسفل صندوق الكتابة ثم أعد السؤال.` : "";
+        const text = `وكيل «${agent.name}» لا يستطيع قراءة ${what} ${why}.${hint}`;
+        await writer.push(text);
+        await finish(text, true);
+        return null;
+      }
       const search = registry.search_documents!;
       // Document-only agents always search first (and abstain on nothing). Open agents look only
       // when there is something in scope to look in, and the model may also search by itself.
