@@ -7,6 +7,7 @@
 //   EMBED_BASE_URL, EMBED_MODEL, EMBED_DIMENSIONS embeddings (dimensions fixed when rag is mounted)
 //   RERANK_BASE_URL, RERANK_MODEL                 reranker (optional: disabled when unset)
 //   EMBED_QUERY_PREFIX, EMBED_DOC_PREFIX          embeddinggemma task prefixes (defaults below)
+//   LLM_ANSWER_MAX_TOKENS=6000                    token budget of an agent step (tool-call code + answer)
 //   LLM_THINKING=1                                let Qwen think before answering (slower)
 //   VISION_BASE_URL, VISION_MODEL                 OCR model if not the main one
 //
@@ -42,6 +43,7 @@ export function aiConfig() {
     },
     rerank: { baseUrl: env("RERANK_BASE_URL"), model: env("RERANK_MODEL") ?? "default", apiKey: env("RERANK_API_KEY") ?? env("LLM_API_KEY") },
     thinking: env("LLM_THINKING") === "1",
+    answerMaxTokens: Math.max(500, Number(env("LLM_ANSWER_MAX_TOKENS") ?? 6000)),
     gpuSlots: Math.max(1, Number(env("GPU_SLOTS") ?? 4)),
   };
 }
@@ -84,6 +86,9 @@ export type ChatOptions = {
   onDelta?: (text: string) => void | Promise<void>;
 };
 
+/** The server couldn't parse the model's tool call (usually cut off by max_tokens mid-JSON). */
+export class ToolCallCutError extends Error {}
+
 function parseArgs(raw: string): unknown {
   try {
     return raw.trim() ? JSON.parse(raw) : {};
@@ -114,7 +119,11 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     body.response_format = { type: "json_object" };
     res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey);
   }
-  if (!res.ok) throw new Error(`النموذج رفض الطلب (HTTP ${res.status}): ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) {
+    const err = (await res.text()).slice(0, 300);
+    if (res.status === 500 && /Failed to parse tool call/i.test(err)) throw new ToolCallCutError("كان استدعاء الأداة أطول من المسموح فانقطع قبل أن يكتمل. جرّب طلباً أبسط أو قسّمه إلى خطوات.");
+    throw new Error(`النموذج رفض الطلب (HTTP ${res.status}): ${err}`);
+  }
 
   if (!stream) {
     const data: any = await res.json();

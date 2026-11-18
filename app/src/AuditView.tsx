@@ -61,11 +61,11 @@ export function AuditView({ isAdmin, spaces }: { isAdmin: boolean; spaces: Space
   };
   return (
     <div className="mx-auto max-w-6xl space-y-4">
-      <h1 className="text-xl font-semibold">سجل التدقيق</h1>
-      <p className="text-sm text-neutral-500">من فعل ماذا، وفي أي مساحة، ومتى. لا يعرض محتوى الملفات، وأسماء الملفات في المساحات التي لا تقرؤها مخفية.</p>
+      <h1 className="page-title">سجل التدقيق</h1>
+      <p className="text-sm text-muted">من فعل ماذا، وفي أي مساحة، ومتى. لا يعرض محتوى الملفات، وأسماء الملفات في المساحات التي لا تقرؤها مخفية.</p>
       <div className="card flex flex-wrap items-end gap-2 p-3 text-sm">
         <label className="space-y-1">
-          <div className="text-xs text-neutral-500">المساحة</div>
+          <div className="text-xs text-muted">المساحة</div>
           <select className="input" value={spaceId} onChange={(e) => setSpaceId(e.target.value)}>
             {isAdmin && <option value="">كل المساحات</option>}
             {spaceOptions.map((s) => (
@@ -77,7 +77,7 @@ export function AuditView({ isAdmin, spaces }: { isAdmin: boolean; spaces: Space
         </label>
         {isAdmin && (
           <label className="space-y-1">
-            <div className="text-xs text-neutral-500">المستخدم</div>
+            <div className="text-xs text-muted">المستخدم</div>
             <select className="input" value={userId} onChange={(e) => setUserId(e.target.value)}>
               <option value="">الكل</option>
               {users?.map((u) => (
@@ -89,15 +89,15 @@ export function AuditView({ isAdmin, spaces }: { isAdmin: boolean; spaces: Space
           </label>
         )}
         <label className="space-y-1">
-          <div className="text-xs text-neutral-500">من</div>
+          <div className="text-xs text-muted">من</div>
           <input className="input" type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
         </label>
         <label className="space-y-1">
-          <div className="text-xs text-neutral-500">إلى</div>
+          <div className="text-xs text-muted">إلى</div>
           <input className="input" type="date" value={to} onChange={(e) => setTo(e.target.value)} />
         </label>
       </div>
-      {isAdmin || spaceId ? <AuditTable args={args} /> : <p className="text-sm text-neutral-500">لا تدير أي مساحة.</p>}
+      {isAdmin || spaceId ? <AuditTable args={args} /> : <p className="text-sm text-muted">لا تدير أي مساحة.</p>}
     </div>
   );
 }
@@ -107,7 +107,7 @@ export function AuditTable({ args }: { args: Record<string, unknown> }) {
   return (
     <div className="card overflow-x-auto">
       <table className="w-full">
-        <thead className="bg-neutral-50">
+        <thead className="bg-sunken">
           <tr>
             <th className="th">الوقت</th>
             <th className="th">المستخدم</th>
@@ -119,21 +119,21 @@ export function AuditTable({ args }: { args: Record<string, unknown> }) {
         <tbody>
           {rows === undefined && (
             <tr>
-              <td className="td text-neutral-400" colSpan={5}>جارٍ التحميل…</td>
+              <td className="td text-faint" colSpan={5}>جارٍ التحميل…</td>
             </tr>
           )}
           {rows?.length === 0 && (
             <tr>
-              <td className="td text-neutral-400" colSpan={5}>لا سجلات</td>
+              <td className="td text-faint" colSpan={5}>لا سجلات</td>
             </tr>
           )}
           {rows?.map((r) => (
-            <tr key={r._id} className="border-t border-neutral-100">
-              <td className="td whitespace-nowrap text-xs text-neutral-500">{formatDate(r.at)}</td>
+            <tr key={r._id} className="border-t border-rule">
+              <td className="td whitespace-nowrap text-xs text-muted">{formatDate(r.at)}</td>
               <td className="td">{r.userName ?? "—"}</td>
               <td className="td">{ACTION_LABELS[r.action] ?? r.action}</td>
               <td className="td">{r.spaceName ?? "—"}</td>
-              <td className="td text-xs text-neutral-600">
+              <td className="td text-xs text-muted">
                 {Object.entries(r.detail)
                   .filter(([, v]) => v !== null)
                   .map(([k, v]) => `${k}: ${v}`)

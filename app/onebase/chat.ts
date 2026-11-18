@@ -25,11 +25,15 @@ import { actorFor, assertCan, assertTaskCan, canBeAssignee, Denied, requireActiv
 import { effectiveScope, groundingOf, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
 import { queueTurn } from "./lib/turns";
-import { chat, type ChatMsg, type ToolSpec } from "./ai";
+import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
 import { tools as registry } from "./tools";
-import type { Citation, ToolContext } from "./tools/types";
+import { pickSkill } from "./router";
+import type { AppTool, Citation, ToolContext } from "./tools/types";
+import { autoRunEnabled, type Tier } from "./tiers";
+import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
+import { deleteFileRows } from "./files";
 
 export const ABSTAIN_TEXT = "لم أجد هذا في المستندات المتاحة لك.";
 const ABSTAIN_RE = /لم\s*(أ|ا)جد|لا\s*(أ|ا)علم|لا\s*تتوفر|غير\s*متوفر|لا\s*تحتوي\s*المصادر|لا\s*تذكر\s*المصادر/;
@@ -37,10 +41,17 @@ const ABSTAIN_RE = /لم\s*(أ|ا)جد|لا\s*(أ|ا)علم|لا\s*تتوفر|غ
 const proposalTtl = () => Number(process.env.PROPOSAL_TTL_MS ?? 30 * 60_000);
 const MAX_PROPOSALS_PER_TURN = 5;
 const MAX_PROPOSAL_ARGS = 50_000;
+/** Per-turn budget (plans/07 §D): wall time, generated tokens, sandbox runs started without asking. */
+const turnBudgetMs = () => Number(process.env.TURN_BUDGET_MS ?? 150_000);
+const turnMaxCompletion = () => Number(process.env.TURN_MAX_COMPLETION_TOKENS ?? 16_000);
+const MAX_SANDBOX_RUNS = 3;
+const BUDGET_NOTE = "انتهى الوقت المتاح لهذه الإجابة: اذكر باختصار ما أنجزته وما بقي.";
 /** What a proposal keeps of its tool's output (shown on its card, and read by the follow-up answer). */
 const MAX_RUN_RESULT = 8000;
 const AFTER_RUN_NUDGE =
   "أجب الآن عن طلب المستخدم من هذا الناتج: اكتب ما يهمّه بلغة واضحة ومنظّمة (أرقام أساسية، توزيعات، ملاحظات لافتة كالقيم الناقصة أو الشاذة). لا تنسخ الناتج الخام ولا الجداول كما هي، ولا تقترح تشغيلاً آخر إلا إذا لزم.";
+const TOOL_CALL_CUT_NUDGE =
+  "انقطع استدعاء الأداة السابق قبل أن يكتمل (كان أطول من المسموح) فلم يُنفَّذ ولم يُقترح. أعد الاستدعاء مرة واحدة بكود أقصر: ما يلزم فقط، بلا تعليقات ولا نصوص طويلة داخل الكود.";
 const FINAL_NUDGE = "لا مزيد من الأدوات. أجب الآن عن السؤال من المصادر المرقّمة أعلاه فقط، مع أرقامها.";
 const FINAL_NUDGE_OPEN = "لا مزيد من الأدوات. أجب الآن، واذكر أرقام المصادر لما أخذته من ملفات الموظف.";
 /** Write-tool proposals from a scheduled run wait this long for the owner (nobody is watching). */
@@ -338,11 +349,22 @@ export const messages = query({
       if (!proposals.has(p.messageId)) proposals.set(p.messageId, []);
       proposals.get(p.messageId)!.push(shapeProposal(p, now));
     }
+    // The skill (agent) behind each answer, by name, for its chip.
+    const agentNames = new Map<string, string>();
+    for (const mm of metas.values()) {
+      if (!mm.agentId || agentNames.has(mm.agentId)) continue;
+      const aid = ctx.db.normalizeId("agents", mm.agentId);
+      const ag = aid ? await ctx.db.get(aid) : null;
+      agentNames.set(mm.agentId, ag?.live?.name ?? ag?.draft?.name ?? "وكيل");
+    }
     const out = page.page
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.text)
       .map((m) => {
         const mm = metas.get(m.id);
         return {
+          skill: mm?.agentId ? { agentId: mm.agentId, name: agentNames.get(mm.agentId) ?? "وكيل", routed: !!mm.routed } : null,
+          steps: (mm?.steps ?? []).map((st) => ({ label: st.label, state: st.state, ms: st.ms ?? null, detail: st.detail ?? null })),
+          ms: mm?.ms ?? null,
           id: m.id,
           role: m.role as "user" | "assistant",
           text: m.text ?? "",
@@ -360,7 +382,15 @@ export const messages = query({
       if (last.state === "queued") {
         ahead = (await ctx.db.query("turns").withIndex("by_state", (q) => q.eq("state", "queued").lt("queuedAt", last.queuedAt)).collect()).length;
       }
-      turn = { id: last._id, state: last.state, label: last.label ?? null, streamId: last.streamId ?? null, error: last.error ?? null, ahead };
+      turn = {
+        id: last._id,
+        state: last.state,
+        label: last.label ?? null,
+        streamId: last.streamId ?? null,
+        error: last.error ?? null,
+        ahead,
+        steps: (last.steps ?? []).map((st) => ({ label: st.label, state: st.state, ms: st.ms ?? null, detail: st.detail ?? null, startedAt: st.startedAt })),
+      };
     }
     const agent = await resolveAgent(ctx, me.userId, meta);
     let task = null;
@@ -583,20 +613,24 @@ function shapeProposal(p: ProposalDoc, now: number) {
     state,
     expiresAt: p.expiresAt,
     result: p.result ?? null,
+    display: p.display ?? null,
+    tier: p.tier ?? null,
+    auto: !!p.auto,
     artifactIds: p.artifactIds ?? [],
   };
 }
 
 export const turnContext = internalQuery({
-  args: { turnId: v.id("turns") },
-  handler: async (ctx, { turnId }) => {
+  args: { turnId: v.id("turns"), agentOverride: v.optional(v.string()) },
+  handler: async (ctx, { turnId, agentOverride }) => {
     const turn = await ctx.db.get(turnId);
     if (!turn) return null;
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).unique();
     if (!meta || meta.userId !== turn.userId) return null;
     const base = { turn: { state: turn.state, threadId: turn.threadId, userId: turn.userId } };
     // The agent, resolved now (an admin may have disabled or narrowed it since the question was sent).
-    const agent = await resolveAgent(ctx, turn.userId, meta);
+    // The router's pick is resolved like a user's pick: enabled, published, visible to this user.
+    const agent = await resolveAgent(ctx, turn.userId, agentOverride ? { agentId: agentOverride } : meta);
     if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false };
     // Scope = readable spaces right now ∩ the agent's data scope ∩ the thread's scope chips
     // (∩ what the question @mentions: narrowing only).
@@ -618,7 +652,12 @@ export const turnContext = internalQuery({
     const afterRun = run && run.userId === turn.userId && run.threadId === turn.threadId && run.state === "executed" ? { tool: run.tool, label: run.label, result: run.result ?? "" } : null;
     const defaultAgent = (await ctx.db.query("agents").collect()).find((a) => a.isDefault && a.enabled && a.live);
     const page = await ctx.components.chat.listMessages({ threadId: turn.threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const msgs = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text).map((m) => ({ role: m.role as "user" | "assistant", text: m.text! }));
+    const notes = new Map(
+      (await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect()).filter((x) => x.modelNote).map((x) => [x.messageId, x.modelNote!]),
+    );
+    const msgs = page.page
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.text)
+      .map((m) => ({ role: m.role as "user" | "assistant", text: m.text! + (notes.has(m.id) ? `\n(تفاصيل للنموذج: ${notes.get(m.id)})` : "") }));
     const lastUser = msgs.map((m) => m.role).lastIndexOf("user");
     const sum = meta.summary && meta.summary.covered <= Math.max(0, lastUser) ? meta.summary : null;
     const covered = sum?.covered ?? 0;
@@ -681,6 +720,39 @@ export const setLabel = internalMutation({
   },
 });
 
+/** Step timeline: a step starts (it is also the live label). Returns its index. */
+export const stepStart = internalMutation({
+  args: { turnId: v.id("turns"), label: v.string() },
+  handler: async (ctx, { turnId, label }) => {
+    const turn = await ctx.db.get(turnId);
+    if (turn?.state !== "running") return -1;
+    const steps = [...(turn.steps ?? []), { label, state: "running" as const, startedAt: Date.now() }];
+    await ctx.db.patch(turnId, { steps, label });
+    return steps.length - 1;
+  },
+});
+
+export const stepEnd = internalMutation({
+  args: { turnId: v.id("turns"), index: v.number(), ok: v.boolean(), detail: v.optional(v.string()) },
+  handler: async (ctx, { turnId, index, ok, detail }) => {
+    const turn = await ctx.db.get(turnId);
+    const steps = [...(turn?.steps ?? [])];
+    const s = steps[index];
+    if (!turn || !s) return;
+    steps[index] = { ...s, state: ok ? "done" : "failed", ms: Date.now() - s.startedAt, ...(detail ? { detail: detail.slice(0, 200) } : {}) };
+    await ctx.db.patch(turnId, { steps });
+  },
+});
+
+/** The router chose this turn's agent (recorded on the answer, shown as its skill chip). */
+export const setTurnAgent = internalMutation({
+  args: { turnId: v.id("turns"), agentId: v.optional(v.string()), agentVersion: v.number() },
+  handler: async (ctx, { turnId, agentId, agentVersion }) => {
+    const turn = await ctx.db.get(turnId);
+    if (turn?.state === "running") await ctx.db.patch(turnId, { agentId, agentVersion, routed: true });
+  },
+});
+
 const citationV = v.object({ n: v.number(), fileId: v.string(), fileName: v.string(), page: v.optional(v.number()), section: v.optional(v.string()), quote: v.string() });
 
 export const finishTurn = internalMutation({
@@ -692,7 +764,11 @@ export const finishTurn = internalMutation({
     abstained: v.boolean(),
     usage: v.optional(v.object({ prompt: v.number(), completion: v.number() })),
     touched: v.array(v.object({ spaceId: v.string(), files: v.array(v.string()) })),
-    proposals: v.optional(v.array(v.object({ tool: v.string(), label: v.string(), args: v.any() }))),
+    proposals: v.optional(v.array(v.object({ tool: v.string(), label: v.string(), args: v.any(), tier: v.optional(v.number()) }))),
+    /** Tier-1 actions that already ran in this turn (my personal space only): recorded with their undo. */
+    autoRuns: v.optional(
+      v.array(v.object({ tool: v.string(), label: v.string(), args: v.any(), result: v.string(), display: v.optional(v.string()), artifactIds: v.array(v.string()), undo: v.any(), spaceIds: v.array(v.string()) })),
+    ),
     expiresAt: v.optional(v.number()),
   },
   handler: async (ctx, a) => {
@@ -712,6 +788,10 @@ export const finishTurn = internalMutation({
       ms: now - (turn.startedAt ?? turn.queuedAt),
       agentId: turn.agentId,
       agentVersion: turn.agentVersion,
+      ...(turn.routed ? { routed: true } : {}),
+      // Actions that ran in this turn: their ids stay in the model's history (not shown to the user).
+      ...(a.autoRuns?.length ? { modelNote: a.autoRuns.map((r) => `${r.label.replace(/…$/, "")}: ${r.result}`).join("\n").slice(0, 2000) } : {}),
+      ...(turn.steps?.length ? { steps: turn.steps.map((s) => (s.state === "running" ? { ...s, state: "done" as const, ms: now - s.startedAt } : s)) } : {}),
     });
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).unique();
     for (const p of a.proposals ?? []) {
@@ -728,7 +808,35 @@ export const finishTurn = internalMutation({
         state: "pending",
         createdAt: now,
         expiresAt: a.expiresAt ?? now + proposalTtl(),
+        ...(p.tier ? { tier: p.tier } : {}),
       });
+    }
+    for (const r of a.autoRuns ?? []) {
+      const proposalId = await ctx.db.insert("proposals", {
+        threadId: turn.threadId,
+        userId: turn.userId,
+        messageId,
+        agentId: turn.agentId,
+        agentVersion: turn.agentVersion,
+        agentDraft: meta?.agentDraft,
+        tool: r.tool,
+        label: r.label,
+        args: r.args,
+        state: "executed",
+        createdAt: now,
+        expiresAt: now,
+        decidedAt: now,
+        result: r.result.slice(0, MAX_RUN_RESULT),
+        display: r.display?.slice(0, 500),
+        artifactIds: r.artifactIds,
+        tier: 1,
+        auto: true,
+        undo: r.undo ?? undefined,
+      });
+      for (const sid of r.spaceIds.length ? r.spaceIds : [undefined]) {
+        const spaceId = sid ? ctx.db.normalizeId("spaces", sid) : null;
+        await writeAudit(ctx, { userId: turn.userId, action: "ai.autorun", resourceType: "proposal", resourceId: proposalId, spaceId: spaceId ?? undefined, detail: { tool: r.tool, tier: 1, agentId: turn.agentId ?? null } });
+      }
     }
     await ctx.db.patch(a.turnId, { state: "done", messageId, finishedAt: now, label: undefined });
     // Audit (plans/02): who asked, with which agent, which spaces' content entered the answer,
@@ -859,10 +967,22 @@ async function rewriteQuery(question: string, history: { role: string; text: str
 export const runTurn = internalAction({
   args: { turnId: v.id("turns") },
   handler: async (ctx, { turnId }) => {
-    const c = await ctx.runQuery(internal.chat.turnContext, { turnId });
-    if (!c || c.turn.state !== "queued") return null;
+    const pre = await ctx.runQuery(internal.router.candidates, { turnId });
+    if (pre.state !== "queued") return null;
     const streamId = await ctx.runMutation(internal.chat.startTurn, { turnId });
     if (!streamId) return null;
+    // "تلقائي": the router picks the skill for this question (plans/07 §C).
+    let routedTo: string | null = null;
+    if (pre.route && pre.route.candidates.length > 1) {
+      const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: "يختار المهارة…" });
+      const pick = await pickSkill(pre.route);
+      routedTo = pick.agentId;
+      const name = pre.route.candidates.find((x) => x.agentId === pick.agentId)?.name;
+      await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: true, detail: name ? `→ ${name}` : undefined });
+    } else if (pre.route?.candidates.length === 1) routedTo = pre.route.candidates[0]!.agentId;
+    const c = await ctx.runQuery(internal.chat.turnContext, { turnId, agentOverride: routedTo ?? undefined });
+    if (!c) return null;
+    if (pre.route && c.agent) await ctx.runMutation(internal.chat.setTurnAgent, { turnId, agentId: c.agent.agentId ?? undefined, agentVersion: c.agent.version });
     if (c.agentError || !c.agent) {
       await ctx.runMutation(internal.chat.failTurn, { turnId, error: c.agentError ?? "الوكيل غير متاح" });
       return null;
@@ -881,7 +1001,10 @@ export const runTurn = internalAction({
       agentId: agent.agentId ?? undefined,
     };
     const toolRuns: { name: string; label: string; args: unknown; ok: boolean; summary: string }[] = [];
-    const proposals: { tool: string; label: string; args: unknown }[] = [];
+    const proposals: { tool: string; label: string; args: unknown; tier?: Tier }[] = [];
+    const autoRuns: { tool: string; label: string; args: unknown; result: string; display?: string; artifactIds: string[]; undo: unknown; spaceIds: string[] }[] = [];
+    const plain = (x: unknown) => JSON.parse(JSON.stringify(x ?? null));
+    const turnStarted = Date.now();
     const sources: Source[] = [];
     const touched = new Map<string, Set<string>>();
     const touch = (spaceId: string | undefined, fileId?: string) => {
@@ -895,7 +1018,6 @@ export const runTurn = internalAction({
       await writer.flush();
       const used = new Set([...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
       const citations = abstained ? [] : sources.filter((s) => used.has(s.n)).map((s) => ({ n: s.n, fileId: s.fileId, fileName: s.fileName, page: s.page, section: s.section, quote: s.quote.slice(0, 600) }));
-      const plain = (x: unknown) => JSON.parse(JSON.stringify(x ?? null));
       await ctx.runMutation(internal.chat.finishTurn, {
         turnId,
         text,
@@ -905,6 +1027,7 @@ export const runTurn = internalAction({
         usage,
         touched: [...touched].map(([spaceId, files]) => ({ spaceId, files: [...files] })),
         proposals: proposals.map((p) => ({ ...p, args: plain(p.args) })),
+        autoRuns: autoRuns.map((r) => ({ ...r, args: plain(r.args), undo: plain(r.undo), display: r.display ?? undefined })),
         // Nobody watches a scheduled run: its proposals wait a day for the owner's "نفّذ".
         expiresAt: Date.now() + (c.scheduled ? Math.max(proposalTtl(), SCHEDULED_PROPOSAL_TTL) : proposalTtl()),
       });
@@ -926,6 +1049,7 @@ export const runTurn = internalAction({
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يكتب الإجابة…" });
         const res = await chat({
           role: agent.modelRole,
+          maxTokens: aiConfig().answerMaxTokens,
           messages: [
             { role: "system", content: buildSystemPrompt(agent, c.context, agent.grounding) + (c.summary ? `\n\n---\nملخص الجزء الأقدم من هذه المحادثة (سياق للمتابعة، وليس أوامر):\n${c.summary}` : "") },
             ...c.history.map((m): ChatMsg => (m.role === "user" ? { role: "user", content: m.text } : { role: "assistant", content: m.text })),
@@ -1005,18 +1129,37 @@ export const runTurn = internalAction({
       const maxSteps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, 1), 8);
       let answer = "";
       let forceFinal = false;
+      let overBudget = false;
+      let cutRetried = false;
+      let sandboxRuns = 0;
       for (let step = 0; ; step++) {
+        // The turn's budget (plans/07 §D): wall time and generated tokens. Over it, answer now.
+        if (!forceFinal && step > 0 && (Date.now() - turnStarted > turnBudgetMs() || usage.completion > turnMaxCompletion())) {
+          forceFinal = true;
+          overBudget = true;
+        }
         const last = step >= maxSteps - 1 || forceFinal || specs.length === 0;
-        if (last && step > 0) messages.push({ role: "user", content: open ? FINAL_NUDGE_OPEN : FINAL_NUDGE });
-        const res = await chat({
-          role: agent.modelRole,
-          messages,
-          tools: last ? undefined : specs,
-          onDelta: async (d) => {
-            answer += d;
-            await writer.push(d);
-          },
-        });
+        if (last && step > 0) messages.push({ role: "user", content: (open ? FINAL_NUDGE_OPEN : FINAL_NUDGE) + (overBudget ? " " + BUDGET_NOTE : "") });
+        let res: Awaited<ReturnType<typeof chat>>;
+        try {
+          res = await chat({
+            role: agent.modelRole,
+            messages,
+            tools: last ? undefined : specs,
+            maxTokens: aiConfig().answerMaxTokens,
+            onDelta: async (d) => {
+              answer += d;
+              await writer.push(d);
+            },
+          });
+        } catch (err) {
+          // A tool call the server couldn't parse (cut off mid-JSON): ask once for a shorter one.
+          if (!(err instanceof ToolCallCutError) || cutRetried || last) throw err;
+          cutRetried = true;
+          toolRuns.push({ name: "tool_call", label: "استدعاء أداة", args: null, ok: false, summary: "انقطع الاستدعاء قبل اكتماله" });
+          messages.push({ role: "user", content: TOOL_CALL_CUT_NUDGE });
+          continue;
+        }
         if (res.usage) usage = { prompt: usage.prompt + res.usage.prompt, completion: usage.completion + res.usage.completion };
         // A tool call written as text (the server didn't parse it): no more tools, answer now.
         if (!res.toolCalls.length && !last && MARKUP_RE.test(res.text)) {
@@ -1026,31 +1169,52 @@ export const runTurn = internalAction({
         }
         if (!res.toolCalls.length || last) break;
         messages.push({ role: "assistant", content: res.text || null, tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.rawArgs || "{}" } })) });
+        // Each call is classified first: refused, a card waiting for «نفّذ» (tier 2–3), run now
+        // because it only touches my personal space (tier 1, undoable), or a read (tier 0).
+        type Plan = { tc: (typeof res.toolCalls)[number]; tool?: AppTool; kind: "refused" | "proposal" | "auto" | "read"; content?: string; tier?: Tier };
+        const plans: Plan[] = [];
         for (const tc of res.toolCalls) {
           const tool = Object.hasOwn(registry, tc.name) ? registry[tc.name] : undefined;
-          let content: string;
           if (!tool) {
-            content = `أداة غير معروفة: ${tc.name}`;
+            plans.push({ tc, kind: "refused", content: `أداة غير معروفة: ${tc.name}` });
             toolRuns.push({ name: tc.name, label: tc.name, args: tc.args, ok: false, summary: "أداة غير معروفة" });
           } else if (!allowed.has(tool.name)) {
             // Whatever the model emits, a tool outside the agent's list never runs (and is never proposed).
-            content = `الأداة ${tool.name} غير متاحة لهذا الوكيل ولم تُنفَّذ.`;
+            plans.push({ tc, tool, kind: "refused", content: `الأداة ${tool.name} غير متاحة لهذا الوكيل ولم تُنفَّذ.` });
             toolRuns.push({ name: tool.name, label: tool.label, args: tc.args, ok: false, summary: "غير متاحة لهذا الوكيل" });
           } else if (tool.requiresConfirmation) {
-            // Write tools never run from the model's say-so: they become a proposal the user confirms ("نفّذ").
             const size = JSON.stringify(tc.args ?? null).length;
-            if ((tc.args as any)?.__invalid !== undefined || size > MAX_PROPOSAL_ARGS || proposals.length >= MAX_PROPOSALS_PER_TURN) {
-              content = "لم يُقترح هذا الإجراء: الوسائط غير صالحة أو كثيرة.";
+            if ((tc.args as any)?.__invalid !== undefined || size > MAX_PROPOSAL_ARGS || proposals.length + autoRuns.length >= MAX_PROPOSALS_PER_TURN) {
+              plans.push({ tc, tool, kind: "refused", content: "لم يُقترح هذا الإجراء: الوسائط غير صالحة أو كثيرة." });
               toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "اقتراح مرفوض" });
-            } else {
-              proposals.push({ tool: tool.name, label: tool.label, args: tc.args });
-              content = "عُرض هذا الإجراء على المستخدم ليؤكده بزر «نفّذ»، ولم يُنفَّذ بعد. أخبره باختصار بما سيحدث إن أكّده.";
-              toolRuns.push({ name: tool.name, label: tool.label, args: tc.args, ok: false, summary: "بانتظار تأكيد المستخدم" });
+              continue;
             }
-          } else {
-            await ctx.runMutation(internal.chat.setLabel, { turnId, label: tool.label });
+            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds });
+            plans.push({ tc, tool, kind: tier === 1 && autoRunEnabled() ? "auto" : "proposal", tier });
+          } else plans.push({ tc, tool, kind: "read" });
+        }
+        // Reads run together; their results are applied below in call order, so source numbers are stable.
+        const reads = await Promise.all(
+          plans.map(async (p) => {
+            if (p.kind !== "read") return null;
+            const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: p.tool!.label });
             try {
-              const out = await tool.run(tctx, tc.args as any);
+              const out = await p.tool!.run(tctx, p.tc.args as any);
+              await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: true });
+              return { out };
+            } catch (err) {
+              await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: false });
+              return { err: err instanceof Error ? err.message : String(err) };
+            }
+          }),
+        );
+        for (const [k, p] of plans.entries()) {
+          const { tc, tool } = p;
+          let content = p.content ?? "";
+          if (p.kind === "read") {
+            const r = reads[k]!;
+            if (r.out) {
+              const out = r.out;
               const added: Source[] = (out.citations ?? []).map((ci) => ({ ...ci, n: sources.length + 1 }));
               for (const s of added) {
                 s.n = sources.length + 1;
@@ -1059,19 +1223,45 @@ export const runTurn = internalAction({
               for (const s of added) touch(out.spaceIds?.length === 1 ? out.spaceIds[0] : undefined, s.fileId);
               if (!added.length) for (const sid of out.spaceIds ?? []) touch(sid);
               content = out.content + (added.length ? `\n\n${renderSources(added)}` : "");
-              toolRuns.push({ name: tool.name, label: tool.label, args: tc.args, ok: true, summary: out.content.slice(0, 200) });
-            } catch (err) {
-              content = `فشلت الأداة: ${err instanceof Error ? err.message : String(err)}`;
-              toolRuns.push({ name: tool.name, label: tool.label, args: tc.args, ok: false, summary: content.slice(0, 200) });
+              toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: true, summary: out.content.slice(0, 200) });
+            } else {
+              content = `فشلت الأداة: ${r.err}`;
+              toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: false, summary: content.slice(0, 200) });
             }
-            await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يكتب الإجابة…" });
+          } else if (p.kind === "proposal") {
+            // Write tools that touch shared or sensitive places never run from the model's say-so.
+            proposals.push({ tool: tool!.name, label: tool!.label, args: tc.args, tier: p.tier });
+            content = "عُرض هذا الإجراء على المستخدم ليؤكده بزر «نفّذ»، ولم يُنفَّذ بعد. أخبره باختصار بما سيحدث إن أكّده.";
+            toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: false, summary: "بانتظار تأكيد المستخدم" });
+          } else if (p.kind === "auto") {
+            if (tool!.name === "run_analysis" && sandboxRuns >= MAX_SANDBOX_RUNS) {
+              content = `بلغت هذه الإجابة حدّ التشغيلات (${MAX_SANDBOX_RUNS}). أجب بما لديك.`;
+              toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: false, summary: "حدّ التشغيلات" });
+            } else {
+              if (tool!.name === "run_analysis") sandboxRuns++;
+              const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: tool!.label });
+              try {
+                const out = await tool!.run(tctx, tc.args as any);
+                autoRuns.push({ tool: tool!.name, label: tool!.label, args: tc.args, result: out.content, display: out.display, artifactIds: out.artifactIds ?? [], undo: out.undo ?? null, spaceIds: out.spaceIds ?? [] });
+                for (const sid of out.spaceIds ?? []) touch(sid);
+                content = out.content + "\n\n(نُفّذ مباشرة لأنه في مساحة المستخدم الخاصة، ويستطيع التراجع عنه. لا تطلب منه الضغط على «نفّذ».)";
+                toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: true, summary: (out.display ?? out.content).slice(0, 200) });
+                await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: true, detail: out.display });
+              } catch (err) {
+                content = `فشلت الأداة: ${err instanceof Error ? err.message : String(err)}`;
+                toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: false, summary: content.slice(0, 200) });
+                await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: false });
+              }
+            }
           }
           messages.push({ role: "tool", tool_call_id: tc.id, content });
         }
+        await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يكتب الإجابة…" });
       }
       answer = stripMarkup(answer);
+      if (!answer && autoRuns.length) answer = autoRuns.map((r) => `✅ ${r.display ?? r.label.replace(/…$/, "")}`).join("\n");
       if (!answer && proposals.length) answer = `اقترحتُ ما يلي، ولن يُنفَّذ إلا إذا ضغطت «نفّذ»: ${proposals.map((p) => p.label.replace(/…$/, "")).join("، ")}.`;
-      const abstained = !proposals.length && (!answer || (ABSTAIN_RE.test(answer) && !/\[\d+\]/.test(answer)));
+      const abstained = !proposals.length && !autoRuns.length && (!answer || (ABSTAIN_RE.test(answer) && !/\[\d+\]/.test(answer)));
       await finish(answer || ABSTAIN_TEXT, abstained);
       if (c.titlePending) await nameThread(ctx, c.turn.threadId, c.question, answer);
     } catch (err) {
@@ -1174,11 +1364,11 @@ export const claimProposal = internalMutation({
 });
 
 export const finishProposal = internalMutation({
-  args: { proposalId: v.id("proposals"), ok: v.boolean(), result: v.string(), artifactIds: v.array(v.string()), spaceIds: v.array(v.string()) },
+  args: { proposalId: v.id("proposals"), ok: v.boolean(), result: v.string(), display: v.optional(v.string()), artifactIds: v.array(v.string()), spaceIds: v.array(v.string()) },
   handler: async (ctx, a) => {
     const p = await ctx.db.get(a.proposalId);
     if (!p || p.state !== "running") return null;
-    await ctx.db.patch(p._id, { state: a.ok ? "executed" : "failed", result: a.result.slice(0, MAX_RUN_RESULT), artifactIds: a.artifactIds });
+    await ctx.db.patch(p._id, { state: a.ok ? "executed" : "failed", result: a.result.slice(0, MAX_RUN_RESULT), display: a.display?.slice(0, 500), artifactIds: a.artifactIds });
     let messageId: string | null = null;
     const tool = Object.hasOwn(registry, p.tool) ? registry[p.tool] : undefined;
     if (a.ok && tool?.answerAfterRun) {
@@ -1187,7 +1377,9 @@ export const finishProposal = internalMutation({
       await queueTurn(ctx, { threadId: p.threadId, userId: p.userId, text: "", agentId: p.agentId, agentVersion: p.agentVersion, saveUser: false, skipLimit: true, afterProposal: p._id });
     } else {
       // The outcome joins the thread, so the owner (and the model on the next turn) sees what happened.
-      const text = `${a.ok ? "✅ نُفّذ" : "⚠️ تعذّر التنفيذ"}: ${p.label.replace(/…$/, "")}\n${a.result.slice(0, 2000)}`;
+      // The user reads the tool's display line; the model also gets the full result (ids) in its history.
+      const shown = a.ok && a.display ? a.display : a.result.slice(0, 2000);
+      const text = `${a.ok ? "✅ نُفّذ" : "⚠️ تعذّر التنفيذ"}: ${p.label.replace(/…$/, "")}\n${shown}`;
       messageId = await ctx.components.chat.saveMessage({ threadId: p.threadId, role: "assistant", text });
       await ctx.db.insert("messageMeta", {
         messageId,
@@ -1198,6 +1390,7 @@ export const finishProposal = internalMutation({
         abstained: false,
         agentId: p.agentId,
         agentVersion: p.agentVersion,
+        ...(a.ok && a.display ? { modelNote: a.result.slice(0, 2000) } : {}),
       });
     }
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", p.threadId)).unique();
@@ -1232,19 +1425,76 @@ export const confirmProposal = action({
     };
     let ok = true;
     let result: string;
+    let display: string | undefined;
     let artifactIds: string[] = [];
     let spaceIds: string[] = [];
     try {
       const out = await tool.run(tctx, proposal.args);
       result = out.content;
+      display = out.display;
       artifactIds = out.artifactIds ?? [];
       spaceIds = out.spaceIds ?? [];
     } catch (err) {
       ok = false;
       result = err instanceof Error ? err.message.replace(/^.*Uncaught (OneBaseError: )?/, "") : String(err);
     }
-    await ctx.runMutation(internal.chat.finishProposal, { proposalId: proposal.id, ok, result, artifactIds, spaceIds });
+    await ctx.runMutation(internal.chat.finishProposal, { proposalId: proposal.id, ok, result, display, artifactIds, spaceIds });
     return { ok, result, artifactIds };
+  },
+});
+
+/**
+ * «تراجع»: reverses an action that ran without asking (tier 1). Only its owner; only what server
+ * code recorded when it ran (ToolResult.undo, never the model's words); only items still in the
+ * owner's personal space — anything moved elsewhere since stays, and is named in the reply.
+ */
+export const undo = mutation({
+  args: { proposalId: v.string() },
+  handler: async (ctx, { proposalId }) => {
+    const me = await requireActive(ctx);
+    const id = ctx.db.normalizeId("proposals", proposalId);
+    const p = id ? await ctx.db.get(id) : null;
+    if (!p || p.userId !== me.userId) throw new Denied();
+    await ownThread(ctx, me.userId, p.threadId);
+    if (!p.auto || p.state !== "executed") throw new OneBaseError("لا يمكن التراجع عن هذا الإجراء");
+    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; restore?: { artifactId: string; version: number } };
+    const mine = async (spaceId: Id<"spaces">) => {
+      const space = await ctx.db.get(spaceId);
+      if (!space || space.kind !== "personal" || space.ownerId !== me.userId) return false;
+      await assertCan(ctx, me.userId, spaceId, "write");
+      return true;
+    };
+    const kept: string[] = [];
+    for (const fid of u.deleteFiles ?? []) {
+      const nid = ctx.db.normalizeId("files", fid);
+      const file = nid ? await ctx.db.get(nid) : null;
+      if (!file) continue;
+      if (await mine(file.spaceId)) await deleteFileRows(ctx, me.userId, file, "undo");
+      else kept.push(file.name);
+    }
+    for (const aid of u.deleteArtifacts ?? []) {
+      const nid = ctx.db.normalizeId("artifacts", aid);
+      const art = nid ? await ctx.db.get(nid) : null;
+      if (!art) continue;
+      if (await mine(art.spaceId)) await deleteArtifactRows(ctx, me.userId, art, "undo");
+      else kept.push(art.title);
+    }
+    if (u.restore) {
+      const nid = ctx.db.normalizeId("artifacts", u.restore.artifactId);
+      const art = nid ? await ctx.db.get(nid) : null;
+      const row = art
+        ? await ctx.db
+            .query("artifactVersions")
+            .withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id).eq("version", u.restore!.version))
+            .unique()
+        : null;
+      if (art && row && (await mine(art.spaceId))) {
+        await updateArtifact(ctx, await requireActor(ctx, me.userId), { artifactId: art._id, content: row.content, note: `تراجع إلى النسخة ${row.version}` }, { scope: null, via: "undo" });
+      } else if (art) kept.push(art.title);
+    }
+    await ctx.db.patch(p._id, { state: "undone", undoneAt: Date.now() });
+    await writeAudit(ctx, { userId: me.userId, action: "ai.undo", resourceType: "proposal", resourceId: p._id, detail: { tool: p.tool, kept: kept.join("، ") || null } });
+    return { kept };
   },
 });
 

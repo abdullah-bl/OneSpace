@@ -109,12 +109,26 @@ export function startFakeAI(dims = 64): FakeAI {
         // "SLOW-TURN" in the conversation: a slow model (≈1.5 s, streamed in pieces).
         const slow = /SLOW-TURN/.test(JSON.stringify(messages));
         if (slow) await Bun.sleep(300);
+        // "CUT-TOOL-CALL" in the system prompt: the model's tool call runs past max_tokens and the
+        // server fails to parse it (llama.cpp answers 500), until it's asked for a shorter one.
+        const all = JSON.stringify(messages);
+        if (body.tools?.length && /CUT-TOOL-CALL/.test(all) && !all.includes("انقطع استدعاء الأداة")) {
+          return Response.json({ error: { code: 500, message: "Failed to parse tool call arguments as JSON: parse error - invalid string: missing closing quote", type: "server_error" } }, { status: 500 });
+        }
         let text: string;
         let toolCalls: { name: string; args: string }[] = [];
         if (messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"))) text = OCR_TEXT;
         else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
         else if (body.response_format && JSON.stringify(body.response_format).includes('"summary"')) text = JSON.stringify({ summary: `SUMMARY-OF ${[...JSON.stringify(messages).matchAll(/[A-Z]+Q-\d+/g)].map((x) => x[0]).filter((x, i, a) => a.indexOf(x) === i).join(" ")}` });
-        else if (body.response_format) text = JSON.stringify({ query: /السؤال الأخير: (.*)$/s.exec(last)?.[1]?.trim() ?? last });
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"skill"')) {
+          // Router (plans/07 §C): "SKILL=<name>" in the request picks that skill; "SKILL-UNSURE" answers with
+          // low confidence; otherwise the default (marked in the list).
+          const sys = contentText(messages.find((m) => m.role === "system")?.content);
+          const lines = [...sys.matchAll(/^(\d+)\. (.+?)(?: \(الافتراضي\))? — /gm)].map((x) => ({ n: Number(x[1]), name: x[2]!, def: x[0].includes("(الافتراضي)") }));
+          const hit = [...lines].sort((a, b) => b.name.length - a.name.length).find((l) => last.includes(`SKILL=${l.name}`));
+          const def = lines.find((l) => l.def) ?? lines[0];
+          text = JSON.stringify({ skill: (hit ?? def)?.name ?? "", confidence: /SKILL-UNSURE/.test(last) ? 0.2 : 0.9 });
+        } else if (body.response_format) text = JSON.stringify({ query: /السؤال الأخير: (.*)$/s.exec(last)?.[1]?.trim() ?? last });
         else ({ text, toolCalls } = answerFor(body));
         const usage = { prompt_tokens: 100, completion_tokens: 20 };
         if (!body.stream) {

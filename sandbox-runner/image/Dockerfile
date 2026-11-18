@@ -1,4 +1,5 @@
-# OneSpace analysis sandbox image: Python + pandas/numpy/matplotlib/openpyxl + Arabic fonts.
+# OneSpace analysis sandbox image: Python + pandas/numpy/matplotlib/openpyxl + Arabic fonts, and the
+# document renderer (Markdown/HTML → DOCX / PDF / PPTX: python-docx, python-pptx, WeasyPrint).
 # Built once from official base images (needs internet at build time only). Runs are fully offline
 # (--network none). Every version is pinned so a rebuild gives the same environment.
 FROM python:3.12.7-slim-bookworm
@@ -9,9 +10,11 @@ ENV PIP_NO_CACHE_DIR=1 \
     PYTHONUNBUFFERED=1 \
     MPLBACKEND=Agg
 
-# Arabic-capable fonts: Amiri (Naskh), KACST, DejaVu (sans with Arabic glyphs, matplotlib default).
+# Arabic-capable fonts: Amiri (Naskh), KACST, DejaVu (sans with Arabic glyphs, matplotlib default),
+# Noto (Naskh/Sans Arabic for documents). Pango + HarfBuzz: WeasyPrint's text shaping (Arabic joining).
 RUN apt-get update \
- && apt-get install -y --no-install-recommends fonts-hosny-amiri fonts-kacst fonts-dejavu-core fontconfig \
+ && apt-get install -y --no-install-recommends fonts-hosny-amiri fonts-kacst fonts-dejavu-core fonts-noto-core fontconfig \
+      libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
  && rm -rf /var/lib/apt/lists/* \
  && fc-cache -f
 
@@ -21,7 +24,11 @@ RUN pip install \
       matplotlib==3.9.2 \
       openpyxl==3.1.5 \
       arabic-reshaper==3.0.0 \
-      python-bidi==0.6.3
+      python-bidi==0.6.3 \
+      python-docx==1.2.0 \
+      python-pptx==1.0.2 \
+      weasyprint==70.0 \
+      markdown-it-py==4.2.0
 
 # Pre-built matplotlib font cache (copied to the writable /tmp at run start; the rootfs is read-only).
 RUN mkdir -p /opt/mplconfig \
@@ -33,6 +40,7 @@ RUN groupadd -g 10001 sandbox && useradd -u 10001 -g 10001 -M -d /nonexistent -s
 
 COPY entry.py /opt/sandbox/entry.py
 COPY helpers.py /opt/sandbox/lib/onespace.py
+COPY render_doc.py /opt/sandbox/lib/onespace_doc.py
 RUN chmod -R a+rX /opt/sandbox
 
 USER 10001:10001

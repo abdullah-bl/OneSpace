@@ -19,14 +19,14 @@ const EMPTY: SpecForm = {
 
 const short = (h: string) => h.slice(0, 10);
 const StatusBadge = ({ status }: { status: string }) =>
-  status === "approved" ? <span className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-900">معتمدة</span> : <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800">مسودة</span>;
+  status === "approved" ? <span className="rounded-full bg-raised px-2 py-0.5 text-xs text-ink">معتمدة</span> : <span className="rounded-full bg-warning-soft px-2 py-0.5 text-xs text-warning">مسودة</span>;
 
 export function RankingView({ spaces }: { spaces: SpaceInfo[] }) {
   const [spaceId, setSpaceId] = useState(spaces.find((s) => s.kind === "shared")?._id ?? spaces[0]?._id ?? "");
   const [openRun, setOpenRun] = useState<string | null>(null);
   const [student, setStudent] = useState<string | null>(null);
   const space = spaces.find((s) => s._id === spaceId);
-  if (!space) return <div className="text-sm text-neutral-500">لا توجد مساحات</div>;
+  if (!space) return <div className="text-sm text-muted">لا توجد مساحات</div>;
   const canApprove = space.canManage || space.kind === "personal";
 
   if (openRun && student) return <Justification runId={openRun} studentKey={student} onBack={() => setStudent(null)} />;
@@ -35,7 +35,7 @@ export function RankingView({ spaces }: { spaces: SpaceInfo[] }) {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">المفاضلة</h1>
+        <h1 className="page-title">المفاضلة</h1>
         <select className="input" value={spaceId} onChange={(e) => setSpaceId(e.target.value)}>
           {spaces.map((s) => (
             <option key={s._id} value={s._id}>
@@ -44,7 +44,7 @@ export function RankingView({ spaces }: { spaces: SpaceInfo[] }) {
           ))}
         </select>
       </header>
-      <p className="text-sm text-neutral-500">
+      <p className="text-sm text-muted">
         الترتيب يحسبه النظام بمعادلة ثابتة ومعلنة من معايير معتمدة، والنموذج لا يرتّب ولا يقترح أوزاناً. كل تشغيل يحفظ لقطة البيانات ببصمتها، ويبقى مسودة حتى يعتمده مدير المساحة، والمعتمد لا يُعدَّل.
       </p>
       <CriteriaPanel space={space} canApprove={canApprove} />
@@ -82,14 +82,14 @@ function CriteriaPanel({ space, canApprove }: { space: SpaceInfo; canApprove: bo
   return (
     <section className="card space-y-3 p-4">
       <div className="flex items-center gap-2">
-        <h2 className="font-semibold">المعايير</h2>
+        <h2 className="section-title">المعايير</h2>
         {space.canWrite && !editing && (
           <button className="btn-ghost ms-auto" onClick={() => setEditing({ id: null, form: structuredClone(EMPTY) })}>
             + معايير جديدة
           </button>
         )}
       </div>
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       {editing && (
         <CriteriaForm
           value={editing.form}
@@ -104,14 +104,14 @@ function CriteriaPanel({ space, canApprove }: { space: SpaceInfo; canApprove: bo
           }
         />
       )}
-      {list?.length === 0 && <p className="text-sm text-neutral-400">لا معايير بعد</p>}
+      {list?.length === 0 && <p className="text-sm text-faint">لا معايير بعد</p>}
       {list?.map((c: any) => (
-        <div key={c._id} className="rounded-lg border border-neutral-200 p-3 text-sm">
+        <div key={c._id} className="rounded-lg border border-line p-3 text-sm">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="font-semibold">{c.name}</span>
-            <span className="text-xs text-neutral-500">النسخة {c.version}</span>
+            <span className="font-bold">{c.name}</span>
+            <span className="text-xs text-muted">النسخة {c.version}</span>
             <StatusBadge status={c.status} />
-            <span className="text-xs text-neutral-400" dir="ltr">#{short(c.specHash)}</span>
+            <span className="text-xs text-faint" dir="ltr">#{short(c.specHash)}</span>
             <div className="ms-auto flex gap-1">
               {c.status === "draft" && space.canWrite && (
                 <button className="btn-ghost" disabled={busy} onClick={() => setEditing({ id: c._id, form: { name: c.name, description: c.description ?? undefined, idField: c.idField, nameField: c.nameField, criteria: c.criteria, tieBreak: c.tieBreak } })}>
@@ -130,7 +130,7 @@ function CriteriaPanel({ space, canApprove }: { space: SpaceInfo; canApprove: bo
               )}
             </div>
           </div>
-          <div className="mt-1 text-xs text-neutral-600">
+          <div className="mt-1 text-xs text-muted">
             {c.criteria.map((x: any) => `${x.label} (${x.weight}، ${x.direction === "desc" ? "الأعلى أفضل" : "الأقل أفضل"}، ${x.min}–${x.max})`).join(" · ")}
             {c.tieBreak.length > 0 && <> — كسر التعادل: {c.tieBreak.map((t: any) => `${t.field} ${t.direction === "desc" ? "↓" : "↑"}`).join("، ")}</>}
           </div>
@@ -146,7 +146,7 @@ function CriteriaForm({ value, busy, onSave, onCancel }: { value: SpecForm; busy
   const total = f.criteria.reduce((a, c) => a + (Number(c.weight) || 0), 0);
   return (
     <form
-      className="space-y-2 rounded-lg bg-neutral-50 p-3 text-sm"
+      className="space-y-2 rounded-lg bg-sunken p-3 text-sm"
       onSubmit={(e) => {
         e.preventDefault();
         onSave({ ...f, criteria: f.criteria.map((c) => ({ ...c, label: c.label || c.field, weight: Number(c.weight), min: Number(c.min), max: Number(c.max) })) });
@@ -157,7 +157,7 @@ function CriteriaForm({ value, busy, onSave, onCancel }: { value: SpecForm; busy
         <input className="input w-40" placeholder="عمود المعرّف" value={f.idField} onChange={(e) => setF({ ...f, idField: e.target.value })} required />
         <input className="input w-40" placeholder="عمود الاسم" value={f.nameField} onChange={(e) => setF({ ...f, nameField: e.target.value })} required />
       </div>
-      <div className="text-xs text-neutral-500">المعايير (اسم العمود كما في ملف البيانات). مجموع الأوزان: {total}</div>
+      <div className="text-xs text-muted">المعايير (اسم العمود كما في ملف البيانات). مجموع الأوزان: {total}</div>
       {f.criteria.map((c, i) => (
         <div key={i} className="flex flex-wrap items-center gap-1">
           <input className="input w-36" placeholder="العمود" value={c.field} onChange={(e) => setC(i, { field: e.target.value })} required />
@@ -180,7 +180,7 @@ function CriteriaForm({ value, busy, onSave, onCancel }: { value: SpecForm; busy
       <button type="button" className="btn-ghost" onClick={() => setF({ ...f, criteria: [...f.criteria, { field: "", label: "", weight: 10, direction: "desc", min: 0, max: 100 }] })}>
         + معيار
       </button>
-      <div className="text-xs text-neutral-500">كسر التعادل (بالترتيب)</div>
+      <div className="text-xs text-muted">كسر التعادل (بالترتيب)</div>
       {f.tieBreak.map((t, i) => (
         <div key={i} className="flex items-center gap-1">
           <input className="input w-36" placeholder="العمود" value={t.field} onChange={(e) => setF({ ...f, tieBreak: f.tieBreak.map((x, j) => (j === i ? { ...x, field: e.target.value } : x)) })} required />
@@ -229,7 +229,7 @@ function RunsPanel({ space, canApprove, onOpen }: { space: SpaceInfo; canApprove
 
   return (
     <section className="card space-y-3 p-4">
-      <h2 className="font-semibold">التشغيلات</h2>
+      <h2 className="section-title">التشغيلات</h2>
       {space.canWrite && (
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <select className="input" value={criteriaId} onChange={(e) => setCriteriaId(e.target.value)}>
@@ -266,9 +266,9 @@ function RunsPanel({ space, canApprove, onOpen }: { space: SpaceInfo; canApprove
           </button>
         </div>
       )}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       <table className="w-full">
-        <thead className="bg-neutral-50">
+        <thead className="bg-sunken">
           <tr>
             <th className="th">التاريخ</th>
             <th className="th">المعايير</th>
@@ -281,19 +281,19 @@ function RunsPanel({ space, canApprove, onOpen }: { space: SpaceInfo; canApprove
         <tbody>
           {runs?.length === 0 && (
             <tr>
-              <td className="td text-neutral-400" colSpan={6}>
+              <td className="td text-faint" colSpan={6}>
                 لا تشغيلات بعد
               </td>
             </tr>
           )}
           {runs?.map((r: any) => (
-            <tr key={r._id} className="border-t border-neutral-100">
-              <td className="td text-xs text-neutral-500">{formatDate(r.createdAt)}</td>
+            <tr key={r._id} className="border-t border-rule">
+              <td className="td text-xs text-muted">{formatDate(r.createdAt)}</td>
               <td className="td">
-                {r.criteriaName} <span className="text-xs text-neutral-500">ن{r.criteriaVersion}</span>
+                {r.criteriaName} <span className="text-xs text-muted">ن{r.criteriaVersion}</span>
               </td>
               <td className="td text-xs">
-                {r.source?.name} <span className="text-neutral-400" dir="ltr">#{short(r.snapshotHash)}</span>
+                {r.source?.name} <span className="text-faint" dir="ltr">#{short(r.snapshotHash)}</span>
               </td>
               <td className="td">{r.count}</td>
               <td className="td">
@@ -322,15 +322,15 @@ function RunDetail({ runId, canApprove, canWrite, onBack, onStudent, onOpen }: {
   const approveRun = useMutation(api.ranking.approveRun);
   const rerun = useAction(api.ranking.rerun);
   const { busy, error, run } = useRunner();
-  if (!r) return <div className="text-sm text-neutral-500">جارٍ التحميل…</div>;
+  if (!r) return <div className="text-sm text-muted">جارٍ التحميل…</div>;
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <button className="btn-ghost px-0" onClick={onBack}>
         → رجوع
       </button>
       <header className="flex flex-wrap items-center gap-2">
-        <h1 className="text-xl font-semibold">
-          {r.criteriaName} <span className="text-sm text-neutral-500">النسخة {r.criteriaVersion}</span>
+        <h1 className="page-title">
+          {r.criteriaName} <span className="text-sm text-muted">النسخة {r.criteriaVersion}</span>
         </h1>
         <StatusBadge status={r.status} />
         <div className="ms-auto flex gap-1">
@@ -346,11 +346,11 @@ function RunDetail({ runId, canApprove, canWrite, onBack, onStudent, onOpen }: {
           )}
         </div>
       </header>
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       <RunMeta r={r} />
       <div className="card overflow-x-auto">
         <table className="w-full">
-          <thead className="bg-neutral-50">
+          <thead className="bg-sunken">
             <tr>
               <th className="th">الترتيب</th>
               <th className="th">المعرّف</th>
@@ -365,8 +365,8 @@ function RunDetail({ runId, canApprove, canWrite, onBack, onStudent, onOpen }: {
           </thead>
           <tbody>
             {r.results.map((x: any) => (
-              <tr key={x.key} className="cursor-pointer border-t border-neutral-100 hover:bg-neutral-100" onClick={() => onStudent(x.key)} title="صفحة التبرير">
-                <td className="td font-semibold">{x.rank}</td>
+              <tr key={x.key} className="cursor-pointer border-t border-rule hover:bg-raised" onClick={() => onStudent(x.key)} title="صفحة التبرير">
+                <td className="td font-bold">{x.rank}</td>
                 <td className="td" dir="ltr">
                   {x.key}
                 </td>
@@ -376,7 +376,7 @@ function RunDetail({ runId, canApprove, canWrite, onBack, onStudent, onOpen }: {
                     {p}
                   </td>
                 ))}
-                <td className="td font-semibold tabular-nums">{x.total}</td>
+                <td className="td font-bold tabular-nums">{x.total}</td>
               </tr>
             ))}
           </tbody>
@@ -388,7 +388,7 @@ function RunDetail({ runId, canApprove, canWrite, onBack, onStudent, onOpen }: {
 
 function RunMeta({ r }: { r: any }) {
   return (
-    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg bg-neutral-50 p-3 text-xs text-neutral-600 md:grid-cols-4">
+    <dl className="grid grid-cols-2 gap-x-4 gap-y-1 rounded-lg bg-sunken p-3 text-xs text-muted md:grid-cols-4">
       <dt>البيانات</dt>
       <dd>
         {r.source?.kind === "records" ? "سجلات: " : ""}
@@ -426,7 +426,7 @@ function RunMeta({ r }: { r: any }) {
 
 function Justification({ runId, studentKey, onBack }: { runId: string; studentKey: string; onBack: () => void }) {
   const j = useQuery(api.ranking.justification, { rankingRunId: runId, key: studentKey });
-  if (!j) return <div className="text-sm text-neutral-500">جارٍ التحميل…</div>;
+  if (!j) return <div className="text-sm text-muted">جارٍ التحميل…</div>;
   return (
     <div className="mx-auto max-w-3xl space-y-4">
       <div className="flex gap-2 print:hidden">
@@ -438,12 +438,12 @@ function Justification({ runId, studentKey, onBack }: { runId: string; studentKe
         </button>
       </div>
       <header className="card p-4">
-        <div className="text-sm text-neutral-500">صفحة تبرير الترتيب</div>
-        <h1 className="text-xl font-semibold">{j.student.name}</h1>
+        <div className="text-sm text-muted">صفحة تبرير الترتيب</div>
+        <h1 className="page-title">{j.student.name}</h1>
         <div className="mt-2 flex flex-wrap gap-4 text-sm">
           <span>
             الترتيب: <b className="text-lg">{j.student.rank}</b> من {j.student.of}
-            {j.student.sharedWith > 0 && <span className="text-neutral-500"> (متساوٍ مع {j.student.sharedWith})</span>}
+            {j.student.sharedWith > 0 && <span className="text-muted"> (متساوٍ مع {j.student.sharedWith})</span>}
           </span>
           <span>
             المجموع: <b className="text-lg">{j.student.total}</b> من {j.student.maxTotal}
@@ -452,12 +452,12 @@ function Justification({ runId, studentKey, onBack }: { runId: string; studentKe
         </div>
       </header>
       <section className="card p-4">
-        <h2 className="mb-2 font-semibold">بياناته كما في اللقطة</h2>
+        <h2 className="mb-2 section-title">بياناته كما في اللقطة</h2>
         <table className="w-full text-sm">
           <tbody>
             {j.data.map((d: any) => (
-              <tr key={d.field} className="border-t border-neutral-100">
-                <td className="td w-1/3 text-neutral-500">{d.field}</td>
+              <tr key={d.field} className="border-t border-rule">
+                <td className="td w-1/3 text-muted">{d.field}</td>
                 <td className="td">{d.value === null ? "—" : String(d.value)}</td>
               </tr>
             ))}
@@ -465,30 +465,30 @@ function Justification({ runId, studentKey, onBack }: { runId: string; studentKe
         </table>
       </section>
       <section className="card space-y-2 p-4 text-sm">
-        <h2 className="font-semibold">المعادلة</h2>
-        <p className="text-neutral-600">{j.formula}</p>
+        <h2 className="section-title">المعادلة</h2>
+        <p className="text-muted">{j.formula}</p>
         <ul className="space-y-1">
           {j.breakdown.map((b: any) => (
-            <li key={b.field} className="rounded bg-neutral-50 px-2 py-1">
+            <li key={b.field} className="rounded bg-sunken px-2 py-1">
               {/* the math reads left to right even inside Arabic text */}
               {b.label}:{" "}
               <bdi dir="ltr" className="font-mono text-xs">
                 {b.explanation.slice(b.label.length + 2)}
               </bdi>
-              {b.clamped && <span className="text-xs text-amber-700"> (القيمة {String(b.raw)} حُصرت في المدى)</span>}
+              {b.clamped && <span className="text-xs text-warning"> (القيمة {String(b.raw)} حُصرت في المدى)</span>}
             </li>
           ))}
         </ul>
-        <p className="font-semibold">
+        <p className="font-bold">
           المجموع:{" "}
           <bdi dir="ltr" className="font-mono">
             {j.totalLine}
           </bdi>
         </p>
-        {j.tieBreak.length > 0 && <p className="text-xs text-neutral-500">قيم كسر التعادل: {j.tieBreak.map((t: any) => `${t.field} = ${t.value ?? "—"}`).join("، ")}</p>}
+        {j.tieBreak.length > 0 && <p className="text-xs text-muted">قيم كسر التعادل: {j.tieBreak.map((t: any) => `${t.field} = ${t.value ?? "—"}`).join("، ")}</p>}
       </section>
       <section className="card p-4">
-        <h2 className="mb-2 font-semibold">التشغيل</h2>
+        <h2 className="mb-2 section-title">التشغيل</h2>
         <div className="mb-2 text-sm">
           {j.run.criteriaName} — النسخة {j.run.criteriaVersion}
         </div>

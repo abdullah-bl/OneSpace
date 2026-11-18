@@ -358,11 +358,11 @@ describe("scheduled tasks", () => {
     expect(audit.some((x: any) => x.action === "schedule.stopped" && x.resourceId === id)).toBe(true);
   }, 30_000);
 
-  test("write tools in a scheduled run never execute: they become pending proposals for the creator", async () => {
+  test("write tools in a scheduled run that touch a shared space never execute: they become pending proposals for the creator", async () => {
     const writer = await publishedAgent(s, tok("admin")!, {
       name: "كاتب مجدول",
       allowedTools: ["create_artifact"],
-      instructions: `CALL_TOOL create_artifact {"title":"مخرج-مجدول-SCH9","kind":"markdown","content":"نص"}`,
+      instructions: `CALL_TOOL create_artifact {"title":"مخرج-مجدول-SCH9","kind":"markdown","content":"نص","spaceId":"${f.spaces.S_plain}"}`,
       maxSteps: 2,
     });
     const id = must(await s.call("mutation", "schedules:create", { title: "تقرير", prompt: "أنشئ تقريراً SCHEDQ-4", agentId: writer, recurrence: { kind: "weekly", time: "07:30", weekday: 0 } }, tok("mem")));
@@ -373,7 +373,7 @@ describe("scheduled tasks", () => {
     expect(proposals.length).toBe(1);
     expect(proposals[0].state).toBe("pending");
     expect(proposals[0].expiresAt - Date.now()).toBeGreaterThan(20 * 3600_000);
-    const arts = must(await s.call("query", "artifacts:list", { spaceId: f.spaces.P_mem }, tok("mem")));
+    const arts = must(await s.call("query", "artifacts:list", { spaceId: f.spaces.S_plain }, tok("mem")));
     expect(JSON.stringify(arts)).not.toContain("مخرج-مجدول-SCH9");
     must(await s.call("mutation", "schedules:remove", { scheduleId: id }, tok("mem")));
   }, 30_000);

@@ -365,6 +365,11 @@ export default defineSchema({
     ms: v.optional(v.number()),
     agentId: v.optional(v.string()),
     agentVersion: v.optional(v.number()),
+    // What the model needs to know about this message but the user shouldn't read (ids, details):
+    // appended to the message in the model's history only (chat.turnContext).
+    modelNote: v.optional(v.string()),
+    routed: v.optional(v.boolean()), // answered by a skill the router chose
+    steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))),
   })
     .index("by_message", ["messageId"])
     .index("by_thread", ["threadId"])
@@ -385,6 +390,8 @@ export default defineSchema({
     mentions: v.optional(v.array(v.object({ kind: v.union(v.literal("file"), v.literal("space")), id: v.string() }))),
     scheduleId: v.optional(v.string()), // a scheduled run (schedules.ts)
     afterProposal: v.optional(v.id("proposals")), // answers the request from a confirmed run's output
+    routed: v.optional(v.boolean()), // the agent was chosen by the router for this question (plans/07 §C)
+    steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),

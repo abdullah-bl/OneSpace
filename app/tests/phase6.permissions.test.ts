@@ -20,6 +20,7 @@ let writer: string; // an agent whose model always proposes create_artifact
 let memThread: string;
 let toConfirm: string;
 let toCancel: string;
+let toUndo: string;
 const bySpace = {} as Record<SpaceKey, string>; // agents visible to one shared space each
 
 const tok = (a: ActorKey) => f.tokens[a];
@@ -35,7 +36,15 @@ beforeAll(async () => {
   writer = await publishedAgent(s, admin, {
     name: "كاتب",
     allowedTools: ["create_artifact"],
-    instructions: `CALL_TOOL create_artifact {"title":"مخرج-المصفوفة","kind":"markdown","content":"نص المخرج"}`,
+    // Into a shared space: tier 2, a card that waits for «نفّذ».
+    instructions: `CALL_TOOL create_artifact {"title":"مخرج-المصفوفة","kind":"markdown","content":"نص المخرج","spaceId":"${f.spaces.S_plain}"}`,
+    maxSteps: 2,
+  });
+  // Into mem's personal space: tier 1, runs at once with «تراجع».
+  const privateWriter = await publishedAgent(s, admin, {
+    name: "كاتب خاص",
+    allowedTools: ["create_artifact"],
+    instructions: `CALL_TOOL create_artifact {"title":"مخرج-خاص-المصفوفة","kind":"markdown","content":"نص"}`,
     maxSteps: 2,
   });
   for (const sp of ["S_plain", "S_every", "S_sens"] as const) {
@@ -47,6 +56,11 @@ beforeAll(async () => {
   const ps = await proposalsOf(s, tok("mem")!, memThread);
   expect(ps.length).toBe(2);
   [toConfirm, toCancel] = ps.map((p) => p.id);
+  const privThread = must(await s.call("mutation", "chat:createThread", { agentId: privateWriter }, tok("mem")));
+  await ask(s, tok("mem")!, privThread, "أنشئ مخرجاً خاصاً");
+  const auto = (await proposalsOf(s, tok("mem")!, privThread)).find((p) => p.auto);
+  expect(auto?.state).toBe("executed");
+  toUndo = auto.id;
 }, 90_000);
 
 afterAll(async () => {
@@ -146,6 +160,7 @@ describe("proposals and the thread's agent: the thread's owner only", () => {
     ["chat:setAgent", (a) => s.call("mutation", "chat:setAgent", { threadId: memThread, agentId: writer }, tok(a))],
     ["chat:confirmProposal", (a) => s.call("action", "chat:confirmProposal", { proposalId: toConfirm }, tok(a))],
     ["chat:cancelProposal", (a) => s.call("mutation", "chat:cancelProposal", { proposalId: toCancel }, tok(a))],
+    ["chat:undo", (a) => s.call("mutation", "chat:undo", { proposalId: toUndo }, tok(a))],
   ];
   for (const [name, run] of OWNER_OPS) {
     for (const a of ACTORS) {
@@ -159,7 +174,10 @@ describe("proposals and the thread's agent: the thread's owner only", () => {
     for (const id of ["x", memThread, f.files.P_mem]) {
       expect((await s.call("action", "chat:confirmProposal", { proposalId: id }, tok("mem"))).ok).toBe(false);
       expect((await s.call("mutation", "chat:cancelProposal", { proposalId: id }, tok("mem"))).ok).toBe(false);
+      expect((await s.call("mutation", "chat:undo", { proposalId: id }, tok("mem"))).ok).toBe(false);
     }
+    // A confirmed (not auto-run) action can't be undone this way.
+    expect((await s.call("mutation", "chat:undo", { proposalId: toConfirm }, tok("mem"))).ok).toBe(false);
   });
 });
 
@@ -167,7 +185,7 @@ describe("coverage", () => {
   test("every Phase 6 public function is in this matrix", async () => {
     const res = await fetch(`${s.url}/_admin/api/functions`, { method: "POST", headers: { Authorization: `Bearer ${s.adminKey}` }, body: "{}" });
     const fns: string[] = (await res.json()).value.filter((x: any) => x.visibility === "public").map((x: any) => x.name);
-    const phase6 = fns.filter((n) => n.startsWith("agents:") || ["chat:setAgent", "chat:openTaskThread", "chat:confirmProposal", "chat:cancelProposal"].includes(n));
+    const phase6 = fns.filter((n) => n.startsWith("agents:") || ["chat:setAgent", "chat:openTaskThread", "chat:confirmProposal", "chat:cancelProposal", "chat:undo"].includes(n));
     expect(phase6.sort()).toEqual([...PHASE6_COVERED].sort());
   });
 });

@@ -23,21 +23,21 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
   };
   return (
     <div className="space-y-6">
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       <section className="space-y-2">
-        <h2 className="font-semibold">القوالب</h2>
+        <h2 className="section-title">القوالب</h2>
         {space.canManage && <TemplateEditor spaceId={space._id} />}
-        <div className="card divide-y divide-neutral-100">
+        <div className="card divide-y divide-rule">
           {templates?.map((t) => <TemplateRow key={t._id} t={t} canManage={space.canManage} />)}
-          {templates?.length === 0 && <div className="p-3 text-sm text-neutral-400">لا قوالب بعد.</div>}
+          {templates?.length === 0 && <div className="p-3 text-sm text-faint">لا قوالب بعد.</div>}
         </div>
       </section>
       {space.canWrite && templates && templates.some((t) => t.approvedVersion) && <RequestForm templates={templates.filter((t) => t.approvedVersion)} />}
       <section className="space-y-2">
-        <h2 className="font-semibold">المستندات</h2>
+        <h2 className="section-title">المستندات</h2>
         <div className="card overflow-auto">
           <table className="w-full text-sm">
-            <thead className="bg-neutral-50">
+            <thead className="bg-sunken">
               <tr>
                 <th className="th">القالب</th>
                 <th className="th">البيانات</th>
@@ -48,13 +48,13 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
             </thead>
             <tbody>
               {docs?.map((d) => (
-                <tr key={d._id} className="border-t border-neutral-100 align-top">
+                <tr key={d._id} className="border-t border-rule align-top">
                   <td className="td">
-                    {d.templateName} <span className="text-xs text-neutral-400">ن{d.templateVersion}</span>
+                    {d.templateName} <span className="text-xs text-faint">ن{d.templateVersion}</span>
                   </td>
                   <td className="td text-xs">
                     {Object.values(d.data).join(" · ")}
-                    <div className="text-neutral-400">طلبها {d.requestedByName} — {formatDate(d.requestedAt)}</div>
+                    <div className="text-faint">طلبها {d.requestedByName} — {formatDate(d.requestedAt)}</div>
                   </td>
                   <td className="td">{STATUS[d.status]}</td>
                   <td className="td text-xs">
@@ -64,7 +64,7 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
                         {d.serial} · {d.verifyCode}
                       </div>
                     )}
-                    {d.sha256 && <div className="truncate text-[10px] text-neutral-400" dir="ltr" title={d.sha256}>sha256 {d.sha256.slice(0, 16)}…</div>}
+                    {d.sha256 && <div className="truncate text-[10px] text-faint" dir="ltr" title={d.sha256}>sha256 {d.sha256.slice(0, 16)}…</div>}
                   </td>
                   <td className="td whitespace-nowrap">
                     {d.status === "draft" && space.canManage && (
@@ -92,9 +92,9 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
               ))}
             </tbody>
           </table>
-          {docs?.length === 0 && <div className="p-3 text-sm text-neutral-400">لا مستندات بعد.</div>}
+          {docs?.length === 0 && <div className="p-3 text-sm text-faint">لا مستندات بعد.</div>}
         </div>
-        <p className="text-xs text-neutral-500">
+        <p className="text-xs text-muted">
           يتحقق أي شخص من مستند صادر برمز التحقق في <a className="underline" href="/verify" target="_blank" rel="noopener">صفحة التحقق</a>.
         </p>
       </section>
@@ -108,8 +108,8 @@ function TemplateRow({ t, canManage }: { t: { _id: string; name: string; current
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 text-sm">
       <div className="flex-1">
-        <div className="font-semibold">{t.name}</div>
-        <div className="text-xs text-neutral-500">
+        <div className="font-bold">{t.name}</div>
+        <div className="text-xs text-muted">
           آخر نسخة {t.currentVersion} · المعتمدة: {t.approvedVersion ?? "لا يوجد"}
         </div>
       </div>
@@ -118,7 +118,7 @@ function TemplateRow({ t, canManage }: { t: { _id: string; name: string; current
           اعتماد النسخة {t.currentVersion}
         </button>
       )}
-      {error && <span className="text-red-700">{error}</span>}
+      {error && <span className="text-negative">{error}</span>}
     </div>
   );
 }
@@ -180,7 +180,7 @@ function TemplateEditor({ spaceId }: { spaceId: string }) {
       </select>
       {set && (
         <div className="space-y-1 text-sm">
-          <div className="text-xs text-neutral-500">الحقول وربطها بالأعمدة (البيانات تأتي من السجل، لا يكتبها أحد):</div>
+          <div className="text-xs text-muted">الحقول وربطها بالأعمدة (البيانات تأتي من السجل، لا يكتبها أحد):</div>
           {fields.map((f, i) => (
             <div key={i} className="flex items-center gap-2">
               <input className="input w-40" value={f.label} onChange={(e) => setFields(fields.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
@@ -210,7 +210,7 @@ function TemplateEditor({ spaceId }: { spaceId: string }) {
           ))}
       </select>
       <details>
-        <summary className="cursor-pointer text-sm text-neutral-500">التخطيط (JSON: مواضع النصوص والحقول بالنقاط)</summary>
+        <summary className="cursor-pointer text-sm text-muted">التخطيط (JSON: مواضع النصوص والحقول بالنقاط)</summary>
         <textarea className="input mt-2 h-60 w-full font-mono text-xs" dir="ltr" value={layout || suggestion || ""} onChange={(e) => setLayout(e.target.value)} />
       </details>
       <div className="flex gap-2">
@@ -219,8 +219,8 @@ function TemplateEditor({ spaceId }: { spaceId: string }) {
           إلغاء
         </button>
       </div>
-      <p className="text-xs text-neutral-500">النسخة المحفوظة لا تُستخدم حتى تعتمدها.</p>
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      <p className="text-xs text-muted">النسخة المحفوظة لا تُستخدم حتى تعتمدها.</p>
+      {error && <p className="text-sm text-negative">{error}</p>}
     </form>
   );
 }
@@ -234,7 +234,7 @@ function RequestForm({ templates }: { templates: { _id: string; name: string; re
   const [message, setMessage] = useState("");
   return (
     <section className="card flex flex-wrap items-center gap-2 p-3 text-sm">
-      <span className="font-semibold">طلب مستند:</span>
+      <span className="font-bold">طلب مستند:</span>
       <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
         {templates.map((x) => (
           <option key={x._id} value={x._id}>

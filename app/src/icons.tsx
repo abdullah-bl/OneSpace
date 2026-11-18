@@ -38,6 +38,13 @@ const PATHS: Record<string, string> = {
   panel: "M4 5h16v14H4zM14 5v14",
   play: "M8 5v14l11-7z",
   pause: "M8 5v14M16 5v14",
+  download: "M12 4v11M7 10l5 5 5-5M5 20h14",
+  pencil: "M4 20h4L19 9l-4-4L4 16zM13.5 6.5l4 4",
+  eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 1 0-6 3 3 0 0 1 0 6z",
+  expand: "M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5",
+  next: "M9 6l6 6-6 6",
+  table: "M4 5h16v14H4zM4 10h16M4 15h16M10 5v14",
+  code: "M8 8l-4 4 4 4M16 8l4 4-4 4",
 };
 
 export type IconName = keyof typeof PATHS;

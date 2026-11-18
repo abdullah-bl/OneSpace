@@ -27,15 +27,15 @@ export function AdminView() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-8">
-      <h1 className="text-xl font-semibold">إدارة مساحة العمل</h1>
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      <h1 className="page-title">إدارة مساحة العمل</h1>
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
 
       <section className="space-y-2">
-        <h2 className="font-semibold">الموظفون</h2>
-        <p className="text-sm text-neutral-500">من ينشئ حساباً يبقى "بانتظار التفعيل" ولا يرى شيئاً حتى تفعّله هنا. تأكد من هوية صاحب البريد قبل التفعيل.</p>
+        <h2 className="section-title">الموظفون</h2>
+        <p className="text-sm text-muted">من ينشئ حساباً يبقى "بانتظار التفعيل" ولا يرى شيئاً حتى تفعّله هنا. تأكد من هوية صاحب البريد قبل التفعيل.</p>
         <div className="card overflow-hidden">
           <table className="w-full">
-            <thead className="bg-neutral-50">
+            <thead className="bg-sunken">
               <tr>
                 <th className="th">الاسم</th>
                 <th className="th">البريد</th>
@@ -48,11 +48,11 @@ export function AdminView() {
             </thead>
             <tbody>
               {users?.map((u) => (
-                <tr key={u._id} className="border-t border-neutral-100">
-                  <td className="td font-semibold">{u.name ?? "—"}</td>
+                <tr key={u._id} className="border-t border-rule">
+                  <td className="td font-bold">{u.name ?? "—"}</td>
                   <td className="td text-xs" dir="ltr">{u.email}</td>
                   <td className="td">
-                    <span className={`rounded-full px-2 py-0.5 text-xs ${u.status === "active" ? "bg-neutral-100 text-neutral-900" : u.status === "pending" ? "bg-amber-50 text-amber-800" : "bg-neutral-100 text-neutral-500"}`}>
+                    <span className={`rounded-full px-2 py-0.5 text-xs ${u.status === "active" ? "bg-raised text-ink" : u.status === "pending" ? "bg-warning-soft text-warning" : "bg-raised text-muted"}`}>
                       {STATUS_LABELS[u.status]}
                     </span>
                   </td>
@@ -69,7 +69,7 @@ export function AdminView() {
                   <td className="td">
                     <IdentifiersCell key={`${u.nationalId}|${u.employeeNo}`} userId={u._id} nationalId={u.nationalId} employeeNo={u.employeeNo} onError={setError} />
                   </td>
-                  <td className="td text-xs text-neutral-500">{formatDate(u.createdAt)}</td>
+                  <td className="td text-xs text-muted">{formatDate(u.createdAt)}</td>
                   <td className="td">
                     {u.status === "active" ? (
                       <button className="btn-danger" onClick={() => confirm(`تعطيل حساب ${u.name ?? u.email}؟ يفقد الوصول فوراً.`) && run(() => disable({ userId: u._id as any }))}>
@@ -89,8 +89,8 @@ export function AdminView() {
       </section>
 
       <section className="space-y-2">
-        <h2 className="font-semibold">المساحات المشتركة</h2>
-        <p className="text-sm text-neutral-500">ترى هنا وجود المساحة ومديرها فقط. لا ترى ملفاتها ما لم تكن عضواً فيها.</p>
+        <h2 className="section-title">المساحات المشتركة</h2>
+        <p className="text-sm text-muted">ترى هنا وجود المساحة ومديرها فقط. لا ترى ملفاتها ما لم تكن عضواً فيها.</p>
         <form
           className="card flex flex-wrap items-end gap-2 p-3"
           onSubmit={(e) => {
@@ -118,14 +118,14 @@ export function AdminView() {
           </label>
           <button className="btn-primary">إنشاء</button>
         </form>
-        <div className="card divide-y divide-neutral-100">
+        <div className="card divide-y divide-rule">
           {spaces?.map((s) => (
             <div key={s._id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
               <div className="min-w-40 flex-1">
-                <div className="font-semibold">
+                <div className="font-bold">
                   {s.everyone ? "" : ""} {s.name}
                 </div>
-                <div className="text-xs text-neutral-500">
+                <div className="text-xs text-muted">
                   المدير: {s.managers.map((m) => m.name).join("، ") || "—"} · {s.memberCount} عضو
                 </div>
               </div>
@@ -145,7 +145,7 @@ export function AdminView() {
               </select>
             </div>
           ))}
-          {spaces?.length === 0 && <div className="p-3 text-sm text-neutral-400">لا مساحات مشتركة بعد</div>}
+          {spaces?.length === 0 && <div className="p-3 text-sm text-faint">لا مساحات مشتركة بعد</div>}
         </div>
       </section>
     </div>

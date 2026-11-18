@@ -29,7 +29,7 @@ export function MentionsPage({ go }: { go: (path: string) => void }) {
         {items?.map((m) => (
           <li key={m.id}>
             <button
-              className="flex w-full items-start gap-3 border-b border-rule px-2 py-3 text-start hover:bg-[#fbfbfa]"
+              className="flex w-full items-start gap-3 border-b border-rule px-2 py-3 text-start hover:bg-sunken"
               onClick={() => {
                 if (!m.read) void markRead({ ids: [m.id] });
                 go(`/tasks/${m.taskId}`);
@@ -40,7 +40,7 @@ export function MentionsPage({ go }: { go: (path: string) => void }) {
                 <span className={`block ${m.read ? "" : "font-medium"}`}>
                   {m.by ?? "زميل"} أشار إليك في «{m.taskTitle}»
                 </span>
-                <span className="mt-0.5 block text-sm text-[#3d3d3d]">{m.excerpt}</span>
+                <span className="mt-0.5 block text-sm text-ink">{m.excerpt}</span>
                 <span className="mt-0.5 block text-xs text-muted">{m.spaceName}</span>
               </span>
               <span className="shrink-0 text-xs text-muted num">{relTime(m.createdAt)}</span>

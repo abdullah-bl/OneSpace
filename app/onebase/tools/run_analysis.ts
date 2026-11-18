@@ -165,6 +165,11 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
   answerAfterRun: true,
   async run(t: ToolContext, args: RunAnalysisArgs): Promise<ToolResult> {
     const r = await executeAnalysis(t, args);
-    return { content: summarize(r), artifactIds: r.artifactIds, spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])] };
+    return {
+      content: summarize(r),
+      artifactIds: r.artifactIds,
+      spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])],
+      undo: { deleteFiles: r.outputs.map((o) => o.fileId), deleteArtifacts: r.artifactIds },
+    };
   },
 };

@@ -10,7 +10,7 @@ database (plans/02 rule 7).
 ```bash
 cd sandbox-runner
 bun install
-bun run build-image                       # docker build -t onespace-sandbox:1 image  (needs internet once)
+bun run build-image                       # docker build -t onespace-sandbox:2 image  (needs internet once)
 export SANDBOX_SECRET="$(openssl rand -hex 32)"
 bun run start                             # http://127.0.0.1:8787
 ```
@@ -29,12 +29,22 @@ its own systemd service; OneBase's user should not be in the `docker` group.
 |---|---|---|
 | `SANDBOX_SECRET` | — (required, ≥16 chars) | shared secret, `Authorization: Bearer …` |
 | `SANDBOX_HOST` / `SANDBOX_PORT` | `127.0.0.1` / `8787` | keep it on loopback |
-| `SANDBOX_IMAGE` | `onespace-sandbox:1` | |
+| `SANDBOX_IMAGE` | `onespace-sandbox:2` | |
 | `SANDBOX_RUNTIME` | `auto` | `auto` uses gVisor (`runsc`) when Docker has it, else `runc`; or force `runc`/`runsc` |
 | `SANDBOX_MAX_CONCURRENCY` | `2` | containers at once; extra runs wait |
 | `SANDBOX_MAX_TIMEOUT_MS` / `_MEMORY_MB` / `_CPUS` / `_PIDS` / `_OUTPUT_MB` | 120000 / 2048 / 2 / 256 / 50 | ceilings; request limits are clamped to them |
 | `SANDBOX_MAX_INPUT_MB` | `100` | total input bytes per run |
 | `SANDBOX_WORKDIR` | `$TMPDIR/onespace-sandbox` | per-run input/code dirs, deleted after each run |
+
+## Documents (image 2)
+
+The image also renders outputs as files: `import onespace_doc; onespace_doc.main()` reads
+`/input/doc.json` (`{title, kind: "markdown"|"html", content, format: "docx"|"pdf"|"pptx"}`) and writes
+`/output/out.<format>`, with Arabic right-to-left (Word bidi paragraphs, PowerPoint `rtl`, PDF via
+WeasyPrint/Pango with Noto Naskh Arabic). OneBase sends this fixed code (`app/onebase/lib/docExport.ts`);
+the model never writes it. HTML is rendered with only `data:` URLs allowed (no `file://`).
+Image 2 adds python-docx, python-pptx, WeasyPrint, markdown-it-py, Noto fonts and Pango; rebuild with
+`bun run build-image` after pulling.
 
 ## API
 

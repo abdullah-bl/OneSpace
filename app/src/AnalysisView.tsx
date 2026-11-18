@@ -3,7 +3,7 @@
 
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
-import { ArtifactPanel } from "./ArtifactPanel";
+import { ArtifactDock, OutputChip } from "./ArtifactPanel";
 import { api, errorText, formatDate, formatSize, type SpaceInfo } from "./lib";
 
 const SAMPLE = `import pandas as pd, matplotlib.pyplot as plt, onespace
@@ -39,15 +39,15 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
   return (
     <div className="mx-auto max-w-5xl space-y-4">
       <header>
-        <h1 className="text-xl font-semibold">التحليل</h1>
-        <p className="text-sm text-neutral-500">
+        <h1 className="page-title">التحليل</h1>
+        <p className="text-sm text-muted">
           يُشغَّل الكود في حاوية معزولة بلا شبكة، ولا يصل إلا للملفات التي تختارها هنا (للقراءة فقط في ‎/input‎). ما يُكتب في ‎/output‎ يُحفظ ملفاتٍ في المساحة التي تختارها.
         </p>
       </header>
 
       <section className="card space-y-3 p-4">
         <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold">الملفات</span>
+          <span className="text-sm font-bold">الملفات</span>
           <select className="input" value={browse} onChange={(e) => setBrowse(e.target.value)}>
             {spaces.map((s) => (
               <option key={s._id} value={s._id}>
@@ -56,11 +56,11 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
             ))}
           </select>
         </div>
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-neutral-200">
-          {files === undefined && <div className="p-2 text-sm text-neutral-400">جارٍ التحميل…</div>}
-          {files?.length === 0 && <div className="p-2 text-sm text-neutral-400">لا ملفات في هذه المساحة</div>}
+        <div className="max-h-48 overflow-y-auto rounded-lg border border-line">
+          {files === undefined && <div className="p-2 text-sm text-faint">جارٍ التحميل…</div>}
+          {files?.length === 0 && <div className="p-2 text-sm text-faint">لا ملفات في هذه المساحة</div>}
           {files?.map((file: any) => (
-            <label key={file._id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-neutral-50">
+            <label key={file._id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-sunken">
               <input
                 type="checkbox"
                 checked={!!picked[file._id]}
@@ -74,17 +74,17 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
                 }
               />
               <span className="truncate">{file.name}</span>
-              <span className="ms-auto text-xs text-neutral-400">{formatSize(file.size)}</span>
+              <span className="ms-auto text-xs text-faint">{formatSize(file.size)}</span>
             </label>
           ))}
         </div>
         {pickedList.length > 0 && (
           <div className="flex flex-wrap gap-1">
             {pickedList.map(([id, p]) => (
-              <span key={id} className="rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-900">
+              <span key={id} className="rounded-full bg-raised px-2 py-0.5 text-xs text-ink">
                 {p.name}
                 <button
-                  className="ms-1 text-neutral-400"
+                  className="ms-1 text-faint"
                   onClick={() =>
                     setPicked((x) => {
                       const n = { ...x };
@@ -102,7 +102,7 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
       </section>
 
       <section className="card space-y-3 p-4">
-        <div className="text-sm font-semibold">الكود (Python)</div>
+        <div className="text-sm font-bold">الكود (Python)</div>
         <textarea className="input h-64 w-full font-mono text-xs" dir="ltr" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
         <div className="flex flex-wrap items-center gap-2 text-sm">
           <span>حفظ المخرجات في</span>
@@ -136,7 +136,7 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
             {busy ? "يعمل…" : "شغّل"}
           </button>
         </div>
-        {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+        {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       </section>
 
       {result && <RunResult r={result} spaces={spaces} />}
@@ -146,46 +146,36 @@ export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
 }
 
 function Status({ exit, status }: { exit: any; status?: string }) {
-  if (exit?.timedOut) return <span className="text-amber-700">تجاوز الحد الزمني</span>;
-  if (exit?.oomKilled) return <span className="text-amber-700">تجاوز حد الذاكرة</span>;
-  if (status === "running") return <span className="text-neutral-500">يعمل…</span>;
-  if (status === "done" || (exit && exit.code === 0 && !exit.error)) return <span className="text-neutral-900">نجح</span>;
-  return <span className="text-red-700">فشل{exit?.error ? `: ${exit.error}` : ""}</span>;
+  if (exit?.timedOut) return <span className="text-warning">تجاوز الحد الزمني</span>;
+  if (exit?.oomKilled) return <span className="text-warning">تجاوز حد الذاكرة</span>;
+  if (status === "running") return <span className="text-muted">يعمل…</span>;
+  if (status === "done" || (exit && exit.code === 0 && !exit.error)) return <span className="text-ink">نجح</span>;
+  return <span className="text-negative">فشل{exit?.error ? `: ${exit.error}` : ""}</span>;
 }
 
 function OutputLink({ fileId, name }: { fileId: string; name: string }) {
   const requestDownload = useMutation(api.files.requestDownload);
   return (
-    <button className="btn-ghost px-1 text-neutral-900" onClick={async () => window.open(await requestDownload({ fileId: fileId as any, inline: true }), "_blank", "noopener")}>
+    <button className="btn-ghost px-1 text-ink" onClick={async () => window.open(await requestDownload({ fileId: fileId as any, inline: true }), "_blank", "noopener")}>
       {name}
     </button>
   );
 }
 
 /** An artifact made from a run output; opens in the side panel (sandboxed rendering). */
-function ArtifactChip({ artifactId, onOpen }: { artifactId: string; onOpen: (id: string) => void }) {
-  const meta = useQuery(api.artifacts.versions, { artifactId: artifactId as any });
-  if (!meta) return null;
-  return (
-    <button className="btn-ghost px-1 text-neutral-900" onClick={() => onOpen(artifactId)}>
-      {meta.artifact.title}
-    </button>
-  );
-}
-
 function RunResult({ r, spaces }: { r: any; spaces: SpaceInfo[] }) {
   const space = spaces.find((s) => s._id === r.targetSpaceId);
   const [openId, setOpenId] = useState<string | null>(null);
   return (
     <section className="card space-y-2 p-4 text-sm">
-      <div className="flex items-center gap-2 font-semibold">
+      <div className="flex items-center gap-2 font-bold">
         النتيجة: <Status exit={{ code: r.exitCode, timedOut: r.timedOut, oomKilled: r.oomKilled, error: r.error }} status={r.ok ? "done" : "failed"} />
       </div>
-      {r.stdout && <pre className="max-h-80 overflow-auto rounded-lg bg-neutral-900 p-3 text-xs text-neutral-100" dir="ltr">{r.stdout}</pre>}
-      {!r.ok && r.stderr && <pre className="max-h-60 overflow-auto rounded-lg bg-red-50 p-3 text-xs text-red-800" dir="ltr">{r.stderr}</pre>}
+      {r.stdout && <pre className="max-h-80 overflow-auto rounded-lg bg-ink p-3 text-xs text-surface" dir="ltr">{r.stdout}</pre>}
+      {!r.ok && r.stderr && <pre className="max-h-60 overflow-auto rounded-lg bg-negative-soft p-3 text-xs text-negative" dir="ltr">{r.stderr}</pre>}
       {r.outputs.length > 0 && (
         <div>
-          <div className="text-xs text-neutral-500">المخرجات (حُفظت في {space ? spaceLabel(space) : "المساحة"}):</div>
+          <div className="text-xs text-muted">المخرجات (حُفظت في {space ? spaceLabel(space) : "المساحة"}):</div>
           <div className="flex flex-wrap gap-1">
             {r.outputs.map((o: any) => (
               <OutputLink key={o.fileId} fileId={o.fileId} name={o.name} />
@@ -195,15 +185,15 @@ function RunResult({ r, spaces }: { r: any; spaces: SpaceInfo[] }) {
       )}
       {r.artifactIds?.length > 0 && (
         <div>
-          <div className="text-xs text-neutral-500">تُعرض في لوحة المخرجات:</div>
+          <div className="text-xs text-muted">تُعرض في لوحة المخرجات:</div>
           <div className="flex flex-wrap gap-1">
             {r.artifactIds.map((id: string) => (
-              <ArtifactChip key={id} artifactId={id} onOpen={setOpenId} />
+              <OutputChip key={id} artifactId={id} onOpen={setOpenId} />
             ))}
           </div>
         </div>
       )}
-      {openId && <ArtifactPanel key={openId} artifactId={openId} spaces={spaces} onClose={() => setOpenId(null)} />}
+      {openId && <ArtifactDock key={openId} artifactId={openId} spaces={spaces} onClose={() => setOpenId(null)} mode="overlay" />}
     </section>
   );
 }
@@ -213,12 +203,12 @@ function RecentRuns({ spaces }: { spaces: SpaceInfo[] }) {
   if (!runs?.length) return null;
   return (
     <section className="card overflow-hidden">
-      <div className="border-b border-neutral-200 px-4 py-2 text-sm font-semibold">تشغيلاتي الأخيرة</div>
+      <div className="border-b border-line px-4 py-2 text-sm font-bold">تشغيلاتي الأخيرة</div>
       <table className="w-full">
         <tbody>
           {runs.map((r: any) => (
-            <tr key={r._id} className="border-t border-neutral-100 align-top">
-              <td className="td whitespace-nowrap text-xs text-neutral-500">{formatDate(r.createdAt)}</td>
+            <tr key={r._id} className="border-t border-rule align-top">
+              <td className="td whitespace-nowrap text-xs text-muted">{formatDate(r.createdAt)}</td>
               <td className="td">
                 <Status exit={r.exit} status={r.status} />
               </td>
@@ -227,7 +217,7 @@ function RecentRuns({ spaces }: { spaces: SpaceInfo[] }) {
                 {r.outputs.map((o: any) => (
                   <OutputLink key={o.fileId} fileId={o.fileId} name={o.name} />
                 ))}
-                {spaces.find((s) => s._id === r.spaceId) ? null : <span className="text-neutral-400">(مساحة لم تعد متاحة)</span>}
+                {spaces.find((s) => s._id === r.spaceId) ? null : <span className="text-faint">(مساحة لم تعد متاحة)</span>}
               </td>
             </tr>
           ))}

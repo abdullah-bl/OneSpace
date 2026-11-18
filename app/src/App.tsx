@@ -56,7 +56,7 @@ function Login() {
       >
         <div className="flex items-center gap-2">
           <Mark size={28} />
-          <h1 className="text-xl font-medium">مساحة</h1>
+          <h1 className="page-title">مساحة</h1>
         </div>
         <p className="text-sm text-muted">{flow === "signIn" ? "مساعد الإدارة: محادثات، ومساحات العمل، والمهام." : "إنشاء حساب: يُفعَّل بعد موافقة مدير مساحة العمل."}</p>
         {flow === "signUp" && (
@@ -94,7 +94,7 @@ function Gate() {
     return (
       <div className="flex h-full items-center justify-center p-4">
         <div className="card max-w-md space-y-3 p-6">
-          <h1 className="text-lg font-medium">{me.status === "disabled" ? "الحساب معطّل" : "حسابك بانتظار التفعيل"}</h1>
+          <h1 className="page-title">{me.status === "disabled" ? "الحساب معطّل" : "حسابك بانتظار التفعيل"}</h1>
           <p className="text-sm text-muted">
             {me.status === "disabled" ? "عطّل مدير مساحة العمل هذا الحساب. تواصل معه إن كان ذلك خطأ." : "سجّلت الدخول بنجاح، لكن لا يظهر لك شيء حتى يضيفك مدير مساحة العمل."}
           </p>
@@ -217,7 +217,7 @@ function Wide({ children }: { children: ReactNode }) {
 function NotAvailable() {
   return (
     <Wide>
-      <h1 className="text-2xl font-medium">غير متاح</h1>
+      <h1 className="page-title">غير متاح</h1>
       <p className="mt-2 text-muted">هذه الصفحة غير موجودة أو لا تملك صلاحية الوصول إليها.</p>
       <a className="btn-secondary mt-4" href="#/">
         محادثة جديدة
@@ -302,7 +302,7 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
             <li key={t.threadId}>
               <a
                 href={`#/chat/${t.threadId}`}
-                className={`flex h-8 items-center gap-2 rounded-md px-3 text-sm ${current === t.threadId ? "bg-active text-ink" : "text-[#3d3d3d] hover:bg-active"}`}
+                className={`flex h-8 items-center gap-2 rounded-md px-3 text-sm ${current === t.threadId ? "bg-active text-ink" : "text-ink hover:bg-active"}`}
                 title={`${t.title}${t.spaceName ? ` · ${t.spaceName}` : ""} · ${relTime(t.lastAt)}`}
               >
                 <span className="truncate">{t.title}</span>
@@ -318,7 +318,7 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
 
 function NavLink({ href, icon, on, count, children }: { href: string; icon: IconName; on: boolean; count?: number; children: ReactNode }) {
   return (
-    <a href={href} className={`flex h-9 items-center gap-2.5 rounded-md px-3 text-sm ${on ? "bg-active font-medium text-ink" : "text-[#3d3d3d] hover:bg-active"}`} aria-current={on ? "page" : undefined}>
+    <a href={href} className={`flex h-9 items-center gap-2.5 rounded-md px-3 text-sm ${on ? "bg-active font-medium text-ink" : "text-ink hover:bg-active"}`} aria-current={on ? "page" : undefined}>
       <Icon name={icon} size={16} />
       {children}
       {!!count && <span className="ms-auto text-xs text-muted num">{count}</span>}
@@ -360,7 +360,7 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
         </div>
       )}
       <button className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-start hover:bg-active" onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu">
-        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-[#e3e1dc] text-sm font-medium">{(me.name ?? me.email ?? "؟").trim().charAt(0)}</span>
+        <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-active text-sm font-medium">{(me.name ?? me.email ?? "؟").trim().charAt(0)}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-sm font-medium">{me.name ?? me.email}</span>
           <span className="block truncate text-xs text-muted">{ROLE_LABELS[me.workspaceRole ?? ""] ?? "موظف"}</span>
@@ -380,7 +380,7 @@ class ErrorBoundary extends Component<{ children: ReactNode }, { error: unknown 
     if (this.state.error)
       return (
         <div className="mx-auto max-w-[760px] p-6">
-          <p className="rounded-md bg-[#ffedea] p-3 text-sm text-[#831c1e]">{errorText(this.state.error)}</p>
+          <p className="rounded-md bg-negative-soft p-3 text-sm text-negative">{errorText(this.state.error)}</p>
         </div>
       );
     return this.props.children;

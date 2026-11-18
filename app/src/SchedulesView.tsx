@@ -38,7 +38,7 @@ export function SchedulesPanel({ spaces }: { spaces: SpaceInfo[] }) {
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_360px]">
       <section>
         <div className="flex items-center gap-2">
-          <h2 className="text-base font-medium">مهامي المجدولة</h2>
+          <h2 className="section-title">مهامي المجدولة</h2>
           <span className="text-xs text-muted num">{items?.length ?? ""}</span>
           <button className="btn-primary ms-auto" onClick={() => setEditing({ ...EMPTY })}>
             <Icon name="plus" /> مهمة مجدولة
@@ -60,13 +60,13 @@ export function SchedulesPanel({ spaces }: { spaces: SpaceInfo[] }) {
                   <div className="flex items-center gap-2">
                     <span className="truncate font-medium">{s.title}</span>
                     {!s.enabled && <span className="shrink-0 rounded bg-raised px-1.5 py-0.5 text-xs text-muted">{s.stoppedReason ? "متوقفة" : "موقوفة مؤقتاً"}</span>}
-                    {s.lastStatus === "failed" && <span className="shrink-0 rounded bg-[#ffedea] px-1.5 py-0.5 text-xs text-[#831c1e]">فشل آخر تشغيل</span>}
+                    {s.lastStatus === "failed" && <span className="shrink-0 rounded bg-negative-soft px-1.5 py-0.5 text-xs text-negative">فشل آخر تشغيل</span>}
                   </div>
-                  <p className="line-clamp-2 text-sm text-[#3d3d3d]">{s.prompt}</p>
+                  <p className="line-clamp-2 text-sm text-ink">{s.prompt}</p>
                   <p className="mt-0.5 text-xs text-muted">
                     {s.recurrenceLabel} · {s.agentName ?? "الوكيل غير متاح"} · {s.spaceName ?? (s.spaceId === null && !s.stoppedReason ? "كل ما أملك" : "—")}
                   </p>
-                  {s.stoppedReason && <p className="mt-0.5 text-xs text-[#92400e]">{s.stoppedReason}</p>}
+                  {s.stoppedReason && <p className="mt-0.5 text-xs text-warning">{s.stoppedReason}</p>}
                 </div>
                 <div className="shrink-0 text-end text-xs text-muted num">
                   <div>التالي: {s.enabled ? when(s.nextRunAt) : "—"}</div>
@@ -104,7 +104,7 @@ export function SchedulesPanel({ spaces }: { spaces: SpaceInfo[] }) {
 
 function Help() {
   return (
-    <section className="card p-4 text-sm text-[#3d3d3d]">
+    <section className="card p-4 text-sm text-ink">
       <h2 className="mb-2 text-sm font-medium">كيف تعمل</h2>
       <ul className="list-disc space-y-1.5 ps-5">
         <li>تُشغَّل في الوقت المحدد بتوقيت الرياض، كأنك أرسلت الطلب بنفسك.</li>
@@ -183,7 +183,7 @@ function ScheduleForm({ draft, spaces, onDone }: { draft: Draft; spaces: SpaceIn
               ["cron", "cron"],
             ] as const
           ).map(([k, label]) => (
-            <button type="button" key={k} role="radio" aria-checked={r.kind === k} className={`h-8 rounded-md px-3 text-sm ${r.kind === k ? "bg-primary text-white" : "bg-[#e5e5e5] hover:bg-[#dadada]"}`} onClick={() => setR({ kind: k })}>
+            <button type="button" key={k} role="radio" aria-checked={r.kind === k} className={`h-8 rounded-md px-3 text-sm ${r.kind === k ? "bg-primary text-white" : "bg-raised hover:bg-active"}`} onClick={() => setR({ kind: k })}>
               {label}
             </button>
           ))}

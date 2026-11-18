@@ -17,7 +17,7 @@ export function SpaceInstructions({ space }: { space: SpaceInfo }) {
   if (!editing) {
     return (
       <div className="text-sm">
-        {info.instructions ? <p className="line-clamp-6 whitespace-pre-wrap text-[#3d3d3d]">{info.instructions}</p> : <p className="text-muted">لا تعليمات لهذه المساحة{space.canManage ? ". أضف ما يجب أن يعرفه المساعد هنا: الأسلوب، والمراجع المعتمدة، وما يُتجنّب." : "."}</p>}
+        {info.instructions ? <p className="line-clamp-6 whitespace-pre-wrap text-ink">{info.instructions}</p> : <p className="text-muted">لا تعليمات لهذه المساحة{space.canManage ? ". أضف ما يجب أن يعرفه المساعد هنا: الأسلوب، والمراجع المعتمدة، وما يُتجنّب." : "."}</p>}
         {space.canManage && (
           <button className="btn-secondary mt-3 h-8" onClick={() => setEditing(true)}>
             {info.instructions ? "تعديل التعليمات" : "إضافة تعليمات"}

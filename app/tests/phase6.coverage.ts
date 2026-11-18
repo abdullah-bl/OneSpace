@@ -19,4 +19,5 @@ export const PHASE6_COVERED = [
   "chat:openTaskThread",
   "chat:confirmProposal",
   "chat:cancelProposal",
+  "chat:undo",
 ];

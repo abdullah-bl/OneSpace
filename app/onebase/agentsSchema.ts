@@ -30,7 +30,7 @@ export const agentConfig = v.object({
   grounding: v.optional(v.union(v.literal("open"), v.literal("documents"))),
 });
 
-export const proposalState = v.union(v.literal("pending"), v.literal("running"), v.literal("executed"), v.literal("failed"), v.literal("cancelled"), v.literal("expired"));
+export const proposalState = v.union(v.literal("pending"), v.literal("running"), v.literal("executed"), v.literal("failed"), v.literal("cancelled"), v.literal("expired"), v.literal("undone"));
 
 export const agentsTables = {
   // `live` is what users get (version = its number, 0 = never published); `draft` is what the
@@ -77,7 +77,12 @@ export const agentsTables = {
     expiresAt: v.number(),
     decidedAt: v.optional(v.number()),
     result: v.optional(v.string()),
+    display: v.optional(v.string()), // the user-facing line for the card (ToolResult.display)
     artifactIds: v.optional(v.array(v.string())),
+    tier: v.optional(v.number()), // plans/07 §D: 1 ran without asking, 2 shared, 3 sensitive/official
+    auto: v.optional(v.boolean()), // ran without «نفّذ» (tier 1); «تراجع» can reverse it
+    undo: v.optional(v.any()), // ToolResult.undo, set by server code only
+    undoneAt: v.optional(v.number()),
   })
     .index("by_thread", ["threadId", "createdAt"])
     .index("by_message", ["messageId"]),

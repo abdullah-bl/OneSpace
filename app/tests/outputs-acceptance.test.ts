@@ -284,9 +284,18 @@ describe("✓ no path lets the model write text into an official document", () =
   test("no agent tool can create or edit templates or documents other than fill_template's ids", () => {
     const names = Object.keys(tools);
     // search_documents (Phase 2) only reads indexed space files; it never touches templates or issued documents.
-    const READ_ONLY = new Set(["search_documents"]);
-    const touching = names.filter((n) => /template|document|certificate|issue/i.test(n) && !READ_ONLY.has(n));
+    // export_document renders an output (artifact) as an ordinary Word/PDF/PowerPoint file: no template,
+    // no verification code, not an official document. Its source must never reach those modules.
+    const NOT_OFFICIAL = new Set(["search_documents", "export_document"]);
+    const touching = names.filter((n) => /template|document|certificate|issue/i.test(n) && !NOT_OFFICIAL.has(n));
     expect(touching).toEqual(["fill_template"]);
+  });
+
+  test("export_document never calls the templates or official-documents modules", async () => {
+    for (const file of ["onebase/tools/export_document.ts", "onebase/lib/docExport.ts"]) {
+      const src = await Bun.file(`${import.meta.dir}/../${file}`).text();
+      expect(src).not.toMatch(/internal\.(documents|templates)\b|from "\.\.?\/(documents|templates)"/);
+    }
   });
 
   test("the document request API takes ids only (no text fields)", async () => {

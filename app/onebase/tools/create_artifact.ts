@@ -59,8 +59,10 @@ export const create_artifact: AppTool<Args> = {
     });
     return {
       content: `أُنشئ المخرج "${args.title}" (النسخة 1)${r.classification === "sensitive" ? "، وهو مبني على مساحة حسّاسة فيبقى فيها" : ""}. artifactId=${r.artifactId}`,
+      display: `أُنشئ «${args.title}»${r.classification === "sensitive" ? "، ويبقى في المساحة الحسّاسة التي بُني عليها" : ""}.`,
       artifactIds: [r.artifactId],
       spaceIds: [r.spaceId],
+      undo: { deleteArtifacts: [r.artifactId] },
     };
   },
 };

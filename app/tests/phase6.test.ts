@@ -68,7 +68,7 @@ describe("starter agents", () => {
     expect(byKey.policies.live.dataScope).toBe("everyone");
     expect(byKey.grades.live.allowedTools.sort()).toEqual(["create_artifact", "fill_template", "query_records"]);
     expect(byKey.grades.live.dataScope).toBe("member");
-    expect(byKey.analysis.live.allowedTools.sort()).toEqual(["create_artifact", "read_file", "run_analysis"]);
+    expect(byKey.analysis.live.allowedTools.sort()).toEqual(["create_artifact", "export_document", "read_file", "run_analysis"]);
     expect(byKey.analysis.live.dataScope).toBe("all");
     // Every tool any agent lists exists in the code registry, and the registry is within the 15 the model handles well.
     const registry = must(await s.call("query", "agents:toolRegistry", {}, tok("admin"))).map((t: any) => t.name);
@@ -86,7 +86,7 @@ describe("starter agents", () => {
     const a = await ask(s, tok("mem"), t, "ما سياسة العمل عن بعد POLICYKEY-6610؟");
     expect(a.citations.some((c: any) => c.fileId === policyFile)).toBe(true);
     const req = chatRequestsWith(ai, "ما سياسة العمل عن بعد POLICYKEY-6610؟").at(-1);
-    expect(offered(req)).toEqual(["create_artifact", "my_records", "read_file", "search_documents", "update_artifact"]);
+    expect(offered(req)).toEqual(["create_artifact", "export_document", "my_records", "read_file", "search_documents", "update_artifact"]);
     expect(systemOf(req)).toContain("المساعد العام");
   });
 
@@ -246,6 +246,22 @@ describe("acceptance: an agent without the sandbox tool can't run code, whatever
     expect(must(await s.call("query", "analysis:myRuns", {}, tok("mem"))).length).toBe(runsBefore + 1);
   }, 60_000);
 
+  test("a tool call cut off by the token limit (server 500) is retried once with a nudge instead of failing the turn", async () => {
+    const admin = tok("admin");
+    const id = await publishedAgent(s, admin, cfg({ name: "منقطع", instructions: "CUT-TOOL-CALL " + code("CUTCALL-3").replace("FILE", f.files.S_every), allowedTools: ["run_analysis", "read_file"], maxSteps: 3 }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("mem")));
+    const a = await ask(s, tok("mem"), t, "حوّل الملخص إلى PDF");
+    // The retry proposed the run (it is never executed without نفّذ).
+    const [p] = await proposalsOf(s, tok("mem"), t);
+    expect(p.tool).toBe("run_analysis");
+    expect(p.state).toBe("pending");
+    expect(a.toolRuns.some((r: any) => r.summary === "انقطع الاستدعاء قبل اكتماله")).toBe(true);
+    const nudged = chatRequestsWith(ai, "CUTCALL-3").filter((req) => JSON.stringify(req.body.messages).includes("انقطع استدعاء الأداة"));
+    expect(nudged.length).toBeGreaterThan(0);
+    // Every agent step asks for the larger answer budget, not the 1500-token default.
+    for (const req of chatRequestsWith(ai, "CUTCALL-3")) expect(req.body.max_tokens).toBe(6000);
+  }, 30_000);
+
   test("an admin can't give an agent a tool that isn't in the code registry", async () => {
     const r = await s.call("mutation", "agents:create", { config: cfg({ allowedTools: ["search_documents", "run_shell"] }) }, tok("admin"));
     expect(r.ok).toBe(false);
@@ -362,12 +378,14 @@ describe("acceptance: every agent edit is audited and revertible", () => {
 
 describe("write-tool confirmation (نفّذ / إلغاء)", () => {
   let writer: string;
-  const writerCfg = (title: string, extra = "") =>
+  // Into a shared space, so the action is tier 2 and waits for «نفّذ» (tier 1, my personal space,
+  // runs at once: tests/tiers.test.ts).
+  const writerCfg = (title: string, extra?: string) =>
     cfg({
       name: `كاتب ${title}`,
       allowedTools: ["create_artifact"],
       maxSteps: 2,
-      instructions: `CALL_TOOL create_artifact {"title":"${title}","kind":"markdown","content":"نص المخرج"${extra}}`,
+      instructions: `CALL_TOOL create_artifact {"title":"${title}","kind":"markdown","content":"نص المخرج"${extra ?? `,"spaceId":"${f.spaces.S_plain}"`}}`,
     });
 
   beforeAll(async () => {
@@ -393,12 +411,12 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     expect(p.args.title).toBe("مخرج-التأكيد-CF1");
     expect(p.state).toBe("pending");
     expect(p.expiresAt).toBeGreaterThan(Date.now());
-    expect(await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-التأكيد-CF1")).toEqual([]);
+    expect(await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-التأكيد-CF1")).toEqual([]);
 
     const r = must(await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem")));
     expect(r.ok).toBe(true);
     expect(r.artifactIds.length).toBe(1);
-    expect((await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-التأكيد-CF1")).length).toBe(1);
+    expect((await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-التأكيد-CF1")).length).toBe(1);
     const m = must(await s.call("query", "chat:messages", { threadId }, tok("mem")));
     expect(m.messages.at(-1).text).toContain("✅ نُفّذ");
     expect(m.messages.flatMap((x: any) => x.proposals)[0].state).toBe("executed");
@@ -406,7 +424,7 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     // Once only.
     const again = await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem"));
     expect(again.ok).toBe(false);
-    expect((await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-التأكيد-CF1")).length).toBe(1);
+    expect((await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-التأكيد-CF1")).length).toBe(1);
     // Audited with the agent.
     const rows = must(await s.call("query", "audit:list", { limit: 500 }, tok("admin")));
     const row = rows.find((x: any) => x.action === "ai.confirm" && x.resourceId === p.id);
@@ -420,7 +438,7 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     const { p } = await propose(tok("mem"), id);
     const rs = await Promise.all(Array.from({ length: 5 }, () => s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem"))));
     expect(rs.filter((r) => r.ok).length).toBe(1);
-    expect((await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-التزامن-CF2")).length).toBe(1);
+    expect((await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-التزامن-CF2")).length).toBe(1);
   }, 30_000);
 
   test("proposals expire", async () => {
@@ -431,7 +449,7 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     const r = await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem"));
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("انتهت صلاحية");
-    expect(await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-الانتهاء-CF3")).toEqual([]);
+    expect(await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-الانتهاء-CF3")).toEqual([]);
   }, 30_000);
 
   test("cancel: a cancelled proposal can't be executed", async () => {
@@ -439,7 +457,7 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     const { p } = await propose(tok("mem"), id);
     must(await s.call("mutation", "chat:cancelProposal", { proposalId: p.id }, tok("mem")));
     expect((await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem"))).ok).toBe(false);
-    expect(await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-الإلغاء-CF4")).toEqual([]);
+    expect(await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-الإلغاء-CF4")).toEqual([]);
   }, 30_000);
 
   test("nobody can confirm or cancel someone else's proposal", async () => {
@@ -476,7 +494,7 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     const { p } = await propose(tok("mem"), id);
     must(await s.call("mutation", "agents:setEnabled", { agentId: id, enabled: false }, tok("admin")));
     expect((await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem"))).ok).toBe(false);
-    expect(await artifactsNamed(tok("mem"), f.spaces.P_mem, "مخرج-التعطيل-CF8")).toEqual([]);
+    expect(await artifactsNamed(tok("mem"), f.spaces.S_plain, "مخرج-التعطيل-CF8")).toEqual([]);
     // ...and the thread can't ask it anything more.
     const threads = must(await s.call("query", "chat:threads", {}, tok("mem")));
     const t = threads.find((x: any) => x.agentId === id).threadId;

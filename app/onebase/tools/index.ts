@@ -10,6 +10,7 @@ import { update_artifact } from "./update_artifact";
 import { query_records } from "./query_records";
 import { my_records } from "./my_records";
 import { fill_template } from "./fill_template";
+import { export_document } from "./export_document";
 
 export const tools: Record<string, AppTool> = {
   // Phase 4: outputs, records, templates
@@ -18,6 +19,7 @@ export const tools: Record<string, AppTool> = {
   query_records,
   my_records,
   fill_template,
+  export_document,
   // Phase 5: sandbox analysis
   run_analysis: runAnalysisTool,
   // Phase 2 (RAG)

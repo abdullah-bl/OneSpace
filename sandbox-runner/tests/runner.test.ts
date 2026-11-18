@@ -7,7 +7,7 @@ import { dockerAvailable, imagePresent, safeInputName } from "../src/docker";
 import { startServer } from "../src/server";
 
 const SECRET = "test-secret-" + crypto.randomUUID();
-const IMAGE = process.env.SANDBOX_IMAGE ?? "onespace-sandbox:1";
+const IMAGE = process.env.SANDBOX_IMAGE ?? "onespace-sandbox:2";
 const canRun = (await dockerAvailable()) && (await imagePresent(IMAGE));
 if (!canRun) console.warn(`[sandbox-runner tests] Docker or image ${IMAGE} missing: container tests skipped`);
 

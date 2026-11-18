@@ -24,8 +24,8 @@ export function SpacesPage({ spaces }: { spaces: SpaceInfo[] }) {
     const b = badge(s);
     return (
       <li key={s._id}>
-        <a href={`#/space/${s._id}`} className="flex min-h-[64px] items-center gap-3 border-b border-rule px-2 py-3 hover:bg-[#fbfbfa]">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#ebeae6] text-[#3d3d3d]">
+        <a href={`#/space/${s._id}`} className="flex min-h-[64px] items-center gap-3 border-b border-rule px-2 py-3 hover:bg-sunken">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-raised text-ink">
             <Icon name={b.icon} size={16} />
           </span>
           <span className="min-w-0 flex-1">
@@ -44,7 +44,7 @@ export function SpacesPage({ spaces }: { spaces: SpaceInfo[] }) {
     <Page title="المساحات" sub="كل مساحة مشروع: تعليمات وملفات يعرفها المساعد، ومحادثاتك فيها، ومهامها.">
       <div className="max-w-[760px]">
         <ul>{personal.map(row)}</ul>
-        <h2 className="mt-8 text-base font-medium">المساحات المشتركة</h2>
+        <h2 className="mt-8 section-title">المساحات المشتركة</h2>
         <p className="text-sm text-muted num">{shared.length ? `${shared.length} مساحة` : "لم تُضف إلى أي مساحة مشتركة بعد. يضيفك مدير المساحة."}</p>
         <ul className="mt-2">{shared.map(row)}</ul>
       </div>
@@ -73,25 +73,25 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6 lg:px-8 lg:py-9">
       <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="text-2xl font-medium">{spaceName(space)}</h1>
-        <span className="flex items-center gap-1 rounded bg-[#ebeae6] px-2 py-0.5 text-xs text-[#3d3d3d]">
+        <h1 className="page-title">{spaceName(space)}</h1>
+        <span className="flex items-center gap-1 rounded bg-raised px-2 py-0.5 text-xs text-ink">
           <Icon name={b.icon} size={12} /> {b.label}
         </span>
-        {space.sensitive && <span className="rounded bg-[#fffbeb] px-2 py-0.5 text-xs text-[#92400e]">حسّاسة: كل فتح وتنزيل يُسجَّل</span>}
+        {space.sensitive && <span className="rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">حسّاسة: كل فتح وتنزيل يُسجَّل</span>}
         <span className="text-xs text-muted">دورك: {ROLE_LABELS[space.myRole] ?? space.myRole}</span>
         <button className="btn-primary ms-auto" onClick={() => startChatWith({ spaceId: space._id })}>
           <Icon name="plus" /> محادثة في المساحة
         </button>
       </header>
       {space.kind === "personal" && <p className="mt-1 text-muted">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. المشاركة بنقل الملف أو نسخه إلى مساحة مشتركة.</p>}
-      <nav className="mt-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="أقسام المساحة">
+      <nav className="tabs mt-5" aria-label="أقسام المساحة">
         {tabs
           .filter((t) => t.show)
           .map((t) => (
             <a
               key={t.id}
               href={`#/space/${space._id}${t.id === "overview" ? "" : "/" + t.id}`}
-              className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm ${current === t.id ? "border-ink font-medium text-ink" : "border-transparent text-muted hover:text-ink"}`}
+              className={current === t.id ? "tab-active" : "tab"}
               aria-current={current === t.id ? "page" : undefined}
             >
               {t.label}
@@ -134,13 +134,13 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
             <Icon name="send" size={16} />
           </span>
         </button>
-        <h2 className="mt-7 text-base font-medium">محادثاتك في المساحة</h2>
+        <h2 className="mt-7 section-title">محادثاتك في المساحة</h2>
         <p className="text-xs text-muted num">{threads ? `${threads.length} محادثة · لا يراها غيرك` : " "}</p>
         <ul className="mt-2">
           {threads?.length === 0 && <li className="rounded-lg border border-dashed border-control p-4 text-sm text-muted">لا محادثات بعد. ابدأ أول محادثة من الحقل أعلاه.</li>}
           {threads?.map((t) => (
             <li key={t.threadId}>
-              <a href={`#/chat/${t.threadId}`} className="flex min-h-[56px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-[#fbfbfa]">
+              <a href={`#/chat/${t.threadId}`} className="flex min-h-[56px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-sunken">
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{t.title}</span>
                   {t.scheduled && <span className="block text-xs text-muted">مهمة مجدولة</span>}
@@ -223,7 +223,7 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           <Panel title="الأعضاء" count={members.length}>
             <ul className="flex flex-wrap gap-1.5">
               {members.slice(0, 12).map((m) => (
-                <li key={m.userId} className="rounded bg-[#ebeae6] px-2 py-0.5 text-xs" title={ROLE_LABELS[m.role]}>
+                <li key={m.userId} className="rounded bg-raised px-2 py-0.5 text-xs" title={ROLE_LABELS[m.role]}>
                   {m.name ?? m.email}
                 </li>
               ))}
@@ -290,7 +290,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
           <button className="btn-primary" disabled={!!busy} onClick={() => input.current?.click()}>
             رفع ملفات
           </button>
-          {busy && <span className="text-xs text-neutral-500">جارٍ التنفيذ…</span>}
+          {busy && <span className="text-xs text-muted">جارٍ التنفيذ…</span>}
           <input
             ref={input}
             type="file"
@@ -324,10 +324,10 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
           />
         </div>
       )}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       <div className="card overflow-hidden">
         <table className="w-full">
-          <thead className="bg-neutral-50">
+          <thead className="bg-sunken">
             <tr>
               <th className="th">الاسم</th>
               <th className="th">الحجم</th>
@@ -339,12 +339,12 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
           <tbody>
             {files === undefined && (
               <tr>
-                <td className="td text-neutral-400" colSpan={5}>جارٍ التحميل…</td>
+                <td className="td text-faint" colSpan={5}>جارٍ التحميل…</td>
               </tr>
             )}
             {files?.length === 0 && (
               <tr>
-                <td className="td text-neutral-400" colSpan={5}>لا ملفات بعد</td>
+                <td className="td text-faint" colSpan={5}>لا ملفات بعد</td>
               </tr>
             )}
             {files?.map((f) => (
@@ -389,18 +389,18 @@ function FileRow(props: {
   const versions = useQuery(api.files.versions, props.showVersions ? { fileId: f._id as any } : "skip");
   return (
     <>
-      <tr className="border-t border-neutral-100">
-        <td className="td font-semibold">
+      <tr className="border-t border-rule">
+        <td className="td font-bold">
           {f.name}
           <IngestBadge fileId={f._id} ingest={props.ingest} canWrite={space.canWrite} />
         </td>
-        <td className="td text-neutral-500">{formatSize(f.size)}</td>
+        <td className="td text-muted">{formatSize(f.size)}</td>
         <td className="td">
-          <button className="text-neutral-900 underline-offset-2 hover:underline" onClick={props.onToggleVersions}>
+          <button className="text-ink underline-offset-2 hover:underline" onClick={props.onToggleVersions}>
             {f.version}
           </button>
         </td>
-        <td className="td text-neutral-500">
+        <td className="td text-muted">
           {formatDate(f.updatedAt)}
           {f.uploadedByName && <span className="block text-xs">{f.uploadedByName}</span>}
         </td>
@@ -420,16 +420,16 @@ function FileRow(props: {
         </td>
       </tr>
       {props.showVersions && (
-        <tr className="bg-neutral-50">
+        <tr className="bg-sunken">
           <td className="td" colSpan={5}>
             <div className="space-y-1">
               {versions?.map((v) => (
                 <div key={v.version} className="flex items-center gap-3 text-xs">
-                  <span className="font-semibold">نسخة {v.version}</span>
+                  <span className="font-bold">نسخة {v.version}</span>
                   <span>{v.name}</span>
-                  <span className="text-neutral-500">{formatSize(v.size)}</span>
-                  <span className="text-neutral-500">{formatDate(v.uploadedAt)}</span>
-                  <button className="text-neutral-900 hover:underline" onClick={() => props.onDownload(v.version)}>تنزيل</button>
+                  <span className="text-muted">{formatSize(v.size)}</span>
+                  <span className="text-muted">{formatDate(v.uploadedAt)}</span>
+                  <button className="text-ink hover:underline" onClick={() => props.onDownload(v.version)}>تنزيل</button>
                 </div>
               ))}
             </div>
@@ -465,9 +465,9 @@ function TransferDialog({ file, from, spaces, onClose }: { file: { fileId: strin
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="card w-full max-w-md space-y-3 p-5" onClick={(e) => e.stopPropagation()}>
-        <h2 className="font-semibold">نقل أو نسخ "{file.name}"</h2>
+        <h2 className="section-title">نقل أو نسخ "{file.name}"</h2>
         {targets.length === 0 ? (
-          <p className="text-sm text-neutral-500">لا توجد مساحة أخرى تملك صلاحية الكتابة فيها.</p>
+          <p className="text-sm text-muted">لا توجد مساحة أخرى تملك صلاحية الكتابة فيها.</p>
         ) : (
           <>
             <select className="input w-full" value={to} onChange={(e) => setTo(e.target.value)}>
@@ -477,11 +477,11 @@ function TransferDialog({ file, from, spaces, onClose }: { file: { fileId: strin
                 </option>
               ))}
             </select>
-            <p className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-900">بعد النقل أو النسخ سيرى الملف: {audience}</p>
-            {from.sensitive && <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">الملف في مساحة حسّاسة: إخراجه منها لمديرها فقط، ويُسجَّل.</p>}
+            <p className="rounded-lg bg-raised p-2 text-sm text-ink">بعد النقل أو النسخ سيرى الملف: {audience}</p>
+            {from.sensitive && <p className="rounded-lg bg-warning-soft p-2 text-sm text-warning">الملف في مساحة حسّاسة: إخراجه منها لمديرها فقط، ويُسجَّل.</p>}
           </>
         )}
-        {error && <p className="text-sm text-red-700">{error}</p>}
+        {error && <p className="text-sm text-negative">{error}</p>}
         <div className="flex justify-end gap-2">
           <button className="btn-ghost" onClick={onClose}>إلغاء</button>
           {targets.length > 0 && from.canWrite && <button className="btn-ghost" onClick={() => act(move)}>نقل</button>}
@@ -511,7 +511,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
   };
   return (
     <div className="space-y-3">
-      {space.everyone && <p className="text-sm text-neutral-500">مساحة للجميع: كل موظفي مساحة العمل يقرؤونها. الأعضاء المسمَّون أدناه يكتبون حسب أدوارهم.</p>}
+      {space.everyone && <p className="text-sm text-muted">مساحة للجميع: كل موظفي مساحة العمل يقرؤونها. الأعضاء المسمَّون أدناه يكتبون حسب أدوارهم.</p>}
       {space.canManage && (
         <div className="card flex flex-wrap items-center gap-2 p-3">
           <select className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
@@ -532,13 +532,13 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
           </button>
         </div>
       )}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <div className="card divide-y divide-neutral-100">
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
+      <div className="card divide-y divide-rule">
         {members?.map((m) => (
           <div key={m.userId} className="flex items-center gap-3 p-3 text-sm">
             <div className="flex-1">
-              <div className="font-semibold">{m.name ?? m.email}</div>
-              <div className="text-xs text-neutral-500" dir="ltr">{m.email}</div>
+              <div className="font-bold">{m.name ?? m.email}</div>
+              <div className="text-xs text-muted" dir="ltr">{m.email}</div>
             </div>
             {space.canManage ? (
               <>
@@ -552,7 +552,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
                 </button>
               </>
             ) : (
-              <span className="text-xs text-neutral-500">{ROLE_LABELS[m.role]}</span>
+              <span className="text-xs text-muted">{ROLE_LABELS[m.role]}</span>
             )}
           </div>
         ))}
@@ -566,16 +566,16 @@ function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { 
   const retry = useMutation(api.ingest.retry);
   if (!ingest) return null;
   const color =
-    ingest.state === "ready" ? "bg-emerald-50 text-emerald-700" : ingest.state === "failed" ? "bg-red-50 text-red-700" : ingest.state === "skipped" ? "bg-neutral-100 text-neutral-500" : "bg-neutral-100 text-neutral-800";
+    ingest.state === "ready" ? "bg-positive-soft text-positive" : ingest.state === "failed" ? "bg-negative-soft text-negative" : ingest.state === "skipped" ? "bg-raised text-muted" : "bg-raised text-ink";
   return (
     <span className="ms-2 inline-flex items-center gap-1 align-middle text-[11px] font-normal">
       <span className={`rounded px-1.5 ${color}`} title={ingest.error ?? ingest.note ?? ""}>
         {ingest.label}
       </span>
-      {ingest.ocr && <span className="rounded bg-amber-50 px-1.5 text-amber-700" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
-      {ingest.state === "failed" && ingest.error && <span className="text-red-600">{ingest.error}</span>}
+      {ingest.ocr && <span className="rounded bg-warning-soft px-1.5 text-warning" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
+      {ingest.state === "failed" && ingest.error && <span className="text-negative">{ingest.error}</span>}
       {ingest.state === "failed" && canWrite && (
-        <button className="text-neutral-900 hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
+        <button className="text-ink hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
           إعادة المحاولة
         </button>
       )}

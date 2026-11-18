@@ -8,7 +8,8 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
-import { ArtifactPanel } from "./ArtifactPanel";
+import { ArtifactDock, OutputChip } from "./ArtifactPanel";
+import { Menu } from "./ui";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { renderAnswer } from "./markdown";
@@ -16,8 +17,9 @@ import { renderAnswer } from "./markdown";
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
 type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spaceId?: string };
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string };
-type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; artifactIds: string[] };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[] };
+type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
+type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; steps: Step[]; ms: number | null };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
 let pendingDraft: { spaceId?: string; mentions: Mention[]; text?: string } | null = null;
@@ -114,7 +116,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               </a>
             )}
             {data?.scheduled && <span className="shrink-0 rounded px-2 py-0.5 text-xs text-muted bg-raised">مهمة مجدولة</span>}
-            {data?.test && <span className="shrink-0 rounded bg-[#fffbeb] px-2 py-0.5 text-xs text-[#92400e]">اختبار مسودة الوكيل</span>}
+            {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
             <span className="ms-auto" />
             <ThreadMenu threadId={threadId!} title={data?.title ?? ""} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
@@ -131,7 +133,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
           <div className={`mx-auto w-full max-w-[760px] px-4 ${empty ? "flex min-h-full flex-col justify-center py-10" : "space-y-6 pb-6 pt-2"}`}>
             {empty && (
               <div className="mb-6">
-                <h1 className="text-2xl font-medium tracking-tight">{title}</h1>
+                <h1 className="overflow-hidden pb-1 text-[clamp(28px,2.4vw+18px,44px)] leading-tight font-bold tracking-tight"><span className="block animate-mask">{title}</span></h1>
                 <p className="mt-2 text-muted">
                   {space
                     ? "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
@@ -139,9 +141,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                 </p>
               </div>
             )}
-            {data?.agent?.error && <div className="rounded-md bg-[#fffbeb] p-3 text-sm text-[#92400e]">{data.agent.error}</div>}
+            {data?.agent?.error && <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">{data.agent.error}</div>}
             {messages.map((m) => (
-              <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+              <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
             {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} working={false} onSubmit={submit} initial={draft} starters />}
@@ -157,11 +159,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
         )}
         {empty && error && <p className="px-4 pb-4 text-center text-sm text-negative">{error}</p>}
       </div>
-      {artifact && (
-        <div className="fixed inset-0 z-30 overflow-y-auto bg-ground p-3 xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:border-s xl:border-line xl:bg-surface">
-          <ArtifactPanel key={artifact} artifactId={artifact} spaces={spaces} onClose={() => setArtifact(null)} />
-        </div>
-      )}
+      {artifact && <ArtifactDock key={artifact} artifactId={artifact} spaces={spaces} onClose={() => setArtifact(null)} />}
     </div>
   );
 }
@@ -169,36 +167,21 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
 function ThreadMenu({ threadId, title, onDeleted }: { threadId: string; title: string; onDeleted: () => void }) {
   const rename = useMutation(api.chat.rename);
   const del = useMutation(api.chat.deleteThread);
-  const [open, setOpen] = useState(false);
   return (
-    <div className="relative">
-      <button className="btn-ghost w-9 px-0" aria-label="خيارات المحادثة" onClick={() => setOpen(!open)}>
-        <Icon name="dots" size={18} />
-      </button>
-      {open && (
-        <div className="absolute end-0 top-10 z-20 w-44 rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" onMouseLeave={() => setOpen(false)}>
-          <button
-            className="block w-full rounded-md px-3 py-2 text-start text-sm hover:bg-active"
-            onClick={() => {
-              setOpen(false);
-              const t = prompt("عنوان المحادثة", title);
-              if (t?.trim()) void rename({ threadId, title: t });
-            }}
-          >
-            إعادة التسمية
-          </button>
-          <button
-            className="block w-full rounded-md px-3 py-2 text-start text-sm text-negative hover:bg-[#ffedea]"
-            onClick={() => {
-              setOpen(false);
-              if (confirm("حذف هذه المحادثة نهائياً؟")) void del({ threadId }).then(onDeleted);
-            }}
-          >
-            حذف المحادثة
-          </button>
-        </div>
-      )}
-    </div>
+    <Menu
+      label="خيارات المحادثة"
+      items={[
+        {
+          label: "إعادة التسمية",
+          icon: "pencil",
+          onSelect: () => {
+            const t = prompt("عنوان المحادثة", title);
+            if (t?.trim()) void rename({ threadId, title: t });
+          },
+        },
+        { label: "حذف المحادثة", danger: true, onSelect: () => confirm("حذف هذه المحادثة نهائياً؟") && void del({ threadId }).then(onDeleted) },
+      ]}
+    />
   );
 }
 
@@ -350,8 +333,8 @@ function Composer(props: {
           ref={ta}
           rows={props.starters ? 3 : 1}
           dir="auto"
-          className="block max-h-60 w-full resize-none bg-transparent px-4 pt-3 focus-visible:outline-none text-[15px] leading-7 outline-none placeholder:text-[#6b6b6b]"
-          placeholder={props.space ? "اكتب رسالتك… (@ لملف من المساحة)" : "اكتب رسالتك… (@ لملف أو مساحة أو وكيل)"}
+          className="block max-h-60 w-full resize-none bg-transparent px-4 pt-3 focus-visible:outline-none text-[15px] leading-7 outline-none placeholder:text-faint"
+          placeholder={props.space ? "اكتب رسالتك… (@ لملف من المساحة)" : "اكتب رسالتك… (@ لملف أو مساحة)"}
           aria-label="الرسالة"
           value={text}
           onChange={(e) => {
@@ -414,7 +397,7 @@ function Composer(props: {
           {STARTERS.map((s) => (
             <button
               key={s.title}
-              className="rounded-lg border border-line bg-surface px-4 py-3 text-start text-sm hover:border-control hover:bg-[#fbfbfa]"
+              className="rounded-lg border border-line bg-surface px-4 py-3 text-start text-sm hover:border-control hover:bg-sunken"
               onClick={() => {
                 setText(s.text);
                 requestAnimationFrame(() => {
@@ -463,13 +446,15 @@ function MentionList({ items, active, onPick }: { items: (Mention & { detail: st
 function AgentPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   const agents = useQuery(api.agents.available);
   if (!agents?.length) return null;
-  const current = agents.find((a) => a._id === value) ?? agents.find((a) => a.isDefault);
+  // No pick = «تلقائي»: the router chooses the skill for each question (plans/07 §C). A pick pins it.
+  const current = agents.find((a) => a._id === value);
   return (
-    <label className="relative flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-active" title={current?.description ?? ""}>
+    <label className="relative flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-active" title={current?.description ?? "يختار المساعد المهارة المناسبة لكل سؤال"}>
       <Icon name="bot" size={16} />
-      <select className="cursor-pointer appearance-none bg-transparent pe-4 text-xs text-ink outline-none" aria-label="الوكيل" value={current && !current.isDefault ? current._id : ""} onChange={(e) => onChange(e.target.value || null)}>
+      <select className="cursor-pointer appearance-none bg-transparent pe-4 text-xs text-ink outline-none" aria-label="المهارة" value={current ? current._id : ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">تلقائي</option>
         {agents.map((a) => (
-          <option key={a._id} value={a.isDefault ? "" : a._id}>
+          <option key={a._id} value={a._id}>
             {a.name}
           </option>
         ))}
@@ -481,13 +466,33 @@ function AgentPicker({ value, onChange }: { value: string | null; onChange: (id:
 
 // ---------------------------------------------------------------- messages
 
-function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { state: string; label: string | null; streamId: string | null; error: string | null; ahead: number }; onRetry: () => void }) {
+const secs = (ms: number | null) => (ms === null ? "" : ms < 1000 ? `${ms} م.ث` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} ث`);
+
+/** The step timeline (plans/07 §D): what the assistant did, in order, with times. */
+function StepList({ steps }: { steps: Step[] }) {
+  return (
+    <ol className="space-y-1 border-s-2 border-line ps-3">
+      {steps.map((st, i) => (
+        <li key={i} className="flex animate-fade items-center gap-2 text-xs">
+          <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full ${st.state === "failed" ? "bg-negative-soft text-negative" : st.state === "running" ? "bg-primary-soft text-primary" : "bg-positive-soft text-positive"}`}>
+            {st.state === "running" ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" /> : <Icon name={st.state === "failed" ? "x" : "check"} size={10} />}
+          </span>
+          <span className={st.state === "running" ? "text-ink" : "text-muted"}>{st.label.replace(/…$/, "")}</span>
+          {st.detail && <span className="truncate text-faint">{st.detail}</span>}
+          {st.ms !== null && <span className="meta num ms-auto">{secs(st.ms)}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { state: string; label: string | null; streamId: string | null; error: string | null; ahead: number; steps?: Step[] }; onRetry: () => void }) {
   const stream = useQuery(api.chat.stream, turn.streamId && turn.state === "running" ? { threadId, streamId: turn.streamId } : "skip");
   if (turn.state === "failed")
     return (
-      <div className="flex items-center gap-3 rounded-md bg-[#ffedea] px-3 py-2 text-sm text-[#831c1e]">
+      <div className="flex items-center gap-3 rounded-md bg-negative-soft px-3 py-2 text-sm text-negative">
         <span className="flex-1">تعذّر إكمال الإجابة: {turn.error}</span>
-        <button className="btn-ghost h-8 text-[#831c1e]" onClick={onRetry}>
+        <button className="btn-ghost h-8 text-negative" onClick={onRetry}>
           <Icon name="retry" size={14} /> أعد المحاولة
         </button>
       </div>
@@ -495,14 +500,23 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
   if (turn.state === "queued") return <p className="text-sm text-muted">في الانتظار{turn.ahead > 0 ? `، أمامك ${turn.ahead}` : ""}…</p>;
   return (
     <div>
+      {turn.steps && turn.steps.length > 0 && !stream?.text && (
+        <div className="mb-2">
+          <StepList steps={turn.steps} />
+        </div>
+      )}
       {stream?.text ? <div className="md caret" dangerouslySetInnerHTML={{ __html: renderAnswer(stream.text, new Set()) }} /> : null}
-      <p className="mt-1 text-xs text-muted">{turn.label ?? "…"}</p>
+      <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+        {turn.label ?? "…"}
+      </p>
     </div>
   );
 }
 
-function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onOpenArtifact: (id: string) => void }) {
+function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
   const feedback = useMutation(api.chat.feedback);
+  const [showSteps, setShowSteps] = useState(false);
   const requestDownload = useMutation(api.files.requestDownload);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -512,8 +526,8 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
 
   if (m.role === "user")
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-[#ebeae6] px-4 py-2.5 text-[15px] leading-7" dir="auto">
+      <div className="flex animate-rise justify-start">
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7" dir="auto">
           {m.text}
         </div>
       </div>
@@ -533,7 +547,7 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
   const sourceFiles = [...new Map(m.citations.map((c) => [c.fileId, c])).values()];
 
   return (
-    <div className="group space-y-3">
+    <div className="animate-rise group space-y-3">
       <div
         className="md"
         dir="auto"
@@ -556,7 +570,7 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
           {m.citations.map((c) => (
             <li key={c.n}>
               <button className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-active" onClick={() => void open(c)} title={c.quote}>
-                <span className="cite-num mt-0.5 grid h-[18px] min-w-[18px] place-items-center rounded bg-[#e8eef8] px-1 text-[11px] font-semibold text-data num">{c.n}</span>
+                <span className="cite-num mt-0.5 grid h-[18px] min-w-[18px] place-items-center rounded bg-primary-soft px-1 text-[11px] font-bold text-data num">{c.n}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{c.fileName}{c.page ? ` · ص ${c.page}` : ""}</span>
                   <span className="line-clamp-2 text-xs text-muted">{c.quote.split("\n").slice(1).join(" ")}</span>
@@ -578,9 +592,42 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
           </button>
         )}
         {copied && <span>نُسخ</span>}
+        <span className="ms-auto flex items-center gap-1">
+          {m.steps?.length > 0 && (
+            <button className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowSteps(!showSteps)} aria-expanded={showSteps}>
+              <Icon name="tasks" size={14} />
+              {m.steps.length} {m.steps.length === 1 ? "خطوة" : "خطوات"}
+              {m.ms ? <span className="num text-faint">· {secs(m.ms)}</span> : null}
+            </button>
+          )}
+          {m.skill && <SkillChip skill={m.skill} onReask={isLast ? onReask : undefined} />}
+        </span>
       </div>
+      {showSteps && m.steps?.length > 0 && <StepList steps={m.steps} />}
       {error && <p className="text-xs text-negative">{error}</p>}
     </div>
+  );
+}
+
+/** Which skill answered; on the last answer, a menu to answer again with another one (pins it). */
+function SkillChip({ skill, onReask }: { skill: { agentId: string; name: string; routed: boolean }; onReask?: (agentId: string) => void }) {
+  const agents = useQuery(api.agents.available, onReask ? {} : "skip");
+  const label = `${skill.name}${skill.routed ? " · تلقائي" : ""}`;
+  if (!onReask || !agents || agents.length < 2)
+    return (
+      <span className="badge" title={skill.routed ? "اختار المساعد هذه المهارة لهذا السؤال" : "المهارة المثبّتة لهذه المحادثة"}>
+        <Icon name="bot" size={12} /> {label}
+      </span>
+    );
+  return (
+    <Menu
+      label="المهارة"
+      icon="bot"
+      text={label}
+      items={agents
+        .filter((a) => a._id !== skill.agentId)
+        .map((a) => ({ label: `أعد الإجابة بمهارة «${a.name}»`, hint: a.isDefault ? "الافتراضية" : undefined, onSelect: () => onReask(a._id) }))}
+    />
   );
 }
 
@@ -593,12 +640,13 @@ function IconButton({ label, icon, onClick, on }: { label: string; icon: "copy" 
 }
 
 const PROPOSAL_STATE: Record<string, { label: string; tone: string }> = {
-  pending: { label: "بانتظار تأكيدك", tone: "bg-[#fffbeb] text-[#92400e]" },
+  pending: { label: "بانتظار تأكيدك", tone: "bg-warning-soft text-warning" },
   running: { label: "يُنفَّذ…", tone: "bg-raised text-ink" },
-  executed: { label: "نُفّذ", tone: "bg-[#dcfae5] text-[#04250e]" },
-  failed: { label: "تعذّر التنفيذ", tone: "bg-[#ffedea] text-[#831c1e]" },
+  executed: { label: "نُفّذ", tone: "bg-positive-soft text-positive" },
+  failed: { label: "تعذّر التنفيذ", tone: "bg-negative-soft text-negative" },
   cancelled: { label: "أُلغي", tone: "bg-raised text-muted" },
   expired: { label: "انتهت صلاحيته", tone: "bg-raised text-muted" },
+  undone: { label: "تُراجع عنه", tone: "bg-raised text-muted" },
 };
 
 function proposalSummary(p: Proposal): string[] {
@@ -606,6 +654,7 @@ function proposalSummary(p: Proposal): string[] {
   const out: string[] = [];
   if (a.title) out.push(`العنوان: ${a.title}`);
   if (a.kind) out.push(`النوع: ${a.kind}`);
+  if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
   if (Array.isArray(a.fileIds)) out.push(`الملفات: ${a.fileIds.length}`);
   if (a.templateId) out.push(`القالب: ${a.templateId}`);
   if (a.recordId) out.push(`السجل: ${a.recordId}`);
@@ -616,6 +665,8 @@ function proposalSummary(p: Proposal): string[] {
 function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id: string) => void }) {
   const confirm = useAction(api.chat.confirmProposal);
   const cancel = useMutation(api.chat.cancelProposal);
+  const undo = useMutation(api.chat.undo);
+  const [kept, setKept] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const st = PROPOSAL_STATE[p.state] ?? { label: p.state, tone: "bg-raised" };
@@ -634,7 +685,9 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
     <div className="rounded-lg border border-line bg-surface p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{p.label.replace(/…$/, "")}</span>
-        <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{st.label}</span>
+        <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : st.label}</span>
+        {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
+        {p.tier === 3 && p.state === "pending" && <span className="badge-warning">حسّاس أو رسمي</span>}
         {p.state === "pending" && <span className="ms-auto text-xs text-muted num">حتى {new Date(p.expiresAt).toLocaleString("ar-SA-u-nu-latn", { dateStyle: "short", timeStyle: "short" })}</span>}
       </div>
       {proposalSummary(p).length > 0 && (
@@ -650,7 +703,9 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           {JSON.stringify(p.args, null, 2)}
         </pre>
       </details>
-      {p.result &&
+      {p.state === "executed" && p.display ? (
+        <p className="mt-1 text-sm text-ink">{p.display}</p>
+      ) : p.result &&
         (p.state === "executed" ? (
           <details className="mt-1 text-xs text-muted">
             <summary className="cursor-pointer">الناتج</summary>
@@ -662,6 +717,11 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
         ))}
       <div className="mt-2 flex flex-wrap gap-2">
+        {p.auto && p.state === "executed" && (
+          <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
+            <Icon name="retry" size={14} /> تراجع
+          </button>
+        )}
         {p.state === "pending" && (
           <>
             <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
@@ -673,12 +733,11 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           </>
         )}
         {p.artifactIds.map((id) => (
-          <button key={id} className="btn-secondary h-8" onClick={() => onOpenArtifact(id)}>
-            <Icon name="panel" size={14} /> افتح المخرج
-          </button>
+          <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
         ))}
       </div>
       {error && <p className="mt-1 text-xs text-negative">{error}</p>}
+      {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
     </div>
   );
 }
@@ -690,7 +749,7 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-6 lg:py-9">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-medium">المحادثات</h1>
+        <h1 className="page-title">المحادثات</h1>
         <button className="btn-primary ms-auto" onClick={() => go("/new")}>
           <Icon name="plus" /> محادثة جديدة
         </button>
@@ -705,7 +764,7 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
         {threads?.length === 0 && <li className="rounded-lg border border-dashed border-control p-4 text-sm text-muted">{q ? "لا محادثات بهذا العنوان." : "لم تبدأ أي محادثة بعد."}</li>}
         {threads?.map((t) => (
           <li key={t.threadId}>
-            <a href={`#/chat/${t.threadId}`} className="flex min-h-[60px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-[#fbfbfa]">
+            <a href={`#/chat/${t.threadId}`} className="flex min-h-[60px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-sunken">
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px]">{t.title}</span>
                 <span className="block truncate text-xs text-muted">
@@ -734,7 +793,7 @@ export function Page({ title, sub, actions, children }: { title: string; sub?: R
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6 lg:px-8 lg:py-9">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-medium">{title}</h1>
+        <h1 className="page-title">{title}</h1>
         <span className="ms-auto flex gap-2">{actions}</span>
       </div>
       {sub && <p className="mt-1 text-muted">{sub}</p>}

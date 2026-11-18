@@ -4,6 +4,8 @@ export const PHASE4_PUBLIC = [
   "admin:setIdentifiers",
   "artifacts:create",
   "artifacts:decideTransfer",
+  "artifacts:edit",
+  "artifacts:exportDocument",
   "artifacts:exportTable",
   "artifacts:list",
   "artifacts:move",

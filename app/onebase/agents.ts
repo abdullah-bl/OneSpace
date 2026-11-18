@@ -50,7 +50,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       description: "مساعد لكل شيء: يكتب ويترجم ويلخّص ويجيب، ويرجع إلى ملفاتك ويستشهد بها حين يكون السؤال عنها.",
       instructions:
         "ساعد الموظف في أي طلب: كتابة، صياغة، ترجمة، تلخيص، شرح، أسئلة عامة. حين يسأل عن ملفاته أو أنظمة الإدارة فارجع إلى ملفاته واستشهد بها. إن طلب مخرجاً محفوظاً (ملخصاً، جدولاً، مسودة) فاقترح إنشاءه، وسيؤكده بنفسه.",
-      allowedTools: ["search_documents", "read_file", "create_artifact", "update_artifact", "my_records"],
+      allowedTools: ["search_documents", "read_file", "create_artifact", "update_artifact", "export_document", "my_records"],
       dataScope: "all",
       modelRole: "main",
       maxSteps: 4,
@@ -100,7 +100,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       description: "يحلل ملفات البيانات التي تختارها بكود معزول ويعرض النتائج كمخرجات.",
       instructions:
         "أنت وكيل التحليل. اقرأ وصف الملف أولاً، ثم اقترح تشغيل كود Python قصير على الملفات التي اختارها المستخدم فقط. لا ترتّب الأشخاص ولا تقترح أوزاناً: للمفاضلة شاشتها المعتمدة.",
-      allowedTools: ["run_analysis", "create_artifact", "read_file"],
+      allowedTools: ["run_analysis", "create_artifact", "export_document", "read_file"],
       dataScope: "all",
       modelRole: "main",
       maxSteps: 5,
