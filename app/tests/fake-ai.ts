@@ -113,6 +113,7 @@ export function startFakeAI(dims = 64): FakeAI {
         let toolCalls: { name: string; args: string }[] = [];
         if (messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"))) text = OCR_TEXT;
         else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"summary"')) text = JSON.stringify({ summary: `SUMMARY-OF ${[...JSON.stringify(messages).matchAll(/[A-Z]+Q-\d+/g)].map((x) => x[0]).filter((x, i, a) => a.indexOf(x) === i).join(" ")}` });
         else if (body.response_format) text = JSON.stringify({ query: /السؤال الأخير: (.*)$/s.exec(last)?.[1]?.trim() ?? last });
         else ({ text, toolCalls } = answerFor(body));
         const usage = { prompt_tokens: 100, completion_tokens: 20 };

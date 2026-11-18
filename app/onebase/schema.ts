@@ -340,6 +340,9 @@ export default defineSchema({
     spaceId: v.optional(v.id("spaces")),
     titlePending: v.optional(v.boolean()), // the fast model names the chat after its first answer
     scheduleId: v.optional(v.string()), // the results thread of a scheduled task (schedules.ts)
+    // Long chats: the fast model's running summary of the messages older than the verbatim window
+    // (covered = how many of the thread's user/assistant messages it covers, from the start).
+    summary: v.optional(v.object({ text: v.string(), covered: v.number(), at: v.number() })),
     createdAt: v.number(),
     lastAt: v.number(),
   })

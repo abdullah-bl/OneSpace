@@ -444,3 +444,38 @@ describe("permission matrix: new public functions", () => {
     must(await s.call("mutation", "schedules:remove", { scheduleId: memSchedule }, tok("mem")));
   });
 });
+
+// ---------------------------------------------------------------- long chats
+
+describe("long chats keep their memory", () => {
+  test("older messages are folded into a summary that every later turn gets; the verbatim window stays bounded", async () => {
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    for (let i = 101; i <= 110; i++) {
+      await ask(s, tok("mem")!, t, `سؤال رقم ${i} MEMQ-${i}`);
+      await Bun.sleep(150); // let the summary land (it's written right after the answer)
+    }
+    const summaries = ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.response_format ?? "").includes('"summary"') && JSON.stringify(r.body.messages).includes("MEMQ-101"));
+    expect(summaries.length).toBeGreaterThan(0);
+    // The last turn's answer request: the oldest questions only via the summary, inside the single system message.
+    const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("MEMQ-110")).at(-1);
+    const msgs: any[] = req.body.messages;
+    expect(msgs.filter((m) => m.role === "system").length).toBe(1);
+    expect(msgs[0].role).toBe("system");
+    expect(msgs[0].content).toContain("SUMMARY-OF");
+    expect(msgs[0].content).toContain("MEMQ-101");
+    const rest = msgs.slice(1);
+    expect(JSON.stringify(rest)).not.toContain("MEMQ-101");
+    expect(rest.length).toBeLessThanOrEqual(13); // ≤ 12 verbatim + the question
+    expect(JSON.stringify(rest)).toContain("MEMQ-109");
+  }, 60_000);
+
+  test("a short chat has no summary and sends its whole history", async () => {
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    await ask(s, tok("mem")!, t, "أول SHORTQ-1");
+    await ask(s, tok("mem")!, t, "ثاني SHORTQ-2");
+    const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("SHORTQ-2")).at(-1);
+    expect(req.body.messages[0].content).not.toContain("ملخص الجزء الأقدم");
+    expect(JSON.stringify(req.body.messages)).toContain("SHORTQ-1");
+    expect(ai.requests.some((r) => JSON.stringify(r.body?.response_format ?? "").includes('"summary"') && JSON.stringify(r.body.messages).includes("SHORTQ-1"))).toBe(false);
+  });
+});
