@@ -6,6 +6,7 @@
 // and artifacts always live together. Every export and every run is audited, and each run is a
 // row in `runs`.
 
+import { scheduleIngest } from "./ingest";
 import { OneBaseError, v } from "onebase/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -181,6 +182,8 @@ export const finish = internalMutation({
         });
         await ctx.db.insert("fileVersions", { fileId, version: 1, storageId: o.storageId, name, mime, size: o.size, sha256: o.sha256, uploadedBy: run.userId, uploadedAt: now });
         await writeAudit(ctx, { userId: run.userId, action: "file.upload", resourceType: "file", resourceId: fileId, spaceId: run.spaceId, detail: { fileName: name, size: o.size, via: "sandbox", runId } });
+        // Like an upload: index it, so the assistant can read and search what it made.
+        await scheduleIngest(ctx, fileId);
         saved.push({ fileId, name, sha256: o.sha256, size: o.size });
       }
       if (artifacts?.length) {

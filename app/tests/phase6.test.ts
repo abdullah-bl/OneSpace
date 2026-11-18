@@ -5,6 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must } from "./harness";
+import { tools as registry } from "../onebase/tools";
 import { buildFixture, FILE_NAMES, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
 import { addBytes, ask, newThread, waitIngest } from "./rag-helpers";
@@ -86,7 +87,8 @@ describe("starter agents", () => {
     const a = await ask(s, tok("mem"), t, "ما سياسة العمل عن بعد POLICYKEY-6610؟");
     expect(a.citations.some((c: any) => c.fileId === policyFile)).toBe(true);
     const req = chatRequestsWith(ai, "ما سياسة العمل عن بعد POLICYKEY-6610؟").at(-1);
-    expect(offered(req)).toEqual(["create_artifact", "export_document", "my_records", "read_file", "search_documents", "update_artifact"]);
+    // The default agent uses «كل الأدوات»: the whole registry is offered (each tool still runs as the user).
+    expect([...offered(req)].sort()).toEqual(Object.keys(registry).sort());
     expect(systemOf(req)).toContain("المساعد العام");
   });
 

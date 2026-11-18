@@ -15,7 +15,9 @@ export const create_artifact: AppTool<Args> = {
   name: "create_artifact",
   label: "يُنشئ مخرجاً…",
   description:
-    "Create an output shown in the side panel: a Markdown document, an HTML page (rendered sandboxed, no scripts or network), or a table. " +
+    "Create an output shown in the side panel: a Markdown document, an HTML page (rendered sandboxed: no network, and its own <script> doesn't run), or a table. " +
+    "Every table in an output is interactive automatically: a search box, sortable columns and a row count. So for a searchable or sortable page of data, " +
+    "make a table output (or an HTML page with a <table>) — never paste page code into the chat. For a whole spreadsheet, use run_analysis to write the HTML/CSV to /output. " +
     "List the files/record sets/artifacts it was built from in `sources`; it is saved in their space (or the user's personal space). " +
     "Outputs are not official documents: certificates are only produced with fill_template.",
   requiresConfirmation: true,

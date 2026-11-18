@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "bun src/server.ts",
-    "build-image": "docker build -t onespace-sandbox:2 image",
+    "build-image": "docker build -t onespace-sandbox:3 image",
     "test": "bun test tests",
     "typecheck": "tsc --noEmit"
   },

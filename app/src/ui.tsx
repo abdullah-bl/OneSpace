@@ -59,6 +59,109 @@ export function Menu({ label, icon = "dots", text, items, align = "end", classNa
   );
 }
 
+/**
+ * A trigger and a panel that opens above it (for controls at the bottom of the screen, like the
+ * message box). Closes on outside click, Escape (focus returns to the trigger) and selection;
+ * ↑/↓ move between items. Items are any buttons with role menuitem / menuitemradio.
+ */
+export function Popover({
+  trigger,
+  label,
+  children,
+  align = "start",
+  width = "w-64",
+  triggerClass = "btn-ghost",
+}: {
+  trigger: ReactNode;
+  label: string;
+  children: (close: () => void) => ReactNode;
+  align?: "start" | "end";
+  width?: string;
+  triggerClass?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  const btn = useRef<HTMLButtonElement>(null);
+  const items = () => [...(root.current?.querySelectorAll<HTMLButtonElement>('[role^="menuitem"]:not(:disabled)') ?? [])];
+  const close = () => {
+    setOpen(false);
+    btn.current?.focus();
+  };
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => !root.current?.contains(e.target as Node) && setOpen(false);
+    const keys = (e: KeyboardEvent) => {
+      if (e.key === "Escape") return e.preventDefault(), close();
+      if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+      e.preventDefault();
+      const list = items();
+      const i = list.indexOf(document.activeElement as HTMLButtonElement);
+      list[(i + (e.key === "ArrowDown" ? 1 : -1) + list.length) % list.length]?.focus();
+    };
+    document.addEventListener("mousedown", away);
+    document.addEventListener("keydown", keys);
+    (root.current?.querySelector<HTMLButtonElement>('[aria-checked="true"]') ?? items()[0])?.focus();
+    return () => {
+      document.removeEventListener("mousedown", away);
+      document.removeEventListener("keydown", keys);
+    };
+  }, [open]);
+  return (
+    <div ref={root} className="relative">
+      <button ref={btn} type="button" className={triggerClass} aria-label={label} title={label} aria-haspopup="menu" aria-expanded={open} onClick={() => setOpen(!open)}>
+        {trigger}
+      </button>
+      {open && (
+        <div role="menu" aria-label={label} className={`absolute bottom-full z-40 mb-2 ${width} origin-bottom animate-pop rounded-xl border border-line bg-surface p-1.5 shadow-[0_12px_32px_rgba(0,0,0,0.14)] ${align === "end" ? "end-0" : "start-0"}`}>
+          {children(close)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** One row of a Popover: icon, title, optional description and shortcut; a check when selected. */
+export function PopoverItem({
+  icon,
+  title,
+  description,
+  hint,
+  checked,
+  disabled,
+  onSelect,
+}: {
+  icon?: IconName;
+  title: ReactNode;
+  description?: ReactNode;
+  hint?: string;
+  checked?: boolean;
+  disabled?: boolean;
+  onSelect: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      role={checked === undefined ? "menuitem" : "menuitemradio"}
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={onSelect}
+      className="flex w-full items-start gap-2.5 rounded-lg px-2.5 py-2 text-start text-sm outline-none transition-colors hover:bg-active focus-visible:bg-active disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {icon && <Icon name={icon} size={17} className="mt-px shrink-0 text-muted" />}
+      <span className="min-w-0 flex-1">
+        <span className="block">{title}</span>
+        {description && <span className="mt-0.5 block text-xs leading-5 text-muted">{description}</span>}
+      </span>
+      {hint && (
+        <span className="mt-px shrink-0 text-xs text-faint" dir="ltr">
+          {hint}
+        </span>
+      )}
+      {checked && <Icon name="check" size={16} className="mt-px shrink-0 text-primary" />}
+    </button>
+  );
+}
+
 export function PageHeader({ title, subtitle, actions, children }: { title: ReactNode; subtitle?: ReactNode; actions?: ReactNode; children?: ReactNode }) {
   return (
     <header className="mb-6">

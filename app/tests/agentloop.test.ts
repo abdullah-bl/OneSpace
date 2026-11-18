@@ -5,6 +5,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must } from "./harness";
+import { tools as registry } from "../onebase/tools";
 import { buildFixture, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
 import { addBytes, ask, waitIngest } from "./rag-helpers";
@@ -53,7 +54,7 @@ describe("router: one assistant, the skill is chosen per question", () => {
     expect(a.steps[0].detail).toBe("→ التحليل");
     // The analysis skill's tools are what the main model was offered for this question.
     const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("ROUTE-1")).at(-1);
-    expect(offered(req).sort()).toEqual(["create_artifact", "export_document", "read_file", "run_analysis"]);
+    expect(offered(req).sort()).toEqual(Object.keys(registry).sort()); // «كل الأدوات»
   }, 30_000);
 
   test("nothing specific → the default skill; an unsure router → the default skill", async () => {

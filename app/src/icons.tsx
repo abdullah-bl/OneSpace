@@ -30,6 +30,7 @@ const PATHS: Record<string, string> = {
   down: "M6 9l6 6 6-6",
   up: "M6 15l6-6 6 6",
   stop: "M7 7h10v10H7z",
+  bulb: "M9 18h6M10 21h4M12 3a6 6 0 0 0-3.5 10.9V16h7v-2.1A6 6 0 0 0 12 3z",
   bot: "M5 9h14v10H5zM12 5v4M9 14h.01M15 14h.01M3 13v2M21 13v2",
   calendar: "M4 6h16v14H4zM4 10h16M8 3v4M16 3v4",
   thumbUp: "M7 11v9H4v-9zM7 11l4-7a2 2 0 0 1 2 2v3h5a2 2 0 0 1 2 2.3l-1.3 6.7A2 2 0 0 1 16.7 20H7",

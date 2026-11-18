@@ -1,16 +1,52 @@
 // How generated (untrusted) HTML and Markdown are shown: inside an <iframe srcdoc> with
-//   - sandbox="" : no allow-scripts (no JS at all), no allow-same-origin (opaque origin: no
-//     cookies, localStorage or session token of the app, no access to window.parent), no forms,
-//     popups or top navigation; meta refresh is blocked by the sandbox too;
+//   - sandbox="allow-scripts" and never allow-same-origin: an opaque origin, so no cookies,
+//     localStorage or session token of the app, and no access to window.parent; no forms, popups
+//     or top navigation;
 //   - a CSP placed before any generated content: default-src 'none', so no fetch, image, font,
-//     stylesheet, frame or media request can leave the page (inline styles and data: images only).
-// Kept free of React so tests can check it directly.
+//     stylesheet, frame or media request can leave the page (inline styles and data: images only),
+//     and script-src allows ONE script only, by its hash: TABLE_TOOLS below, ours. Any <script> the
+//     model writes, and inline handlers (onclick=…), stay blocked.
+//   - every <meta> in the generated HTML removed: with allow-scripts the browser no longer blocks
+//     <meta http-equiv="refresh">, which could otherwise send the frame (and data in its URL) away.
+// TABLE_TOOLS gives every table a search box, sortable columns and a row count: interactive pages
+// without running generated code. Kept free of React so tests can check it directly.
 
-export const SANDBOX = ""; // the empty sandbox: every restriction on
+export const SANDBOX = "allow-scripts";
+
+/** Our only script in the frame. Its exact text is pinned by TABLE_TOOLS_HASH (tests recompute it). */
+export const TABLE_TOOLS = `(function(){
+function norm(s){return String(s).toLowerCase().replace(/[\\u064B-\\u0652\\u0640]/g,"").replace(/[\\u0623\\u0625\\u0622]/g,"\\u0627").replace(/\\u0629/g,"\\u0647").replace(/\\u0649/g,"\\u064A");}
+function txt(c){return c?(c.textContent||"").trim():"";}
+function num(s){var n=parseFloat(s.replace(/[,\\s\\u066C]/g,""));return isNaN(n)?null:n;}
+function enhance(t){
+var head=t.tHead&&t.tHead.rows[0];var body=t.tBodies[0];if(!body)return;
+var rows=[].slice.call(body.rows);
+if(!head&&rows.length&&rows[0].cells.length&&[].every.call(rows[0].cells,function(c){return c.tagName==="TH";})){head=rows.shift();}
+if(rows.length<3)return;
+var bar=document.createElement("div");bar.className="os-bar";
+var inp=document.createElement("input");inp.type="search";inp.placeholder="\\u0628\\u062D\\u062B \\u0641\\u064A \\u0627\\u0644\\u062C\\u062F\\u0648\\u0644\\u2026";
+var cnt=document.createElement("span");cnt.className="os-count";
+bar.appendChild(inp);bar.appendChild(cnt);t.parentNode.insertBefore(bar,t);
+var keys=rows.map(function(r){return norm(r.textContent||"");});
+function update(){var q=norm(inp.value.trim()),n=0;for(var k=0;k<rows.length;k++){var on=!q||keys[k].indexOf(q)>=0;rows[k].style.display=on?"":"none";if(on)n++;}cnt.textContent=n+" / "+rows.length;}
+inp.addEventListener("input",update);update();
+if(!head)return;
+[].forEach.call(head.cells,function(th,ci){th.className+=" os-sortable";var dir=0;
+th.addEventListener("click",function(){dir=dir===1?-1:1;[].forEach.call(head.cells,function(c){c.removeAttribute("data-sort");});th.setAttribute("data-sort",dir>0?"asc":"desc");
+var idx=rows.map(function(r,k){return k;});
+idx.sort(function(a,b){var x=txt(rows[a].cells[ci]),y=txt(rows[b].cells[ci]),nx=num(x),ny=num(y);return (nx!==null&&ny!==null?nx-ny:x.localeCompare(y,"ar"))*dir;});
+var nr=[],nk=[];idx.forEach(function(k){nr.push(rows[k]);nk.push(keys[k]);body.appendChild(rows[k]);});rows=nr;keys=nk;});});
+}
+function init(){[].forEach.call(document.querySelectorAll("table"),enhance);}
+if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",init);else init();
+})();`;
+
+/** base64(sha256(TABLE_TOOLS)), for the CSP. tests/outputs-acceptance.test.ts checks it. */
+export const TABLE_TOOLS_HASH = "sha256-wC8xL+zkZcl7so4kav8BTog2B5MNoFPNX1Orn+2iaTE=";
 
 export const ARTIFACT_CSP = [
   "default-src 'none'",
-  "script-src 'none'",
+  `script-src '${TABLE_TOOLS_HASH}'`,
   "connect-src 'none'",
   "img-src data:",
   "font-src 'none'",
@@ -18,6 +54,7 @@ export const ARTIFACT_CSP = [
   "media-src 'none'",
   "frame-src 'none'",
   "child-src 'none'",
+  "worker-src 'none'",
   "object-src 'none'",
   "form-action 'none'",
   "base-uri 'none'",
@@ -25,12 +62,20 @@ export const ARTIFACT_CSP = [
 
 const BASE_STYLE = `body{font-family:system-ui,"Segoe UI",Tahoma,sans-serif;line-height:1.7;color:#0f172a;margin:16px;direction:rtl}
 table{border-collapse:collapse}td,th{border:1px solid #cbd5e1;padding:4px 8px}pre{white-space:pre-wrap;background:#f1f5f9;padding:8px;border-radius:6px}
-img{max-width:100%}`;
+img{max-width:100%}
+.os-bar{display:flex;align-items:center;gap:8px;margin:8px 0}.os-bar input{flex:1;max-width:360px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}
+.os-count{color:#64748b;font-size:12px}.os-sortable{cursor:pointer;user-select:none}.os-sortable:hover{background:#f1f5f9}
+th[data-sort=asc]::after{content:" \\25B2";font-size:10px}th[data-sort=desc]::after{content:" \\25BC";font-size:10px}`;
+
+/** Generated HTML with every <meta> removed (see the header: meta refresh would navigate the frame). */
+export function stripMeta(html: string): string {
+  return html.replace(/<meta\b[^>]*>/gi, "");
+}
 
 /** The full srcdoc for a sandboxed frame. The CSP meta comes first, before any generated byte. */
 export function buildSrcDoc(generatedHtml: string): string {
   const csp = ARTIFACT_CSP.replace(/"/g, "&quot;");
-  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>${BASE_STYLE}</style></head><body>${generatedHtml}</body></html>`;
+  return `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="${csp}"><meta charset="utf-8"><meta name="referrer" content="no-referrer"><style>${BASE_STYLE}</style></head><body>${stripMeta(generatedHtml)}<script>${TABLE_TOOLS}</script></body></html>`;
 }
 
 /** Attributes for the frame element. */

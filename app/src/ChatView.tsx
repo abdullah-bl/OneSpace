@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
-import { Menu } from "./ui";
+import { Menu, Popover, PopoverItem } from "./ui";
 import { openSkillDraft } from "./SkillsView";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
@@ -20,7 +20,8 @@ type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spa
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string };
 type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; steps: Step[]; ms: number | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null };
+type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
 type SkillRef = { id: string; name: string };
@@ -108,6 +109,13 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     return d;
   });
   const [draftAgent, setDraftAgent] = useState<string | null>(null);
+  const [effort, setEffortState] = useState<Effort>(savedEffort);
+  const setEffort = (e: Effort) => {
+    setEffortState(e);
+    try {
+      localStorage.setItem("onespace.effort", e);
+    } catch {}
+  };
   const [error, setError] = useState("");
   const [artifact, setArtifact] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -131,7 +139,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     try {
       let id = threadId;
       if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace } : {}) })) as string;
-      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })), ...(skill ? { skillId: skill.id } : {}) });
+      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })), ...(skill ? { skillId: skill.id } : {}), effort });
       stick.current = true;
       if (!threadId) go(`/chat/${id}`);
       return true;
@@ -204,14 +212,14 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
-            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} working={false} onSubmit={submit} initial={draft} starters go={go} />}
+            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} />}
           </div>
         </div>
         {!empty && (
           <div className="shrink-0 px-4 pb-4">
             <div className="mx-auto w-full max-w-[760px]">
               {error && <p className="mb-2 text-sm text-negative">{error}</p>}
-              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
+              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
             </div>
           </div>
         )}
@@ -285,6 +293,8 @@ function Composer(props: {
   space?: SpaceInfo;
   agentId: string | null;
   onAgent?: (id: string | null) => void;
+  effort: Effort;
+  onEffort: (e: Effort) => void;
   working: boolean;
   onStop?: () => void;
   onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null) => Promise<boolean>;
@@ -292,7 +302,8 @@ function Composer(props: {
   starters?: boolean;
   go?: (path: string) => void;
 }) {
-  const [text, setText] = useState(props.initial?.text ?? (props.initial?.mentions.length ? props.initial.mentions.map((m) => `@${m.name} `).join("") : ""));
+  // Mentioned files and spaces live in the chips above the text, not in the text itself.
+  const [text, setText] = useState(props.initial?.text ?? "");
   const [mentions, setMentions] = useState<Mention[]>(props.initial?.mentions ?? []);
   const [uploads, setUploads] = useState<{ fileId: string; spaceId: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
@@ -308,6 +319,9 @@ function Composer(props: {
     const q = slash.toLowerCase();
     return mySkills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.title.toLowerCase().includes(q)).slice(0, 8);
   }, [slash, mySkills]);
+  // My level (plans/08 §D): whether «تفكير عميق» is allowed and how many questions are left today.
+  const level = useQuery(api.levels.mine);
+  const left = level && level.dailyQuestions > 0 ? Math.max(0, level.dailyQuestions - level.usedToday) : null;
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -348,6 +362,22 @@ function Composer(props: {
     setActive(0);
   };
 
+  /** «إضافة» → «@» / «/»: types the trigger at the caret (with a space before it if needed) and opens its list. */
+  const insertTrigger = (ch: "@" | "/") => {
+    const el = ta.current!;
+    const caret = el.selectionStart ?? text.length;
+    const before = text.slice(0, caret);
+    const ins = (before && !/\s$/.test(before) ? " " : "") + ch;
+    const next = before + ins + text.slice(caret);
+    const at = caret + ins.length;
+    setText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(at, at);
+      updateQuery(next, at);
+    });
+  };
+
   const pickSkill = (s: { _id: string; name: string }) => {
     const el = ta.current!;
     const caret = el.selectionStart ?? text.length;
@@ -365,7 +395,8 @@ function Composer(props: {
   const pick = (item: Mention) => {
     const el = ta.current!;
     const caret = el.selectionStart ?? text.length;
-    const before = text.slice(0, caret).replace(/@([^\s@]{0,40})$/, `@${item.name} `);
+    // The typed "@query" is replaced by a chip: nothing of it stays in the text.
+    const before = text.slice(0, caret).replace(/(^|\s)@([^\s@]{0,40})$/, "$1");
     const next = before + text.slice(caret);
     setText(next);
     setQuery(null);
@@ -381,8 +412,8 @@ function Composer(props: {
     const q = text.trim();
     if (!q || busy || props.working || pending.length) return;
     setBusy(true);
-    // A mention whose "@name" was deleted from the text no longer counts.
-    const kept = mentions.filter((m) => m.kind !== "agent" && q.includes(`@${m.name}`));
+    // Every chip counts (× on a chip removes it).
+    const kept = mentions.filter((m) => m.kind !== "agent");
     // Same for the skill: deleting its "/name" from the text drops it.
     const used = skill && q.includes(`/${skill.name}`) ? skill : null;
     const ok = await props.onSubmit(q, kept, used);
@@ -405,7 +436,6 @@ function Composer(props: {
         const m: Mention = { kind: "file", id: fileId, name: file.name, spaceId: uploadTarget._id };
         setUploads((u) => [...u, { fileId, spaceId: uploadTarget._id, name: file.name }]);
         setMentions((ms) => [...ms, m]);
-        setText((t) => (t && !t.endsWith(" ") && !t.endsWith("\n") ? t + " " : t) + `@${file.name} `);
       } catch (err) {
         setUploadError(errorText(err));
       }
@@ -485,7 +515,6 @@ function Composer(props: {
                     onClick={() => {
                       setMentions((ms) => ms.filter((x) => x.id !== m.id));
                       setUploads((u) => u.filter((x) => x.fileId !== m.id));
-                      setText((t) => t.replace(`@${m.name} `, "").replace(`@${m.name}`, ""));
                     }}
                   >
                     <Icon name="x" size={12} />
@@ -509,6 +538,7 @@ function Composer(props: {
           }}
           onClick={(e) => updateQuery(text, e.currentTarget.selectionStart)}
           onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u" && uploadTarget) return e.preventDefault(), fileInput.current?.click();
             if (slash !== null && skillItems.length) {
               if (e.key === "ArrowDown") return e.preventDefault(), setActive((a) => (a + 1) % skillItems.length);
               if (e.key === "ArrowUp") return e.preventDefault(), setActive((a) => (a - 1 + skillItems.length) % skillItems.length);
@@ -528,9 +558,22 @@ function Composer(props: {
           }}
         />
         <div className="flex items-center gap-1 px-2 pb-2">
-          <button className="btn-ghost w-9 px-0" title={uploadTarget ? `إرفاق ملف (يُحفظ في ${uploadTarget.kind === "personal" ? "مساحتي" : uploadTarget.name})` : "إرفاق ملف"} aria-label="إرفاق ملف" onClick={() => fileInput.current?.click()} disabled={!uploadTarget}>
-            <Icon name="clip" size={18} />
-          </button>
+          <Popover label="إضافة" trigger={<Icon name="plus" size={18} />} triggerClass="btn-ghost w-9 rounded-lg px-0">
+            {(close) => (
+              <>
+                <PopoverItem
+                  icon="clip"
+                  title="إرفاق ملفات أو صور"
+                  description={uploadTarget ? `تُحفظ في ${uploadTarget.kind === "personal" ? "مساحتي" : uploadTarget.name}` : "لا تملك مساحة تُحفظ فيها"}
+                  hint="Ctrl+U"
+                  disabled={!uploadTarget}
+                  onSelect={() => (close(), fileInput.current?.click())}
+                />
+                <PopoverItem icon="at" title="إشارة إلى ملف أو مساحة" description="ليجيب منها وحدها" hint="@" onSelect={() => (close(), insertTrigger("@"))} />
+                <PopoverItem icon="bot" title="استخدام مهارة" description="تعليماتك المحفوظة لهذا الطلب" hint="/" onSelect={() => (close(), insertTrigger("/"))} />
+              </>
+            )}
+          </Popover>
           <input
             ref={fileInput}
             type="file"
@@ -542,22 +585,10 @@ function Composer(props: {
               void attach(list);
             }}
           />
-          <button
-            className="btn-ghost w-9 px-0"
-            aria-label="إشارة إلى ملف أو مساحة"
-            title="إشارة (@)"
-            onClick={() => {
-              const el = ta.current!;
-              const next = text + (text && !/\s$/.test(text) ? " @" : "@");
-              setText(next);
-              setQuery("");
-              requestAnimationFrame(() => (el.focus(), el.setSelectionRange(next.length, next.length)));
-            }}
-          >
-            <Icon name="at" size={18} />
-          </button>
-          {props.onAgent && <AgentPicker value={props.agentId} onChange={props.onAgent} />}
-          <span className="ms-auto text-xs text-muted">{pending.length ? "ينتظر تجهيز الملف…" : ""}</span>
+          <EffortPicker value={props.effort} onChange={props.onEffort} level={level} />
+          {/* The agent is chosen per question; a picker shows only on a chat pinned to one (to unpin it). */}
+          {props.onAgent && props.agentId && <AgentPicker value={props.agentId} onChange={props.onAgent} />}
+          <span className="ms-auto text-xs text-muted">{pending.length ? "ينتظر تجهيز الملف…" : left !== null && left <= 10 ? (left > 0 ? `باقي ${left} من أسئلة اليوم` : `بلغت حدّ اليوم في مستوى «${level!.name}»`) : ""}</span>
           {props.working && props.onStop ? (
             <button className="btn-secondary w-9 animate-pop rounded-lg px-0" aria-label="إيقاف" title="إيقاف الإجابة" onClick={props.onStop}>
               <Icon name="stop" size={16} />
@@ -613,6 +644,60 @@ function MentionList({ items, active, onPick }: { items: (Mention & { detail: st
 }
 
 /** A quiet agent choice: the default first. */
+type Effort = "auto" | "fast" | "deep";
+const EFFORTS: { value: Effort; label: string; hint: string }[] = [
+  { value: "auto", label: "تلقائي", hint: "يقرر المساعد متى يفكّر قبل الإجابة بحسب الطلب" },
+  { value: "fast", label: "سريع", hint: "يجيب مباشرة دون تفكير مسبق" },
+  { value: "deep", label: "تفكير عميق", hint: "يفكّر قبل كل إجابة: أدق للتحليل والمقارنة، وأبطأ" },
+];
+function savedEffort(): Effort {
+  try {
+    const v = localStorage.getItem("onespace.effort");
+    return v === "fast" || v === "deep" ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+/** Thinking level (like Claude's): «تلقائي» by default, remembered on this device. */
+function EffortPicker({ value, onChange, level }: { value: Effort; onChange: (e: Effort) => void; level?: { name: string; deep: boolean; model: string } }) {
+  // A level without thinking runs «تفكير عميق» as «تلقائي» without it (the server enforces this too).
+  const noDeep = level ? !level.deep : false;
+  if (noDeep && value === "deep") value = "auto";
+  const cur = EFFORTS.find((e) => e.value === value) ?? EFFORTS[0]!;
+  return (
+    <Popover
+      label="مستوى التفكير"
+      align="start"
+      width="w-72"
+      triggerClass={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors hover:bg-active ${value === "deep" ? "text-primary" : "text-muted"}`}
+      trigger={
+        <>
+          <Icon name="bulb" size={16} />
+          <span className={value === "deep" ? "" : "text-ink"}>{cur.label}</span>
+          <Icon name="down" size={12} />
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          <div className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted">مستوى التفكير</div>
+          {EFFORTS.map((e) => (
+            <PopoverItem
+              key={e.value}
+              title={e.label}
+              description={e.value === "deep" && noDeep ? `غير متاح في مستوى «${level!.name}»` : e.hint}
+              checked={e.value === value}
+              disabled={e.value === "deep" && noDeep}
+              onSelect={() => (onChange(e.value), close())}
+            />
+          ))}
+        </>
+      )}
+    </Popover>
+  );
+}
+
 function AgentPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   const agents = useQuery(api.agents.available);
   if (!agents?.length) return null;
@@ -687,6 +772,7 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
 function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
   const feedback = useMutation(api.chat.feedback);
   const [showSteps, setShowSteps] = useState(false);
+  const [showParts, setShowParts] = useState(false);
   const requestDownload = useMutation(api.files.requestDownload);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -696,7 +782,17 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
 
   if (m.role === "user")
     return (
-      <div className="flex animate-rise justify-start">
+      <div className="flex animate-rise flex-col items-start gap-1.5">
+        {m.attached?.length ? (
+          <div className="flex max-w-[85%] flex-wrap gap-1.5">
+            {m.attached.map((a, i) => (
+              <span key={i} className="flex h-7 max-w-[260px] items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-xs text-muted">
+                <Icon name={a.kind === "file" ? "file" : "folder"} size={13} />
+                <span className="truncate">{a.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
         <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7" dir="auto">
           {m.text}
         </div>
@@ -763,6 +859,12 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
         )}
         {copied && <span>نُسخ</span>}
         <span className="ms-auto flex items-center gap-1">
+          {(m.parts?.length ?? 0) > 0 && (
+            <button className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowParts(!showParts)} aria-expanded={showParts} title="قُسّم الطلب على عدة وكلاء ثم جُمعت نتائجهم">
+              <Icon name="users" size={14} />
+              {m.parts!.length} وكلاء
+            </button>
+          )}
           {m.steps?.length > 0 && (
             <button className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowSteps(!showSteps)} aria-expanded={showSteps}>
               <Icon name="tasks" size={14} />
@@ -779,7 +881,29 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
         </span>
       </div>
       {showSteps && m.steps?.length > 0 && <StepList steps={m.steps} />}
+      {showParts && (m.parts?.length ?? 0) > 0 && <PartList parts={m.parts!} />}
       {error && <p className="text-xs text-negative">{error}</p>}
+    </div>
+  );
+}
+
+/** The parts a split request was worked in (plans/08 §A): each agent's own result, collapsed. */
+function PartList({ parts }: { parts: Part[] }) {
+  return (
+    <div className="space-y-2">
+      {parts.map((p, i) => (
+        <details key={i} className="animate-fade rounded-lg border border-line bg-surface">
+          <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm">
+            <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs ${p.ok ? "bg-positive-soft text-positive" : "bg-negative-soft text-negative"}`}>{i + 1}</span>
+            <span className="min-w-0 flex-1 truncate">{p.goal}</span>
+            <span className="badge shrink-0">
+              <Icon name="bot" size={12} /> {p.agent}
+            </span>
+            <span className="meta num shrink-0">{secs(p.ms)}</span>
+          </summary>
+          <div className="md border-t border-rule px-3 py-2 text-sm" dangerouslySetInnerHTML={{ __html: renderAnswer(p.text, new Set()) }} />
+        </details>
+      ))}
     </div>
   );
 }

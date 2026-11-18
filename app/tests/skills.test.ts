@@ -148,6 +148,45 @@ describe("follow-ups remember the chat's files and agent", () => {
   }, 30_000);
 });
 
+describe("thinking level: تلقائي / سريع / عميق", () => {
+  async function answerWith(text: string, effort?: string) {
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
+    for (let i = 0; i < 400; i++) {
+      const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
+      if (!r.turn && r.messages.at(-1)?.role === "assistant") return r.messages.at(-1);
+      await Bun.sleep(25);
+    }
+    throw new Error("no answer");
+  }
+  const answerReq = (marker: string) => chatRequestsWith(ai, marker).filter((r) => !r.body.response_format).at(-1);
+
+  test("«عميق» thinks (hidden), shows «يفكّر», and never shows the reasoning", async () => {
+    const m = await answerWith("اكتب جملة EFFQ-1", "deep");
+    expect(answerReq("EFFQ-1").body.chat_template_kwargs.enable_thinking).toBe(true);
+    expect(m.steps.some((x: any) => x.label === "يفكّر…" && x.state === "done")).toBe(true);
+    expect(m.text).not.toContain("REASONING-HIDDEN");
+  }, 30_000);
+
+  test("«سريع» never thinks, even when the router would", async () => {
+    await answerWith("حلّل هذا DEEP-Q EFFQ-2", "fast");
+    expect(answerReq("EFFQ-2").body.chat_template_kwargs.enable_thinking).toBe(false);
+  }, 30_000);
+
+  test("«تلقائي» follows the router's judgement of the question", async () => {
+    await answerWith("سؤال يحتاج تأملاً DEEP-Q EFFQ-3");
+    expect(answerReq("EFFQ-3").body.chat_template_kwargs.enable_thinking).toBe(true);
+    const plain = await answerWith("اكتب تحية EFFQ-4", "auto");
+    expect(answerReq("EFFQ-4").body.chat_template_kwargs.enable_thinking).toBe(false);
+    expect(plain.steps.some((x: any) => x.label === "يفكّر…")).toBe(false);
+  }, 30_000);
+
+  test("an unknown level is refused", async () => {
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    expect((await s.call("mutation", "chat:send", { threadId: t, text: "x", effort: "max" }, tok("mem"))).ok).toBe(false);
+  });
+});
+
 describe("permission matrix: new public functions", () => {
   test("skills:list / create are for active members; anonymous, pending and disabled are refused", async () => {
     for (const a of ACTORS) {
@@ -178,7 +217,7 @@ describe("permission matrix: new public functions", () => {
   test("home:suggestions: my recent files and skills only; a space I can't read is refused", async () => {
     must(await s.call("mutation", "skills:create", skillArgs("اقتراح-منزلي"), tok("mem")));
     const mine = must(await s.call("query", "home:suggestions", {}, tok("mem")));
-    expect(mine.some((x: any) => x.kind === "file" && x.file.id === f.files.P_mem && x.text.includes("@"))).toBe(true);
+    expect(mine.some((x: any) => x.kind === "file" && x.file.id === f.files.P_mem && x.text && !x.text.includes("@"))).toBe(true);
     expect(mine.some((x: any) => x.kind === "skill" && x.text.startsWith("/"))).toBe(true);
     for (const a of ACTORS) {
       const r = await s.call("query", "home:suggestions", {}, tok(a));
@@ -195,6 +234,6 @@ describe("permission matrix: new public functions", () => {
     const res = await fetch(`${s.url}/_admin/api/functions`, { method: "POST", headers: { Authorization: `Bearer ${s.adminKey}` }, body: "{}" });
     const publicFns = new Set((await res.json()).value.filter((x: any) => x.visibility === "public").map((x: any) => x.name));
     for (const n of SKILLS_COVERED) expect(publicFns.has(n)).toBe(true);
-    expect([...publicFns].filter((n: any) => n.startsWith("skills:") || n.startsWith("agentDrafts:") || n.startsWith("home:")).sort()).toEqual(SKILLS_COVERED.filter((n) => !n.startsWith("chat:")).sort());
+    expect([...publicFns].filter((n: any) => n.startsWith("skills:") || n.startsWith("agentDrafts:") || n.startsWith("home:") || n.startsWith("levels:")).sort()).toEqual(SKILLS_COVERED.filter((n) => !n.startsWith("chat:")).sort());
   });
 });

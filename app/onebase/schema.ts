@@ -286,6 +286,25 @@ export default defineSchema({
   // Phase 6: agents, their versions, write-tool proposals (see agentsSchema.ts).
   ...agentsTables,
 
+  // Per-employee levels (plans/08 §D): what models, thinking, tools, sub-agents and how many
+  // questions a day an employee gets. One level per person: their own, else the default, else
+  // no limits (lib/levels.ts). Enforced on the server when a question is queued and run.
+  levels: defineTable({
+    name: v.string(),
+    description: v.string(),
+    model: v.union(v.literal("main"), v.literal("fast")), // fast = the small model only
+    deep: v.boolean(), // «تفكير عميق» allowed
+    tools: v.optional(v.array(v.string())), // allowed tools (none = all the agent has)
+    subagents: v.number(), // max parts a request may be split into (0 = no splitting)
+    dailyQuestions: v.number(), // 0 = unlimited
+    isDefault: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_default", ["isDefault"]),
+  levelAssignments: defineTable({ userId: v.id("users"), levelId: v.id("levels"), by: v.id("users"), at: v.number() })
+    .index("by_user", ["userId"])
+    .index("by_level", ["levelId"]),
+
   // ---- Phase 2: RAG and chat ----
 
   // Ingestion details per file (files.ingest holds the state the file list shows).
@@ -368,6 +387,7 @@ export default defineSchema({
     // What the model needs to know about this message but the user shouldn't read (ids, details):
     // appended to the message in the model's history only (chat.turnContext).
     modelNote: v.optional(v.string()),
+    parts: v.optional(v.array(v.object({ agent: v.string(), goal: v.string(), text: v.string(), ok: v.boolean(), ms: v.number() }))), // sub-agents' work this answer was merged from (plans/08 §A)
     routed: v.optional(v.boolean()), // answered by an agent the router chose
     skillName: v.optional(v.string()), // the asker's "/name" skill applied to this answer
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))),
@@ -409,13 +429,16 @@ export default defineSchema({
     routed: v.optional(v.boolean()), // the agent was chosen by the router for this question (plans/07 §C)
     stopRequested: v.optional(v.boolean()), // «إيقاف»: the running turn ends with what it has written so far
     skillId: v.optional(v.id("skills")), // "/name": the asker's own skill applied to this question
+    effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))), // thinking level picked in the composer (none = auto)
+    userMessageId: v.optional(v.string()), // the question's own message: its attached files show on it
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
   })
     .index("by_thread", ["threadId", "queuedAt"])
-    .index("by_state", ["state", "queuedAt"]),
+    .index("by_state", ["state", "queuedAt"])
+    .index("by_user", ["userId", "queuedAt"]),
 
   // ---- UX redesign: mentions inbox and scheduled tasks ----
 

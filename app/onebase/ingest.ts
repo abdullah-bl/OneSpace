@@ -260,6 +260,23 @@ export const reindexAll = internalMutation({
   },
 });
 
+/**
+ * Indexes files that were saved without it (rendered documents and analysis outputs, before they
+ * scheduled their own ingestion). Admin key only; safe to run again.
+ */
+export const ingestMissing = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let n = 0;
+    for (const f of await ctx.db.query("files").collect()) {
+      if (f.status !== "active" || f.ingest !== "pending" || (await indexRow(ctx, f._id))) continue;
+      await scheduleIngest(ctx, f._id);
+      n++;
+    }
+    return n;
+  },
+});
+
 // ---------------------------------------------------------------- public
 
 const STATE_LABEL: Record<string, string> = { pending: "بانتظار المعالجة", processing: "قيد المعالجة", ready: "جاهز", failed: "فشل", skipped: "لا يُفهرس" };

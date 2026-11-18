@@ -8,7 +8,7 @@ import JSZip from "jszip";
 import { Server, must } from "./harness";
 import { buildFixture, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
-import { ask } from "./rag-helpers";
+import { ask, waitIngest } from "./rag-helpers";
 import { cfg, proposalsOf, publishedAgent } from "./agents-helpers";
 import { sandboxAvailable, startRunner, type Runner } from "./sandbox";
 
@@ -164,6 +164,8 @@ describe.skipIf(!HAS_SANDBOX)("export_document tool (agent, after نفّذ)", ()
     const arts = () => s.call("query", "artifacts:list", { spaceId: personal }, tok("mem")).then((r) => must(r).filter((a: any) => a.title === "مذكرة TOOLDOC-2"));
     expect((await files()).length).toBe(1);
     expect((await files())[0].mime).toContain("wordprocessingml");
+    // Indexed like an upload, so the assistant can read and search what it made.
+    expect((await waitIngest(s, tok("mem"), personal, (await files())[0]._id)).state).toBe("ready");
     expect((await arts()).length).toBe(1);
     // Undo: someone else can't; the owner can, once.
     expect((await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mgr"))).ok).toBe(false);

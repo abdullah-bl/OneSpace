@@ -1,28 +1,30 @@
-// Phase 3 UI: "مهامي" (my tasks across all my spaces), a per-space task board, and the task
-// detail panel. Every permission decision is the server's (tasks.ts); the flags it returns
-// (canManage, isAssignee, canAttach, nextStatuses) only decide which buttons to show.
+// Tasks (Phase 3, redesigned): «مسندة إليّ» grouped by what to do next, tasks by space with their
+// progress, a space's board, and the task page (the work on one side, its details on the other).
+// Every permission decision is the server's (tasks.ts); the flags it returns (canManage,
+// isAssignee, canAttach, nextStatuses) only decide which buttons to show.
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { ArtifactDock } from "./ArtifactPanel";
 import { EmptyState } from "./ui";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
+import { Icon } from "./icons";
 import { Page } from "./ChatView";
 import { SchedulesPanel } from "./SchedulesView";
 
-export const STATUS: Record<string, { label: string; tone: string }> = {
-  new: { label: "جديدة", tone: "bg-raised text-muted" },
-  inProgress: { label: "قيد العمل", tone: "bg-raised text-ink" },
-  review: { label: "مراجعة", tone: "bg-warning-soft text-warning" },
-  done: { label: "منجزة", tone: "bg-positive-soft text-positive" },
+export const STATUS: Record<string, { label: string; tone: string; dot: string }> = {
+  new: { label: "جديدة", tone: "bg-raised text-muted", dot: "border-control" },
+  inProgress: { label: "قيد العمل", tone: "bg-primary-soft text-primary", dot: "border-primary" },
+  review: { label: "مراجعة", tone: "bg-warning-soft text-warning", dot: "border-warning" },
+  done: { label: "منجزة", tone: "bg-positive-soft text-positive", dot: "border-positive bg-positive" },
 };
 const STATUS_ORDER = ["new", "inProgress", "review", "done"] as const;
 
-export const PRIORITY: Record<string, { label: string; tone: string }> = {
-  low: { label: "منخفضة", tone: "text-muted" },
-  normal: { label: "عادية", tone: "text-muted" },
-  high: { label: "عالية", tone: "text-warning" },
-  urgent: { label: "عاجلة", tone: "text-negative font-bold" },
+export const PRIORITY: Record<string, { label: string; tone: string; rank: number }> = {
+  low: { label: "منخفضة", tone: "text-muted", rank: 0 },
+  normal: { label: "عادية", tone: "text-muted", rank: 1 },
+  high: { label: "عالية", tone: "text-warning", rank: 2 },
+  urgent: { label: "عاجلة", tone: "text-negative font-medium", rank: 3 },
 };
 
 /** The button labels for moving a task, from the current status to the next. */
@@ -55,40 +57,110 @@ type TaskRow = {
   linkCount: number;
 };
 
+const DAY = 86_400_000;
+const dayStart = (t: number) => {
+  const d = new Date(t);
+  d.setHours(0, 0, 0, 0);
+  return d.getTime();
+};
+/** Whole days from today to the due date (negative = late). */
+const daysLeft = (due: number) => Math.round((dayStart(due) - dayStart(Date.now())) / DAY);
+
+/** The due date in words: «متأخرة ٣ أيام», «اليوم», «غداً», «بعد ٥ أيام», else the date. */
+function dueText(due: number, status: string) {
+  const n = daysLeft(due);
+  if (status === "done") return new Date(due).toLocaleDateString("ar-SA-u-nu-latn", { day: "numeric", month: "short" });
+  if (n < 0) return n === -1 ? "متأخرة يوماً" : n === -2 ? "متأخرة يومين" : `متأخرة ${-n} أيام`;
+  if (n === 0) return "اليوم";
+  if (n === 1) return "غداً";
+  if (n <= 10) return `بعد ${n} أيام`;
+  return new Date(due).toLocaleDateString("ar-SA-u-nu-latn", { day: "numeric", month: "short" });
+}
+
 function Pill({ status }: { status: string }) {
   const s = STATUS[status] ?? { label: status, tone: "bg-raised" };
-  return <span className={`rounded-full px-2 py-0.5 text-xs ${s.tone}`}>{s.label}</span>;
+  return <span className={`shrink-0 rounded-full px-2 py-0.5 text-xs ${s.tone}`}>{s.label}</span>;
 }
 
 function Due({ due, status }: { due: number | null; status: string }) {
   if (!due) return null;
-  const late = status !== "done" && due < Date.now();
-  return <span className={`text-xs ${late ? "font-bold text-negative" : "text-muted"}`}>{new Date(due).toLocaleDateString("ar-SA-u-nu-latn")}</span>;
+  const n = daysLeft(due);
+  const tone = status === "done" ? "text-muted" : n < 0 ? "bg-negative-soft text-negative" : n <= 1 ? "bg-warning-soft text-warning" : "text-muted";
+  return (
+    <span className={`inline-flex shrink-0 items-center gap-1 rounded-full px-1.5 py-0.5 text-xs ${tone}`} title={new Date(due).toLocaleDateString("ar-SA-u-nu-latn")}>
+      <Icon name="calendar" size={12} />
+      {dueText(due, status)}
+    </span>
+  );
 }
 
-function TaskCard({ t, showSpace, onOpen }: { t: TaskRow; showSpace?: boolean; onOpen: () => void }) {
+function PriorityMark({ priority }: { priority: string }) {
+  if (priority !== "high" && priority !== "urgent") return null;
   return (
-    <button onClick={onOpen} className="card block w-full space-y-1 p-3 text-start hover:border-control">
-      <div className="flex items-start justify-between gap-2">
-        <span className="font-bold">{t.title}</span>
-        <span className={`shrink-0 text-xs ${PRIORITY[t.priority]?.tone ?? ""}`}>{PRIORITY[t.priority]?.label}</span>
+    <span className={`shrink-0 text-xs ${PRIORITY[priority]!.tone}`} title={`أولوية ${PRIORITY[priority]!.label}`}>
+      {priority === "urgent" ? "عاجلة" : "عالية"}
+    </span>
+  );
+}
+
+/** One task as a row: status ring, title, where/who, priority, due. */
+function TaskRowView({ t, sub, onOpen }: { t: TaskRow; sub: ReactNode; onOpen: () => void }) {
+  return (
+    <button onClick={onOpen} className="group flex w-full items-center gap-3 px-3 py-3 text-start transition-colors hover:bg-sunken">
+      <span className={`h-4 w-4 shrink-0 rounded-full border-2 ${STATUS[t.status]?.dot ?? "border-control"}`} title={STATUS[t.status]?.label} />
+      <span className="min-w-0 flex-1">
+        <span className={`block truncate ${t.status === "done" ? "text-muted line-through" : "font-medium"}`}>{t.title}</span>
+        <span className="mt-0.5 flex flex-wrap items-center gap-x-2 text-xs text-muted">{sub}</span>
+      </span>
+      <PriorityMark priority={t.priority} />
+      {t.linkCount > 0 && (
+        <span className="hidden shrink-0 items-center gap-0.5 text-xs text-faint sm:flex" title="مرفقات">
+          <Icon name="clip" size={12} />
+          {t.linkCount}
+        </span>
+      )}
+      <Due due={t.due} status={t.status} />
+      <Pill status={t.status} />
+    </button>
+  );
+}
+
+/** A board card (a space's columns). */
+function TaskCard({ t, onOpen }: { t: TaskRow; onOpen: () => void }) {
+  return (
+    <button onClick={onOpen} className="block w-full space-y-2 rounded-xl border border-line bg-surface p-3 text-start shadow-[0_1px_2px_rgba(0,0,0,0.04)] transition-colors hover:border-control">
+      <div className="flex items-start gap-2">
+        <span className="min-w-0 flex-1 text-sm font-medium">{t.title}</span>
+        <PriorityMark priority={t.priority} />
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
-        {showSpace && <span>{t.spaceName}</span>}
-        {!showSpace && <span className={t.assigneeActive ? "" : "text-negative"}>{t.assigneeName ?? "—"}{!t.assigneeActive && " (لم يعد عضواً)"}</span>}
+        <span className="flex items-center gap-1">
+          <span className="grid h-5 w-5 place-items-center rounded-full bg-active text-[10px]">{(t.assigneeName ?? "؟").charAt(0)}</span>
+          <span className={t.assigneeActive ? "" : "text-negative"}>
+            {t.assigneeName ?? "—"}
+            {!t.assigneeActive && " (لم يعد عضواً)"}
+          </span>
+        </span>
         <Due due={t.due} status={t.status} />
-        {t.linkCount > 0 && <span>{t.linkCount}</span>}
+        {t.linkCount > 0 && (
+          <span className="flex items-center gap-0.5 text-faint">
+            <Icon name="clip" size={12} />
+            {t.linkCount}
+          </span>
+        )}
       </div>
     </button>
   );
 }
 
 /**
- * "المهام" (UX redesign): one page — tasks assigned to me, tasks by space, and my scheduled tasks
- * (SchedulesView.tsx). A task id in the address opens its detail.
+ * "المهام": tasks assigned to me, tasks by space, and my scheduled tasks (SchedulesView.tsx).
+ * A task id in the address opens its page.
  */
 export function TasksPage({ tab, taskId, go, spaces }: { tab: "mine" | "scheduled"; taskId: string | null; go: (p: string) => void; spaces: SpaceInfo[] }) {
   const [view, setView] = useState<"mine" | "spaces">("mine");
+  const mine = useQuery(api.tasks.mine);
+  const schedules = useQuery(api.schedules.mine);
   if (taskId)
     return (
       <div className="mx-auto w-full max-w-[1100px] px-4 py-6 lg:px-8 lg:py-9">
@@ -96,16 +168,19 @@ export function TasksPage({ tab, taskId, go, spaces }: { tab: "mine" | "schedule
       </div>
     );
   const taskSpaces = spaces.filter((s) => s.kind === "shared" && ["manager", "member", "reader"].includes(s.myRole));
+  const openMine = (mine ?? []).filter((t) => t.status !== "done").length;
+  const tabs = [
+    { id: "mine", label: "مسندة إليّ", count: mine ? openMine : null, on: tab === "mine" && view === "mine", go: () => (setView("mine"), tab !== "mine" && go("/tasks")) },
+    { id: "spaces", label: "حسب المساحة", count: null, on: tab === "mine" && view === "spaces", go: () => (setView("spaces"), tab !== "mine" && go("/tasks")) },
+    { id: "scheduled", label: "المجدولة", count: schedules ? schedules.length : null, on: tab === "scheduled", go: () => go("/schedules") },
+  ];
   return (
-    <Page title="المهام">
+    <Page title="المهام" sub="ما أُسند إليك في المساحات، ومهامك المجدولة التي يشغّلها المساعد في وقتها.">
       <nav className="tabs -mt-2 mb-6" aria-label="أقسام المهام">
-        {[
-          { id: "mine", label: "مسندة إليّ", on: tab === "mine" && view === "mine", go: () => (setView("mine"), tab !== "mine" && go("/tasks")) },
-          { id: "spaces", label: "حسب المساحة", on: tab === "mine" && view === "spaces", go: () => (setView("spaces"), tab !== "mine" && go("/tasks")) },
-          { id: "scheduled", label: "المجدولة", on: tab === "scheduled", go: () => go("/schedules") },
-        ].map((t) => (
-          <button key={t.id} onClick={t.go} className={t.on ? "tab-active" : "tab"} aria-current={t.on ? "page" : undefined}>
+        {tabs.map((t) => (
+          <button key={t.id} onClick={t.go} className={`${t.on ? "tab-active" : "tab"} flex items-center gap-1.5`} aria-current={t.on ? "page" : undefined}>
             {t.label}
+            {t.count !== null && t.count > 0 && <span className={`num rounded-full px-1.5 text-[11px] ${t.on ? "bg-primary text-white" : "bg-active text-muted"}`}>{t.count}</span>}
           </button>
         ))}
       </nav>
@@ -114,18 +189,14 @@ export function TasksPage({ tab, taskId, go, spaces }: { tab: "mine" | "schedule
       ) : view === "mine" ? (
         <MyTasksView openTaskId={null} onOpenTask={(id) => go(id ? `/tasks/${id}` : "/tasks")} />
       ) : (
-        <div className="space-y-8">
-          {taskSpaces.length === 0 && <p className="rounded-lg border border-dashed border-control p-4 text-sm text-muted">لست عضواً مسمّى في أي مساحة مشتركة، فلا مهام تُعرض هنا.</p>}
+        <div className="space-y-6">
+          {taskSpaces.length === 0 && (
+            <EmptyState icon="folder" title="لا مساحات مشتركة">
+              المهام تُسند داخل المساحات المشتركة. حين تُضاف عضواً في مساحة تظهر مهامها هنا.
+            </EmptyState>
+          )}
           {taskSpaces.map((s) => (
-            <section key={s._id}>
-              <div className="flex items-center gap-2">
-                <h2 className="section-title">{s.name}</h2>
-                <a href={`#/space/${s._id}/tasks`} className="ms-auto text-xs text-muted hover:text-ink">
-                  لوحة المساحة
-                </a>
-              </div>
-              <SpaceTaskList spaceId={s._id} go={go} />
-            </section>
+            <SpaceTaskList key={s._id} space={s} go={go} />
           ))}
         </div>
       )}
@@ -133,53 +204,133 @@ export function TasksPage({ tab, taskId, go, spaces }: { tab: "mine" | "schedule
   );
 }
 
-function SpaceTaskList({ spaceId, go }: { spaceId: string; go: (p: string) => void }) {
-  const tasks = useQuery(api.tasks.board, { spaceId: spaceId as any });
+function SpaceTaskList({ space, go }: { space: SpaceInfo; go: (p: string) => void }) {
+  const tasks = useQuery(api.tasks.board, { spaceId: space._id as any });
   const open = (tasks ?? []).filter((t) => t.status !== "done");
-  if (tasks === undefined) return <p className="py-2 text-sm text-muted">جارٍ التحميل…</p>;
-  if (!open.length) return <p className="py-2 text-sm text-muted">لا مهام مفتوحة.</p>;
+  const done = (tasks ?? []).length - open.length;
+  const total = (tasks ?? []).length;
   return (
-    <ul className="mt-1">
-      {open.map((t) => (
-        <li key={t._id}>
-          <button className="flex min-h-[48px] w-full items-center gap-3 border-b border-rule px-2 text-start hover:bg-sunken" onClick={() => go(`/tasks/${t._id}`)}>
-            <span className="min-w-0 flex-1 truncate">{t.title}</span>
-            <span className="hidden shrink-0 text-xs text-muted sm:block">{t.assigneeName ?? "—"}</span>
-            <Pill status={t.status} />
-          </button>
-        </li>
-      ))}
-    </ul>
+    <section className="card overflow-hidden">
+      <header className="flex flex-wrap items-center gap-3 border-b border-rule px-4 py-3">
+        <span className="grid h-8 w-8 place-items-center rounded-lg bg-active text-muted">
+          <Icon name="folder" size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <h2 className="truncate font-medium">{space.name}</h2>
+          {tasks !== undefined && (
+            <div className="mt-1 flex items-center gap-2">
+              <div className="h-1.5 w-32 overflow-hidden rounded-full bg-active">
+                <div className="h-full rounded-full bg-positive transition-all" style={{ width: total ? `${(done / total) * 100}%` : "0%" }} />
+              </div>
+              <span className="meta num">
+                {done}/{total} منجزة
+              </span>
+            </div>
+          )}
+        </div>
+        <a href={`#/space/${space._id}/tasks`} className="btn-ghost text-xs">
+          لوحة المساحة
+        </a>
+      </header>
+      {tasks === undefined ? (
+        <p className="px-4 py-3 text-sm text-muted">جارٍ التحميل…</p>
+      ) : !open.length ? (
+        <p className="px-4 py-3 text-sm text-muted">{total ? "كل المهام منجزة." : "لا مهام بعد."}</p>
+      ) : (
+        <div className="divide-y divide-rule">
+          {open.map((t) => (
+            <TaskRowView key={t._id} t={t as TaskRow} onOpen={() => go(`/tasks/${t._id}`)} sub={<span className={(t as TaskRow).assigneeActive ? "" : "text-negative"}>{t.assigneeName ?? "—"}</span>} />
+          ))}
+        </div>
+      )}
+    </section>
   );
 }
 
-/** "مهامي": everything assigned to me, grouped by status. */
+type Filter = "all" | "late" | "inProgress" | "review";
+type Bucket = { key: string; title: string; rows: TaskRow[] };
+
+/** "مهامي": what's assigned to me, grouped by when it's due; done tasks folded away. */
 export function MyTasksView({ openTaskId, onOpenTask }: { openTaskId: string | null; onOpenTask: (id: string | null) => void }) {
-  const tasks = useQuery(api.tasks.mine);
+  const tasks = useQuery(api.tasks.mine) as TaskRow[] | undefined;
+  const [filter, setFilter] = useState<Filter>("all");
   const [showDone, setShowDone] = useState(false);
-  if (openTaskId) return <TaskDetail taskId={openTaskId} onClose={() => onOpenTask(null)} />;
-  const open = (tasks ?? []).filter((t) => t.status !== "done");
+  const open = useMemo(() => (tasks ?? []).filter((t) => t.status !== "done"), [tasks]);
   const done = (tasks ?? []).filter((t) => t.status === "done");
+  const late = open.filter((t) => t.due && daysLeft(t.due) < 0);
+  const counts: Record<Filter, number> = { all: open.length, late: late.length, inProgress: open.filter((t) => t.status === "inProgress").length, review: open.filter((t) => t.status === "review").length };
+  const shown = open.filter((t) => filter === "all" || (filter === "late" ? t.due && daysLeft(t.due) < 0 : t.status === filter));
+  const byUrgency = (a: TaskRow, b: TaskRow) => (a.due ?? Infinity) - (b.due ?? Infinity) || PRIORITY[b.priority]!.rank - PRIORITY[a.priority]!.rank;
+  const buckets: Bucket[] = [
+    { key: "late", title: "متأخرة", rows: shown.filter((t) => t.due && daysLeft(t.due) < 0) },
+    { key: "week", title: "هذا الأسبوع", rows: shown.filter((t) => t.due && daysLeft(t.due) >= 0 && daysLeft(t.due) <= 7) },
+    { key: "later", title: "لاحقاً", rows: shown.filter((t) => t.due && daysLeft(t.due) > 7) },
+    { key: "none", title: "بلا موعد", rows: shown.filter((t) => !t.due) },
+  ].map((b) => ({ ...b, rows: b.rows.sort(byUrgency) }));
+
+  if (openTaskId) return <TaskDetail taskId={openTaskId} onClose={() => onOpenTask(null)} />;
+  if (tasks === undefined) return <div className="text-sm text-faint">جارٍ التحميل…</div>;
+  if (!tasks.length)
+    return (
+      <EmptyState icon="tasks" title="لا مهام مسندة إليك">
+        حين يُسند إليك مدير المساحة مهمة تظهر هنا، مرتبة بموعدها وأولويتها.
+      </EmptyState>
+    );
   return (
-    <div className="space-y-4">
-      {tasks === undefined && <div className="text-sm text-faint">جارٍ التحميل…</div>}
-      {tasks && open.length === 0 && <EmptyState icon="tasks" title="لا مهام مفتوحة لك الآن">حين يُسند إليك مدير المساحة مهمة تظهر هنا، ومعها موعدها وأولويتها.</EmptyState>}
-      {STATUS_ORDER.filter((s) => s !== "done").map((s) => {
-        const rows = open.filter((t) => t.status === s);
-        if (!rows.length) return null;
-        return (
-          <section key={s} className="space-y-2">
-            <h2 className="flex items-center gap-2 text-sm font-bold"><Pill status={s} /> {rows.length}</h2>
-            <div className="grid gap-2 sm:grid-cols-2">
-              {rows.map((t) => <TaskCard key={t._id} t={t} showSpace onOpen={() => onOpenTask(t._id)} />)}
+    <div className="space-y-5">
+      <div className="flex flex-wrap gap-2" role="radiogroup" aria-label="تصفية">
+        {(
+          [
+            ["all", "المفتوحة"],
+            ["late", "المتأخرة"],
+            ["inProgress", "قيد العمل"],
+            ["review", "في المراجعة"],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            role="radio"
+            aria-checked={filter === k}
+            onClick={() => setFilter(k)}
+            className={`flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm transition-colors ${filter === k ? "border-ink bg-ink text-surface" : "border-line hover:border-control"} ${k === "late" && counts.late > 0 && filter !== k ? "text-negative" : ""}`}
+          >
+            {label}
+            <span className="num text-xs opacity-70">{counts[k]}</span>
+          </button>
+        ))}
+      </div>
+
+      {open.length === 0 && <p className="rounded-xl border border-dashed border-control p-4 text-sm text-muted">لا مهام مفتوحة. أحسنت!</p>}
+      {open.length > 0 && shown.length === 0 && <p className="text-sm text-muted">لا مهام في هذا التصنيف.</p>}
+      {buckets
+        .filter((b) => b.rows.length)
+        .map((b) => (
+          <section key={b.key}>
+            <h2 className={`mb-1.5 flex items-center gap-2 text-xs font-medium ${b.key === "late" ? "text-negative" : "text-muted"}`}>
+              {b.title}
+              <span className="num">{b.rows.length}</span>
+            </h2>
+            <div className="card divide-y divide-rule overflow-hidden">
+              {b.rows.map((t) => (
+                <TaskRowView key={t._id} t={t} onOpen={() => onOpenTask(t._id)} sub={<span>{t.spaceName}</span>} />
+              ))}
             </div>
           </section>
-        );
-      })}
+        ))}
+
       {done.length > 0 && (
-        <section className="space-y-2">
-          <button className="btn-ghost px-0" onClick={() => setShowDone(!showDone)}>{showDone ? "▾" : "▸"} المنجزة ({done.length})</button>
-          {showDone && <div className="grid gap-2 sm:grid-cols-2">{done.map((t) => <TaskCard key={t._id} t={t} showSpace onOpen={() => onOpenTask(t._id)} />)}</div>}
+        <section>
+          <button className="mb-1.5 flex items-center gap-1 text-xs font-medium text-muted hover:text-ink" onClick={() => setShowDone(!showDone)} aria-expanded={showDone}>
+            <Icon name="down" size={12} className={`transition-transform ${showDone ? "" : "ltr:-rotate-90 rtl:rotate-90"}`} />
+            المنجزة <span className="num">{done.length}</span>
+          </button>
+          {showDone && (
+            <div className="card divide-y divide-rule overflow-hidden">
+              {done.map((t) => (
+                <TaskRowView key={t._id} t={t} onOpen={() => onOpenTask(t._id)} sub={<span>{t.spaceName}</span>} />
+              ))}
+            </div>
+          )}
         </section>
       )}
     </div>
@@ -193,18 +344,39 @@ export function TaskBoard({ space }: { space: SpaceInfo }) {
   const [creating, setCreating] = useState(false);
   if (openId) return <TaskDetail taskId={openId} onClose={() => setOpenId(null)} />;
   return (
-    <div className="space-y-3">
-      {space.canManage && (creating ? <NewTaskForm space={space} onDone={() => setCreating(false)} /> : <button className="btn-primary" onClick={() => setCreating(true)}>مهمة جديدة</button>)}
+    <div className="space-y-4">
+      {space.canManage &&
+        (creating ? (
+          <NewTaskForm space={space} onDone={() => setCreating(false)} />
+        ) : (
+          <button className="btn-primary" onClick={() => setCreating(true)}>
+            <Icon name="plus" /> مهمة جديدة
+          </button>
+        ))}
       {tasks === undefined && <div className="text-sm text-faint">جارٍ التحميل…</div>}
-      {tasks && tasks.length === 0 && <div className="card p-6 text-center text-sm text-muted">لا مهام في هذه المساحة بعد.</div>}
+      {tasks && tasks.length === 0 && !creating && (
+        <EmptyState icon="tasks" title="لا مهام في هذه المساحة بعد">
+          {space.canManage ? "أنشئ مهمة وأسندها لعضو في المساحة، ويصله إشعار." : "حين يُسند مدير المساحة مهمة تظهر هنا."}
+        </EmptyState>
+      )}
       {tasks && tasks.length > 0 && (
         <div className="grid gap-3 md:grid-cols-4">
-          {STATUS_ORDER.map((s) => (
-            <div key={s} className="space-y-2 rounded-lg bg-raised p-2">
-              <div className="flex items-center gap-2 px-1 text-sm font-bold"><Pill status={s} /> <span className="text-faint">{tasks.filter((t) => t.status === s).length}</span></div>
-              {tasks.filter((t) => t.status === s).map((t) => <TaskCard key={t._id} t={t} onOpen={() => setOpenId(t._id)} />)}
-            </div>
-          ))}
+          {STATUS_ORDER.map((s) => {
+            const rows = tasks.filter((t) => t.status === s);
+            return (
+              <div key={s} className="space-y-2 rounded-xl bg-sunken p-2">
+                <div className="flex items-center gap-2 px-1 py-1 text-sm">
+                  <span className={`h-2.5 w-2.5 rounded-full border-2 ${STATUS[s]!.dot}`} />
+                  <span className="font-medium">{STATUS[s]!.label}</span>
+                  <span className="num text-xs text-faint">{rows.length}</span>
+                </div>
+                {rows.map((t) => (
+                  <TaskCard key={t._id} t={t as TaskRow} onOpen={() => setOpenId(t._id)} />
+                ))}
+                {!rows.length && <div className="rounded-lg border border-dashed border-line py-4 text-center text-xs text-faint">—</div>}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
@@ -218,7 +390,7 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
   const [busy, setBusy] = useState(false);
   return (
     <form
-      className="card grid gap-2 p-4 sm:grid-cols-2"
+      className="card animate-rise space-y-3 p-4"
       onSubmit={async (e) => {
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
@@ -242,32 +414,67 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
         }
       }}
     >
-      <input className="input sm:col-span-2" name="title" placeholder="عنوان المهمة" required maxLength={200} />
-      <textarea className="input sm:col-span-2" name="body" placeholder="التفاصيل (اختياري)" rows={3} />
-      <label className="text-xs text-muted">
-        المسؤول
-        <select className="input mt-1 w-full" name="assignee" required defaultValue="">
-          <option value="" disabled>اختر عضواً…</option>
-          {(people ?? []).map((p) => <option key={p.userId} value={p.userId}>{p.name ?? p.userId}</option>)}
-        </select>
-      </label>
-      <label className="text-xs text-muted">
-        الأولوية
-        <select className="input mt-1 w-full" name="priority" defaultValue="normal">
-          {Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
-        </select>
-      </label>
-      <label className="text-xs text-muted">
-        الموعد (اختياري)
-        <input className="input mt-1 w-full" type="date" name="due" />
-      </label>
-      <div className="flex items-end gap-2">
-        <button className="btn-primary" disabled={busy}>إسناد</button>
-        <button type="button" className="btn-ghost" onClick={onDone}>إلغاء</button>
+      <input className="input w-full text-base font-medium" name="title" placeholder="عنوان المهمة" required maxLength={200} autoFocus />
+      <textarea className="textarea w-full" name="body" placeholder="التفاصيل: المطلوب، والمصادر، ومعيار الإنجاز (اختياري)" rows={3} />
+      <div className="grid gap-3 sm:grid-cols-3">
+        <label className="text-sm">
+          <span className="label">المسؤول</span>
+          <select className="input w-full" name="assignee" required defaultValue="">
+            <option value="" disabled>
+              اختر عضواً…
+            </option>
+            {(people ?? []).map((p) => (
+              <option key={p.userId} value={p.userId}>
+                {p.name ?? p.userId}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="label">الأولوية</span>
+          <select className="input w-full" name="priority" defaultValue="normal">
+            {Object.entries(PRIORITY).map(([k, p]) => (
+              <option key={k} value={k}>
+                {p.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label className="text-sm">
+          <span className="label">الموعد (اختياري)</span>
+          <input className="input w-full" type="date" name="due" />
+        </label>
       </div>
-      {error && <p className="text-sm text-negative sm:col-span-2">{error}</p>}
-      <p className="text-xs text-faint sm:col-span-2">تُسند المهمة لمدير أو عضو في هذه المساحة فقط، ويصله إشعار.</p>
+      {error && <p className="text-sm text-negative">{error}</p>}
+      <div className="flex flex-wrap items-center gap-2 border-t border-rule pt-3">
+        <span className="meta flex-1">تُسند لمدير أو عضو في هذه المساحة فقط، ويصله إشعار.</span>
+        <button type="button" className="btn-ghost" onClick={onDone}>
+          إلغاء
+        </button>
+        <button className="btn-primary" disabled={busy}>
+          إسناد
+        </button>
+      </div>
     </form>
+  );
+}
+
+/** Where the task is in its life: new → in progress → review → done. */
+function Stepper({ status }: { status: string }) {
+  const at = STATUS_ORDER.indexOf(status as (typeof STATUS_ORDER)[number]);
+  return (
+    <ol className="flex items-center gap-1" aria-label="مراحل المهمة">
+      {STATUS_ORDER.map((s, i) => (
+        <li key={s} className="flex flex-1 items-center gap-1">
+          <span className={`flex flex-1 flex-col gap-1 ${i <= at ? "" : "opacity-50"}`}>
+            <span className={`h-1 rounded-full ${i < at ? "bg-positive" : i === at ? (s === "done" ? "bg-positive" : "bg-primary") : "bg-active"}`} />
+            <span className={`text-[11px] ${i === at ? "font-medium text-ink" : "text-muted"}`} aria-current={i === at ? "step" : undefined}>
+              {STATUS[s]!.label}
+            </span>
+          </span>
+        </li>
+      ))}
+    </ol>
   );
 }
 
@@ -299,95 +506,163 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
   };
 
   if (task === undefined) return <div className="text-sm text-faint">جارٍ التحميل…</div>;
+  const forward = task.nextStatuses.filter((s) => STATUS_ORDER.indexOf(s as any) > STATUS_ORDER.indexOf(task.status as any));
+  const back = task.nextStatuses.filter((s) => !forward.includes(s));
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
-      <button className="btn-ghost px-0" onClick={onClose}>→ رجوع</button>
-      <div className="card space-y-3 p-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <h1 className="page-title">{task.title}</h1>
-          <Pill status={task.status} />
-          <span className={`text-xs ${PRIORITY[task.priority]?.tone ?? ""}`}>أولوية {PRIORITY[task.priority]?.label}</span>
-        </div>
-        <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted">
-          <span>{task.spaceName}</span>
-          <span className={task.assigneeActive ? "" : "text-negative"}>{task.assigneeName ?? "—"}{!task.assigneeActive && " (لم يعد عضواً)"}</span>
-          <span>أنشأها {task.createdByName ?? "—"} · {formatDate(task.createdAt)}</span>
-          <Due due={task.due} status={task.status} />
-        </div>
-        {task.body && <p className="whitespace-pre-wrap text-sm">{task.body}</p>}
-        <div className="flex flex-wrap gap-2 border-t border-rule pt-3">
-          {task.nextStatuses.map((s) => (
-            <button key={s} className={s === "done" ? "btn-primary" : "btn-ghost border border-line"} disabled={busy} onClick={() => run(() => setStatus({ taskId: task._id, status: s }))}>
-              {moveLabel(task.status, s)}
-            </button>
-          ))}
-          {task.status !== "done" && (
-            <a className="btn-ghost border border-control text-ink" href={chatUrlForTask(task._id)} onClick={(e) => openTaskChat(e, task._id)} title="يفتح محادثتك الخاصة بهذه المهمة: نطاقها مساحة المهمة، وسياقها تعليمات المساحة ونص المهمة">
-              اعمل عليها مع الوكيل
-            </a>
-          )}
-          {task.canManage && (
-            <button className="btn-danger ms-auto" disabled={busy} onClick={() => confirm("حذف المهمة وتعليقاتها؟") && run(async () => { await remove({ taskId: task._id }); onClose(); })}>
-              حذف
-            </button>
-          )}
-        </div>
-        {task.canManage && <ManageTask task={task} />}
-        {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
-      </div>
-
-      <Section
-        title="المرفقات"
-        action={
-          task.canAttach && (
-            <span className="flex gap-1">
-              <button className="btn-ghost" onClick={() => setPicking(picking === "file" ? "" : "file")}>إرفاق ملف من المساحة</button>
-              <button className="btn-ghost" onClick={() => setPicking(picking === "artifact" ? "" : "artifact")}>إرفاق مخرج</button>
-            </span>
-          )
-        }
-      >
-        {picking === "file" && <FilePicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => { await addLink({ taskId: task._id, type: "file", id }); setPicking(""); })} />}
-        {picking === "artifact" && <ArtifactPicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => { await addLink({ taskId: task._id, type: "artifact", id }); setPicking(""); })} />}
-        {task.links.length === 0 && <div className="text-sm text-faint">لا مرفقات.</div>}
-        <ul className="space-y-1">
-          {task.links.map((l) => (
-            <li key={l.type + l.id} className="flex items-center gap-2 text-sm">
-              <span>{l.type === "file" ? "" : ""}</span>
-              {l.available ? (
-                l.type === "file" ? (
-                  <button className="text-ink hover:underline" onClick={() => run(async () => window.open(await requestDownload({ fileId: l.id as any, inline: true }), "_blank", "noopener"))}>{l.name}</button>
-                ) : (
-                  <button className="text-ink hover:underline" onClick={() => setOpenArtifact(l.id)}>
-                    {l.name}
-                    {l.sensitive && <span className="ms-1 text-xs text-negative">(حسّاس)</span>}
-                  </button>
-                )
-              ) : (
-                <span className="text-faint">غير متاح (نُقل خارج المساحة أو حُذف)</span>
+    <div className="mx-auto max-w-5xl space-y-4">
+      <button className="btn-ghost -ms-2 text-sm text-muted" onClick={onClose}>
+        <Icon name="next" size={14} className="rtl:rotate-180" /> المهام
+      </button>
+      <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_300px] lg:items-start">
+        <div className="space-y-4">
+          <div className="card space-y-4 p-5">
+            <div>
+              <div className="meta mb-1">{task.spaceName}</div>
+              <h1 className="text-2xl font-bold leading-snug">{task.title}</h1>
+            </div>
+            <Stepper status={task.status} />
+            {task.body ? <p className="whitespace-pre-wrap leading-7">{task.body}</p> : <p className="text-sm text-faint">لا تفاصيل.</p>}
+            <div className="flex flex-wrap gap-2 border-t border-rule pt-4">
+              {forward.map((s) => (
+                <button key={s} className="btn-primary" disabled={busy} onClick={() => run(() => setStatus({ taskId: task._id, status: s }))}>
+                  {s === "done" && <Icon name="check" size={15} />}
+                  {moveLabel(task.status, s)}
+                </button>
+              ))}
+              {task.status !== "done" && (
+                <a className="btn-secondary" href={chatUrlForTask(task._id)} onClick={(e) => openTaskChat(e, task._id)} title="يفتح محادثتك الخاصة بهذه المهمة: نطاقها مساحة المهمة، وسياقها تعليمات المساحة ونص المهمة">
+                  <Icon name="bot" size={15} /> اعمل عليها مع المساعد
+                </a>
               )}
-              <span className="text-xs text-faint">{l.addedByName}</span>
-              {task.canAttach && <button className="btn-ghost ms-auto text-xs" onClick={() => run(() => removeLink({ taskId: task._id, type: l.type, id: l.id }))}>إزالة</button>}
-            </li>
-          ))}
-        </ul>
-        {openArtifact && <ArtifactDock key={openArtifact} artifactId={openArtifact} spaces={spaces ?? []} onClose={() => setOpenArtifact(null)} mode="overlay" />}
-      </Section>
+              {back.map((s) => (
+                <button key={s} className="btn-ghost" disabled={busy} onClick={() => run(() => setStatus({ taskId: task._id, status: s }))}>
+                  {moveLabel(task.status, s)}
+                </button>
+              ))}
+            </div>
+            {error && <p className="alert-negative">{error}</p>}
+          </div>
 
-      <Section title="التعليقات">
-        {task.comments.length === 0 && <div className="text-sm text-faint">لا تعليقات.</div>}
-        <ul className="space-y-2">
-          {task.comments.map((c) => (
-            <li key={c._id} className="rounded-lg bg-sunken p-2 text-sm">
-              <div className="text-xs text-muted">{c.authorName} · {formatDate(c.createdAt)}</div>
-              <div className="whitespace-pre-wrap">{c.body}</div>
-            </li>
-          ))}
-        </ul>
-        {task.canComment && (
-          <CommentBox taskId={task._id} busy={busy} text={text} setText={setText} onSend={(mentions) => run(async () => { await comment({ taskId: task._id, body: text, mentions }); setText(""); })} />
-        )}
-      </Section>
+          <Section title="التعليقات" count={task.comments.length}>
+            {task.comments.length === 0 && <div className="text-sm text-faint">لا تعليقات بعد.</div>}
+            <ul className="space-y-3">
+              {task.comments.map((c) => (
+                <li key={c._id} className="flex gap-2.5">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-active text-xs font-medium">{(c.authorName ?? "؟").charAt(0)}</span>
+                  <div className="min-w-0 flex-1 rounded-xl rounded-ss-sm bg-sunken px-3 py-2 text-sm">
+                    <div className="mb-0.5 flex items-center gap-2 text-xs">
+                      <span className="font-medium">{c.authorName}</span>
+                      <span className="text-faint">{formatDate(c.createdAt)}</span>
+                    </div>
+                    <div className="whitespace-pre-wrap leading-6">{c.body}</div>
+                  </div>
+                </li>
+              ))}
+            </ul>
+            {task.canComment && (
+              <CommentBox
+                taskId={task._id}
+                busy={busy}
+                text={text}
+                setText={setText}
+                onSend={(mentions) =>
+                  run(async () => {
+                    await comment({ taskId: task._id, body: text, mentions });
+                    setText("");
+                  })
+                }
+              />
+            )}
+          </Section>
+        </div>
+
+        <aside className="space-y-4 lg:sticky lg:top-6">
+          <section className="card divide-y divide-rule text-sm">
+            <Fact label="الحالة">
+              <Pill status={task.status} />
+            </Fact>
+            <Fact label="المسؤول">
+              <span className={task.assigneeActive ? "" : "text-negative"}>
+                {task.assigneeName ?? "—"}
+                {!task.assigneeActive && " (لم يعد عضواً)"}
+              </span>
+            </Fact>
+            <Fact label="الأولوية">
+              <span className={PRIORITY[task.priority]?.tone}>{PRIORITY[task.priority]?.label}</span>
+            </Fact>
+            <Fact label="الموعد">{task.due ? <Due due={task.due} status={task.status} /> : <span className="text-faint">—</span>}</Fact>
+            <Fact label="أنشأها">
+              <span className="text-muted">
+                {task.createdByName ?? "—"} · {formatDate(task.createdAt)}
+              </span>
+            </Fact>
+            {task.canManage && (
+              <div className="space-y-2 p-3">
+                <div className="meta">إدارة المهمة</div>
+                <ManageTask task={task} />
+                <button className="btn-ghost w-full justify-center text-negative" disabled={busy} onClick={() => confirm("حذف المهمة وتعليقاتها؟") && run(async () => (await remove({ taskId: task._id }), onClose()))}>
+                  حذف المهمة
+                </button>
+              </div>
+            )}
+          </section>
+
+          <Section
+            title="المرفقات"
+            count={task.links.length}
+            action={
+              task.canAttach && (
+                <span className="flex gap-1">
+                  <button className={`btn-ghost h-7 px-2 text-xs ${picking === "file" ? "bg-active" : ""}`} onClick={() => setPicking(picking === "file" ? "" : "file")}>
+                    + ملف
+                  </button>
+                  <button className={`btn-ghost h-7 px-2 text-xs ${picking === "artifact" ? "bg-active" : ""}`} onClick={() => setPicking(picking === "artifact" ? "" : "artifact")}>
+                    + مخرج
+                  </button>
+                </span>
+              )
+            }
+          >
+            {picking === "file" && <FilePicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => (await addLink({ taskId: task._id, type: "file", id }), setPicking("")))} />}
+            {picking === "artifact" && <ArtifactPicker spaceId={task.spaceId} exclude={task.links.map((l) => l.id)} onPick={(id) => run(async () => (await addLink({ taskId: task._id, type: "artifact", id }), setPicking("")))} />}
+            {task.links.length === 0 && !picking && <div className="text-sm text-faint">لا مرفقات.</div>}
+            <ul className="space-y-1">
+              {task.links.map((l) => (
+                <li key={l.type + l.id} className="group flex items-center gap-2 rounded-lg px-1 py-1 text-sm hover:bg-sunken">
+                  <Icon name={l.type === "file" ? "file" : "panel"} size={15} className="shrink-0 text-muted" />
+                  {l.available ? (
+                    <button
+                      className="min-w-0 flex-1 truncate text-start hover:underline"
+                      title={l.addedByName ? `أضافه ${l.addedByName}` : undefined}
+                      onClick={() => (l.type === "file" ? run(async () => window.open(await requestDownload({ fileId: l.id as any, inline: true }), "_blank", "noopener")) : setOpenArtifact(l.id))}
+                    >
+                      {l.name}
+                      {l.sensitive && <span className="ms-1 text-xs text-negative">(حسّاس)</span>}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 flex-1 truncate text-faint">غير متاح (نُقل أو حُذف)</span>
+                  )}
+                  {task.canAttach && (
+                    <button className="btn-icon h-7 w-7 opacity-0 group-hover:opacity-100 focus:opacity-100" aria-label={`إزالة ${l.name}`} onClick={() => run(() => removeLink({ taskId: task._id, type: l.type, id: l.id }))}>
+                      <Icon name="x" size={13} />
+                    </button>
+                  )}
+                </li>
+              ))}
+            </ul>
+            {openArtifact && <ArtifactDock key={openArtifact} artifactId={openArtifact} spaces={spaces ?? []} onClose={() => setOpenArtifact(null)} mode="overlay" />}
+          </Section>
+        </aside>
+      </div>
+    </div>
+  );
+}
+
+function Fact({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-3 px-3 py-2.5">
+      <span className="w-20 shrink-0 text-xs text-muted">{label}</span>
+      <span className="min-w-0 flex-1">{children}</span>
     </div>
   );
 }
@@ -457,20 +732,21 @@ function CommentBox({ taskId, busy, text, setText, onSend }: { taskId: string; b
           placeholder="اكتب تعليقاً… (@ للإشارة إلى زميل)"
           maxLength={5000}
         />
-        <button className="btn-primary" disabled={busy || !text.trim()}>
-          إرسال
+        <button className="btn-primary" disabled={busy || !text.trim()} aria-label="إرسال">
+          <Icon name="send" size={16} />
         </button>
       </form>
     </div>
   );
 }
 
-function Section({ title, action, children }: { title: string; action?: ReactNode; children: ReactNode }) {
+function Section({ title, count, action, children }: { title: string; count?: number; action?: ReactNode; children: ReactNode }) {
   return (
-    <section className="card space-y-2 p-4">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-bold">{title}</h2>
-        {action}
+    <section className="card space-y-3 p-4">
+      <div className="flex items-center gap-2">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {!!count && <span className="num text-xs text-faint">{count}</span>}
+        <span className="ms-auto">{action}</span>
       </div>
       {children}
     </section>
@@ -514,17 +790,17 @@ function ManageTask({ task }: { task: { _id: string; spaceId: string; assigneeId
   const [error, setError] = useState("");
   const wrap = (p: Promise<unknown>) => p.catch((e) => setError(errorText(e)));
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg bg-sunken p-2 text-xs">
-      <span className="text-muted">إدارة:</span>
-      <select className="input py-1 text-xs" value={task.assigneeId} onChange={(e) => wrap(assign({ taskId: task._id as any, assigneeId: e.target.value as any }))}>
+    <div className="grid gap-2 text-xs">
+      <select className="input w-full text-xs" aria-label="المسؤول" value={task.assigneeId} onChange={(e) => wrap(assign({ taskId: task._id as any, assigneeId: e.target.value as any }))}>
         {!people?.some((p) => p.userId === task.assigneeId) && <option value={task.assigneeId}>— المسؤول الحالي —</option>}
         {(people ?? []).map((p) => <option key={p.userId} value={p.userId}>{p.name ?? p.userId}</option>)}
       </select>
-      <select className="input py-1 text-xs" value={task.priority} onChange={(e) => wrap(update({ taskId: task._id as any, priority: e.target.value as any }))}>
+      <select className="input w-full text-xs" aria-label="الأولوية" value={task.priority} onChange={(e) => wrap(update({ taskId: task._id as any, priority: e.target.value as any }))}>
         {Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
       </select>
       <input
-        className="input py-1 text-xs"
+        className="input w-full text-xs"
+        aria-label="الموعد"
         type="date"
         value={task.due ? new Date(task.due).toISOString().slice(0, 10) : ""}
         onChange={(e) => wrap(update({ taskId: task._id as any, due: e.target.value ? new Date(e.target.value + "T23:59:00").getTime() : null }))}

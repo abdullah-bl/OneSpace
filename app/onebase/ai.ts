@@ -87,6 +87,10 @@ export type ChatOptions = {
   onDelta?: (text: string) => void | Promise<void>;
   /** «إيقاف»: aborting it stops generation on the model server too (the connection closes). */
   signal?: AbortSignal;
+  /** Let the model reason before answering (per call; the default is LLM_THINKING). The reasoning stays hidden. */
+  thinking?: boolean;
+  /** Called once when the model starts reasoning (streaming only). */
+  onThinking?: () => void | Promise<void>;
 };
 
 /** The server couldn't parse the model's tool call (usually cut off by max_tokens mid-JSON). */
@@ -112,7 +116,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     temperature: opts.temperature ?? 0.3,
     stream,
     ...(stream ? { stream_options: { include_usage: true } } : {}),
-    chat_template_kwargs: { enable_thinking: cfg.thinking },
+    chat_template_kwargs: { enable_thinking: opts.thinking ?? cfg.thinking },
   };
   if (opts.tools?.length) body.tools = opts.tools.map((t) => ({ type: "function", function: t }));
   if (opts.jsonSchema) body.response_format = { type: "json_schema", json_schema: { name: "answer", schema: opts.jsonSchema, strict: true } };
@@ -143,6 +147,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   let usage: ChatResult["usage"] = null;
   let finishReason: string | null = null;
   const calls: { id: string; name: string; rawArgs: string }[] = [];
+  let thinkingSeen = false;
   const reader = res.body!.getReader();
   const decoder = new TextDecoder();
   let buf = "";
@@ -167,6 +172,10 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
       for (const ch of ev.choices ?? []) {
         if (ch.finish_reason) finishReason = ch.finish_reason;
         const d = ch.delta ?? {};
+        if (!thinkingSeen && typeof d.reasoning_content === "string" && d.reasoning_content) {
+          thinkingSeen = true;
+          await opts.onThinking?.();
+        }
         if (typeof d.content === "string" && d.content) {
           text += d.content;
           await opts.onDelta!(d.content);

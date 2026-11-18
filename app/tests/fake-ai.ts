@@ -74,6 +74,9 @@ function answerFor(body: any): { text: string; toolCalls: { name: string; args: 
   // A general ("open") assistant answers from general knowledge when no file passage was given
   // (UX redesign); a document-only agent abstains. The general answer never echoes the question.
   const openMode = messages.some((m) => m.role === "system" && contentText(m.content).includes("تجيب عن أي سؤال"));
+  // A model that copies an internal id into its answer: "ECHO-ID[<id>]" is written back as "[<id>]".
+  const echo = /ECHO-ID\[([a-z0-9]+)\]/.exec(question);
+  if (echo) return { text: `هذا هو الملف [${echo[1]}].`, toolCalls: [] };
   if (/ABSTAIN-PLEASE/.test(question)) return { text: "لم أجد هذا في المستندات المتاحة لك.", toolCalls: [] };
   if (sources.size === 0) return { text: openMode ? GENERAL_ANSWER : "لم أجد هذا في المستندات المتاحة لك.", toolCalls: [] };
   const parts = [...sources].slice(0, 4).map(([n, t]) => `${t.split("\n").slice(1).join(" ").slice(0, 160)} [${n}]`);
@@ -124,7 +127,11 @@ export function startFakeAI(dims = 64): FakeAI {
         else if (body.response_format && JSON.stringify(body.response_format).includes('"instructions"'))
           // AI-drafted skill (skills.draftFromThread): echoes a marker from the chat into the instructions.
           text = JSON.stringify({ name: "خطاب رسمي", title: "خطاب رسمي", description: "حين أطلب خطاباً", instructions: `اكتب بصيغة رسمية. ${/SKILLMARK-\d+/.exec(JSON.stringify(messages))?.[0] ?? ""}` });
-        else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"parts"')) {
+          // Sub-agent planner (plans/08 §A): two parts, on the first two agents offered.
+          const names: string[] = body.response_format.json_schema?.schema?.properties?.parts?.items?.properties?.agent?.enum ?? [];
+          text = JSON.stringify({ parts: [{ goal: "PART-A اقرأ الجزء الأول", agent: names[0] }, { goal: "PART-B اقرأ الجزء الثاني", agent: names[1] ?? names[0] }] });
+        } else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
         else if (body.response_format && JSON.stringify(body.response_format).includes('"summary"')) text = JSON.stringify({ summary: `SUMMARY-OF ${[...JSON.stringify(messages).matchAll(/[A-Z]+Q-\d+/g)].map((x) => x[0]).filter((x, i, a) => a.indexOf(x) === i).join(" ")}` });
         else if (body.response_format && JSON.stringify(body.response_format).includes('"skill"')) {
           // Router (plans/07 §C): "SKILL=<name>" in the request picks that skill; "SKILL-UNSURE" answers with
@@ -133,7 +140,7 @@ export function startFakeAI(dims = 64): FakeAI {
           const lines = [...sys.matchAll(/^(\d+)\. (.+?)(?: \(الافتراضي\))? — /gm)].map((x) => ({ n: Number(x[1]), name: x[2]!, def: x[0].includes("(الافتراضي)") }));
           const hit = [...lines].sort((a, b) => b.name.length - a.name.length).find((l) => last.includes(`SKILL=${l.name}`));
           const def = lines.find((l) => l.def) ?? lines[0];
-          text = JSON.stringify({ skill: (hit ?? def)?.name ?? "", confidence: /SKILL-UNSURE/.test(last) ? 0.2 : 0.9 });
+          text = JSON.stringify({ skill: (hit ?? def)?.name ?? "", deep: /DEEP-Q/.test(last), split: /SPLIT-Q/.test(last), confidence: /SKILL-UNSURE/.test(last) ? 0.2 : 0.9 });
         } else if (body.response_format) text = JSON.stringify({ query: /السؤال الأخير: (.*)$/s.exec(last)?.[1]?.trim() ?? last });
         else ({ text, toolCalls } = answerFor(body));
         const usage = { prompt_tokens: 100, completion_tokens: 20 };
@@ -145,6 +152,8 @@ export function startFakeAI(dims = 64): FakeAI {
         }
         const enc = new TextEncoder();
         const events: any[] = [];
+        // Thinking on: some hidden reasoning first (llama.cpp sends it as reasoning_content).
+        if (body.chat_template_kwargs?.enable_thinking) events.push({ choices: [{ index: 0, delta: { reasoning_content: "REASONING-HIDDEN" } }] });
         for (let i = 0; i < text.length; i += 12) events.push({ choices: [{ index: 0, delta: { content: text.slice(i, i + 12) } }] });
         toolCalls.forEach((t, i) => events.push({ choices: [{ index: 0, delta: { tool_calls: [{ index: i, id: `call_${i}_${Date.now()}`, type: "function", function: { name: t.name, arguments: t.args } }] } }] }));
         events.push({ choices: [{ index: 0, delta: {}, finish_reason: toolCalls.length ? "tool_calls" : "stop" }] });

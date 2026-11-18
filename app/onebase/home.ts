@@ -1,5 +1,5 @@
 // The new-chat screen's suggestions, made from the user's own recent work: files they touched
-// lately (with the right verb for the kind of file), their most used /skills, and the last chat
+// lately (with the right verb for the kind of file; the file itself goes in as a chip, not text), their most used /skills, and the last chat
 // to pick up again. Only what the caller can read right now; the client mixes these with a
 // rotating general list so the screen changes from visit to visit.
 
@@ -17,10 +17,10 @@ const DAY = 24 * 3600 * 1000;
 
 function fileSuggestion(name: string): { title: string; text: string } {
   const ext = name.toLowerCase().split(".").pop() ?? "";
-  if (["csv", "xlsx", "xls"].includes(ext)) return { title: `حلّل ${name}`, text: `حلّل بيانات @${name} وأعطني أهم الملاحظات والأرقام ` };
-  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return { title: `صِف ${name}`, text: `صِف محتوى الصورة @${name} ` };
-  if (["pptx", "ppt"].includes(ext)) return { title: `لخّص عرض ${name}`, text: `لخّص العرض @${name} في نقاط ` };
-  return { title: `لخّص ${name}`, text: `لخّص @${name} وأبرز أهم ما فيه ` };
+  if (["csv", "xlsx", "xls"].includes(ext)) return { title: `حلّل ${name}`, text: "حلّل بيانات هذا الملف وأعطني أهم الملاحظات والأرقام" };
+  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return { title: `صِف ${name}`, text: "صِف محتوى هذه الصورة" };
+  if (["pptx", "ppt"].includes(ext)) return { title: `لخّص عرض ${name}`, text: "لخّص هذا العرض في نقاط" };
+  return { title: `لخّص ${name}`, text: "لخّص هذا الملف وأبرز أهم ما فيه" };
 }
 
 export const suggestions = query({

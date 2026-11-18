@@ -19,11 +19,11 @@ def ar(text):
     return get_display(arabic_reshaper.reshape(str(text)))
 
 
-def arabic_plots(font="DejaVu Sans"):
-    """Selects a font that has Arabic glyphs for every later matplotlib figure."""
+def arabic_plots(font="Noto Sans Arabic"):
+    """Kept for older code: Arabic in charts is now set up automatically (sitecustomize.py)."""
     import matplotlib
 
-    matplotlib.rcParams["font.family"] = font
+    matplotlib.rcParams["font.family"] = [font, "DejaVu Sans"]
     matplotlib.rcParams["axes.unicode_minus"] = False
 
 

@@ -19,7 +19,11 @@ export const agentConfig = v.object({
   name: v.string(),
   description: v.string(),
   instructions: v.string(),
-  allowedTools: v.array(v.string()), // names from the registry (onebase/tools/index.ts) only
+  allowedTools: v.array(v.string()), // names from the registry (onebase/tools/index.ts) only; used when toolMode is "custom"
+  // "all" = every tool in the registry, including ones added later (the default for new agents):
+  // tools never grant access by themselves (they run as the user, writes wait for «نفّذ» by tier,
+  // and the employee's level caps them). "custom" (or missing, for agents from before) = allowedTools.
+  toolMode: v.optional(v.union(v.literal("all"), v.literal("custom"))),
   dataScope,
   modelRole,
   maxSteps: v.number(),

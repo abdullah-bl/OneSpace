@@ -9,4 +9,10 @@ export const SKILLS_COVERED = [
   "skills:draftFromThread",
   "agentDrafts:draftWithAI",
   "home:suggestions",
+  "levels:list",
+  "levels:save",
+  "levels:remove",
+  "levels:setDefault",
+  "levels:assign",
+  "levels:mine",
 ];

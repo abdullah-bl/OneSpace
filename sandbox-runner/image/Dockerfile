@@ -1,4 +1,5 @@
-# OneSpace analysis sandbox image: Python + pandas/numpy/matplotlib/openpyxl + Arabic fonts, and the
+# OneSpace analysis sandbox image: Python + pandas/numpy/matplotlib/openpyxl/scipy/seaborn/scikit-learn/
+# statsmodels + Arabic fonts (and automatic Arabic shaping in charts: sitecustomize.py), and the
 # document renderer (Markdown/HTML → DOCX / PDF / PPTX: python-docx, python-pptx, WeasyPrint).
 # Built once from official base images (needs internet at build time only). Runs are fully offline
 # (--network none). Every version is pinned so a rebuild gives the same environment.
@@ -28,7 +29,15 @@ RUN pip install \
       python-docx==1.2.0 \
       python-pptx==1.0.2 \
       weasyprint==70.0 \
-      markdown-it-py==4.2.0
+      markdown-it-py==4.2.0 \
+      scipy==1.14.1 \
+      seaborn==0.13.2 \
+      scikit-learn==1.5.2 \
+      statsmodels==0.14.4 \
+      xlsxwriter==3.2.0 \
+      pypdf==5.1.0 \
+      tabulate==0.9.0 \
+      hijridate==2.5.0
 
 # Pre-built matplotlib font cache (copied to the writable /tmp at run start; the rootfs is read-only).
 RUN mkdir -p /opt/mplconfig \
@@ -40,6 +49,8 @@ RUN groupadd -g 10001 sandbox && useradd -u 10001 -g 10001 -M -d /nonexistent -s
 
 COPY entry.py /opt/sandbox/entry.py
 COPY helpers.py /opt/sandbox/lib/onespace.py
+# Loaded before every run (PYTHONPATH): Arabic in matplotlib text is shaped and ordered automatically.
+COPY sitecustomize.py /opt/sandbox/lib/sitecustomize.py
 COPY render_doc.py /opt/sandbox/lib/onespace_doc.py
 RUN chmod -R a+rX /opt/sandbox
 

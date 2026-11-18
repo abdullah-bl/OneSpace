@@ -340,6 +340,9 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   );
 }
 
+const normAr = (x: string) => x.toLowerCase().replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+
+/** A table output: search across all cells, click a column to sort (numbers as numbers). */
 function TableView({ content }: { content: string }) {
   const t = useMemo(() => {
     try {
@@ -348,31 +351,69 @@ function TableView({ content }: { content: string }) {
       return { columns: [], rows: [] };
     }
   }, [content]);
+  const [q, setQ] = useState("");
+  const [sort, setSort] = useState<{ col: number; dir: 1 | -1 } | null>(null);
+  const cell = (v: unknown) => (v === null || v === undefined ? "" : String(v));
+  const rows = useMemo(() => {
+    const needle = normAr(q.trim());
+    let out = needle ? t.rows.filter((r) => normAr(r.map(cell).join(" ")).includes(needle)) : t.rows;
+    if (sort) {
+      const num = (v: unknown) => {
+        const n = typeof v === "number" ? v : parseFloat(cell(v).replace(/[,\s]/g, ""));
+        return Number.isFinite(n) ? n : null;
+      };
+      out = [...out].sort((a, b) => {
+        const x = a[sort.col], y = b[sort.col];
+        const nx = num(x), ny = num(y);
+        return (nx !== null && ny !== null ? nx - ny : cell(x).localeCompare(cell(y), "ar")) * sort.dir;
+      });
+    }
+    return out;
+  }, [t, q, sort]);
   return (
-    <div className="h-full overflow-auto">
-      <table className="w-full text-sm">
-        <thead className="sticky top-0 bg-sunken">
-          <tr>
-            {t.columns.map((c, i) => (
-              <th key={i} className="th">
-                {c}
-              </th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>
-          {t.rows.map((r, i) => (
-            <tr key={i} className="border-t border-rule">
-              {t.columns.map((_, j) => (
-                <td key={j} className="td">
-                  {r[j] === null || r[j] === undefined ? "" : String(r[j])}
-                </td>
+    <div className="flex h-full flex-col">
+      <div className="flex shrink-0 items-center gap-2 border-b border-rule px-3 py-2">
+        <div className="flex h-8 min-w-0 flex-1 items-center gap-2 rounded-lg border border-line px-2.5 focus-within:border-primary">
+          <Icon name="search" size={14} className="text-faint" />
+          <input className="min-w-0 flex-1 bg-transparent text-sm outline-none" value={q} onChange={(e) => setQ(e.target.value)} placeholder="بحث في الجدول…" aria-label="بحث في الجدول" />
+        </div>
+        <span className="meta num shrink-0">
+          {rows.length === t.rows.length ? `${t.rows.length} صفاً` : `${rows.length} من ${t.rows.length}`}
+        </span>
+      </div>
+      <div className="min-h-0 flex-1 overflow-auto">
+        <table className="w-full text-sm">
+          <thead className="sticky top-0 bg-sunken">
+            <tr>
+              {t.columns.map((c, i) => (
+                <th key={i} className="th p-0">
+                  <button
+                    className="flex w-full items-center gap-1 px-3 py-2 text-start hover:bg-active"
+                    onClick={() => setSort((s) => (s?.col === i ? (s.dir === 1 ? { col: i, dir: -1 } : null) : { col: i, dir: 1 }))}
+                    aria-sort={sort?.col === i ? (sort.dir === 1 ? "ascending" : "descending") : undefined}
+                    title="اضغط للترتيب"
+                  >
+                    {c}
+                    {sort?.col === i && <Icon name={sort.dir === 1 ? "up" : "down"} size={12} />}
+                  </button>
+                </th>
               ))}
             </tr>
-          ))}
-        </tbody>
-      </table>
-      <div className="meta px-3 py-2">{t.rows.length} صفاً</div>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i} className="border-t border-rule">
+                {t.columns.map((_, j) => (
+                  <td key={j} className="td">
+                    {cell(r[j])}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {rows.length === 0 && <p className="p-4 text-center text-sm text-muted">لا نتائج لـ«{q}».</p>}
+      </div>
     </div>
   );
 }

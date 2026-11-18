@@ -7,7 +7,7 @@
 import { v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type QueryCtx } from "./_generated/server";
-import { effectiveScope, narrowByMentions, visibleTo } from "./agents";
+import { agentTools, effectiveScope, narrowByMentions, visibleTo } from "./agents";
 import { chat } from "./ai";
 import { tools as registry } from "./tools";
 
@@ -92,7 +92,7 @@ export const candidates = internalQuery({
       if (!a.enabled || !a.live || !(await visibleTo(ctx, turn.userId, a.live))) continue;
       if (pointsAtData) {
         // The question names files/spaces: only skills that can read them, inside their scope.
-        if (!a.live.allowedTools.some((t) => FILE_TOOLS.includes(t))) continue;
+        if (!agentTools(a.live).some((t) => FILE_TOOLS.includes(t))) continue;
         const scope = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId as Id<"users">, a.live.dataScope, meta.scope), mentions);
         if (!scope.spaceIds.length) continue;
       }
@@ -100,7 +100,7 @@ export const candidates = internalQuery({
         agentId: a._id,
         name: a.live.name,
         description: a.live.description,
-        tools: a.live.allowedTools.filter((t) => Object.hasOwn(registry, t)).map((t) => registry[t]!.label.replace(/…$/, "")),
+        tools: agentTools(a.live).map((t) => registry[t]!.label.replace(/…$/, "")),
         isDefault: a.isDefault,
       });
     }
@@ -112,6 +112,16 @@ export const candidates = internalQuery({
   },
 });
 
+/**
+ * «تلقائي» thinking when the router didn't run (one candidate, a pinned agent): long questions and
+ * ones that ask to analyse, compare, plan, calculate or reason. Short and direct requests answer at once.
+ */
+export function wantsDeepThought(question: string): boolean {
+  const q = question.replace(/@\S+/g, "").trim();
+  if (q.length > 600) return true;
+  return /(حلّ?ل|تحليل|قارن|مقارنة|استنتج|خطة|خطّة|احسب|لماذا|ما السبب|راجع|قيّ?م|تقييم|برهن|اشرح بالتفصيل|خطوة بخطوة|compare|analy[sz]e|plan|why|step by step|calculate)/i.test(q);
+}
+
 export function routerPrompt(r: RouteInput) {
   const list = r.candidates.map((c, i) => `${i + 1}. ${c.name}${c.isDefault ? " (الافتراضي)" : ""} — ${c.description} [أدواته: ${c.tools.join("، ") || "بلا أدوات"}]`).join("\n");
   const system =
@@ -121,6 +131,8 @@ export function routerPrompt(r: RouteInput) {
     "- إنشاء ملف Word/PDF/PowerPoint يحتاج «يُنشئ ملفاً»؛ السجلات والشهادات والقوالب تحتاج «يستعلم في السجلات» أو «يجهّز مسودة المستند»؛ الأنظمة واللوائح المنشورة للجميع للمهارة التي تجيب عنها.\n" +
     "- إن كان الطلب متابعة للسؤال السابق (مثل «على نفس الملف»، «وماذا عن…»، رقم أو كلمات قليلة تكمل ما قبلها) فاختر المهارة التي أجابت عن السؤال السابق.\n" +
     "- إن كان الطلب عاماً جديداً (كتابة، ترجمة، سؤال عام) فاختر الافتراضية.\n" +
+    "- deep: true إن احتاج الطلب تفكيراً متأنياً قبل الإجابة (تحليل أو مقارنة أو استنتاج متعدد الخطوات، حساب، خطة، مراجعة دقيقة لنص نظامي)، وfalse للطلبات المباشرة (كتابة قصيرة، ترجمة، سؤال واضح، متابعة بسيطة).\n" +
+    "- split: true فقط إن كان الطلب يتكون من أجزاء مستقلة واضحة يُنجز كل منها وحده ثم تُجمع (مثل مقارنة عدة ملفات، أو طلب يجمع البحث في الأنظمة مع تحليل جدول، أو عدة مهام مختلفة في رسالة واحدة)، وfalse لغير ذلك وهو الغالب.\n" +
     "- confidence بين 0 و1: مدى تأكدك.\n\nالمهارات:\n" +
     list;
   const user = [
@@ -136,7 +148,7 @@ export function routerPrompt(r: RouteInput) {
 }
 
 /** Picks a candidate. One candidate: no model call. Unsure, failed or invalid: the default. */
-export async function pickSkill(r: RouteInput): Promise<{ agentId: string | null; confidence: number; via: "only" | "model" | "fallback" }> {
+export async function pickSkill(r: RouteInput): Promise<{ agentId: string | null; confidence: number; via: "only" | "model" | "fallback"; deep?: boolean; split?: boolean }> {
   const c = r.candidates;
   if (!c.length) return { agentId: null, confidence: 0, via: "fallback" };
   const fallback = (c.find((x) => x.isDefault) ?? c[0]!).agentId;
@@ -146,7 +158,7 @@ export async function pickSkill(r: RouteInput): Promise<{ agentId: string | null
     const res = await chat({
       role: routerRole(),
       temperature: 0,
-      maxTokens: 60,
+      maxTokens: 90,
       messages: [
         { role: "system", content: system },
         { role: "user", content: user },
@@ -154,17 +166,77 @@ export async function pickSkill(r: RouteInput): Promise<{ agentId: string | null
       jsonSchema: {
         type: "object",
         additionalProperties: false,
-        required: ["skill", "confidence"],
+        required: ["skill", "deep", "split", "confidence"],
         // By name, not number: small models map list positions badly (measured above).
-        properties: { skill: { type: "string", enum: c.map((x) => x.name) }, confidence: { type: "number", minimum: 0, maximum: 1 } },
+        properties: { skill: { type: "string", enum: c.map((x) => x.name) }, deep: { type: "boolean" }, split: { type: "boolean" }, confidence: { type: "number", minimum: 0, maximum: 1 } },
       },
     });
     const out = JSON.parse(res.text.trim().replace(/^```(?:json)?|```$/g, ""));
     const hit = c.find((x) => x.name === String(out.skill ?? "").trim());
     const confidence = Math.max(0, Math.min(1, Number(out.confidence) || 0));
-    if (!hit || confidence < MIN_CONFIDENCE) return { agentId: fallback, confidence, via: "fallback" };
-    return { agentId: hit.agentId, confidence, via: "model" };
+    const deep = typeof out.deep === "boolean" ? out.deep : undefined;
+    const split = out.split === true;
+    if (!hit || confidence < MIN_CONFIDENCE) return { agentId: fallback, confidence, via: "fallback", deep, split };
+    return { agentId: hit.agentId, confidence, via: "model", deep, split };
   } catch {
     return { agentId: fallback, confidence: 0, via: "fallback" };
+  }
+}
+
+// ---------------------------------------------------------------- sub-agents (plans/08 §A)
+
+export type Part = { goal: string; agentId: string; agent: string };
+
+/**
+ * Splits a multi-part request into 2..max parts, each with a goal and the agent best placed to do
+ * it. Fewer than two usable parts (or any failure) = don't split. Agents come only from the
+ * candidates the router already narrowed to what this user may use.
+ */
+export async function planParts(r: RouteInput, max: number): Promise<Part[]> {
+  const c = r.candidates;
+  if (max < 2 || c.length === 0) return [];
+  try {
+    const list = c.map((x) => `- ${x.name}: ${x.description} [أدواته: ${x.tools.join("، ") || "بلا أدوات"}]`).join("\n");
+    const res = await chat({
+      role: "main",
+      temperature: 0,
+      maxTokens: 500,
+      messages: [
+        {
+          role: "system",
+          content:
+            `قسّم طلب المستخدم إلى أجزاء مستقلة (من 2 إلى ${max}) يُنجز كل منها وكيل وحده، ثم تُجمع نتائجها في إجابة واحدة.\n` +
+            "- goal: جملة واحدة واضحة بما يجب أن يخرج به هذا الجزء، وتذكر الملف باسمه إن كان الجزء عن ملف بعينه.\n" +
+            "- agent: الوكيل الذي يملك الأدوات اللازمة لهذا الجزء، باسمه كما في القائمة.\n" +
+            "- الجزء عن «جدول بيانات» (csv/xlsx) يأخذه الوكيل الذي يملك «يشغّل التحليل في بيئة معزولة»؛ لا تُقرأ الجداول كنص.\n" +
+            "- لا تضع جزءاً للتجميع أو الكتابة النهائية؛ هذا يتم بعد الأجزاء.\n" +
+            `الوكلاء:\n${list}\nأعد JSON فقط.`,
+        },
+        { role: "user", content: [r.mentioned.length ? `الملفات المشار إليها: ${r.mentioned.join("، ")}` : "", `الطلب: ${r.question}`].filter(Boolean).join("\n\n") },
+      ],
+      jsonSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["parts"],
+        properties: {
+          parts: {
+            type: "array",
+            minItems: 2,
+            maxItems: max,
+            items: { type: "object", additionalProperties: false, required: ["goal", "agent"], properties: { goal: { type: "string" }, agent: { type: "string", enum: c.map((x) => x.name) } } },
+          },
+        },
+      },
+    });
+    const out = JSON.parse(res.text.trim().replace(/^```(?:json)?|```$/g, ""));
+    const parts: Part[] = [];
+    for (const p of Array.isArray(out.parts) ? out.parts : []) {
+      const hit = c.find((x) => x.name === String(p?.agent ?? "").trim());
+      const goal = String(p?.goal ?? "").trim().slice(0, 400);
+      if (hit && goal) parts.push({ goal, agentId: hit.agentId, agent: hit.name });
+    }
+    return parts.length >= 2 ? parts.slice(0, max) : [];
+  } catch {
+    return [];
   }
 }

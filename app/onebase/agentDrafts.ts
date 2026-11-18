@@ -14,7 +14,7 @@ import { tools as registry } from "./tools";
 
 const GOAL_MAX = 4000;
 type ToolInfo = { name: string; label: string; description: string; writes: boolean };
-export type AgentDraft = { name: string; description: string; instructions: string; allowedTools: string[]; dataScope: "everyone" | "member" | "all"; grounding: "open" | "documents"; maxSteps: number };
+export type AgentDraft = { name: string; description: string; instructions: string; toolMode: "all" | "custom"; allowedTools: string[]; dataScope: "everyone" | "member" | "all"; grounding: "open" | "documents"; maxSteps: number };
 
 /** Admin only; the registry the draft may choose from. */
 export const draftContext = internalQuery({
@@ -33,7 +33,7 @@ const PROMPT = `أنت تصمّم «وكيلاً» لمساعد موظفي جه�
 - خطوات العمل: متى يبحث في المستندات أو يقرأ ملفاً أو يشغّل تحليلاً، وماذا يتحقق منه قبل الإجابة.
 - شكل الإجابة: العناوين أو الجدول أو الطول، واللغة الرسمية إن لزم، وذكر المصدر برقمه عند الأخذ من الملفات.
 - الحدود: ما لا يفعله، ومتى يعتذر أو يطلب توضيحاً. لا تَعِد بصلاحيات أو أدوات غير المختارة.
-اختر من الأدوات أقلَّ ما يكفي (غالباً 2 إلى 5)، بأسمائها كما في القائمة. أدوات الكتابة تُقترح على الموظف أو تُنفَّذ في مساحته الخاصة فقط.
+toolMode: all (الغالب) = كل الأدوات؛ الأدوات لا تمنح صلاحية، فهي تعمل بصلاحيات الموظف، وما يكتب في مكان مشترك ينتظر تأكيده. اختر custom فقط إن وجب منع أدوات لطبيعة الوكيل (مثل وكيل للأنظمة لا ينشئ ملفات)، وحينها ضع في allowedTools ما يلزم بأسمائه كما في القائمة.
 dataScope: everyone = مساحات «للجميع» فقط (الأنظمة المنشورة)؛ member = مساحته الخاصة والمساحات التي هو عضو فيها؛ all = كل ما يقرؤه.
 grounding: open = يجيب عن أي سؤال ويستعين بالمستندات حين تتعلق؛ documents = يجيب من المستندات فقط ويعتذر إن لم تغطِّ السؤال (للأنظمة والسياسات).
 maxSteps: عدد جولات الأدوات (1 إلى ${MAX_STEPS_LIMIT})، أكثر للمهام متعددة الخطوات.
@@ -68,11 +68,12 @@ export const draftWithAI = action({
       jsonSchema: {
         type: "object",
         additionalProperties: false,
-        required: ["name", "description", "instructions", "allowedTools", "dataScope", "grounding", "maxSteps"],
+        required: ["name", "description", "instructions", "toolMode", "allowedTools", "dataScope", "grounding", "maxSteps"],
         properties: {
           name: { type: "string" },
           description: { type: "string" },
           instructions: { type: "string" },
+          toolMode: { type: "string", enum: ["all", "custom"] },
           allowedTools: { type: "array", items: { type: "string", enum: tools.map((t) => t.name) }, maxItems: 8 },
           dataScope: { type: "string", enum: ["everyone", "member", "all"] },
           grounding: { type: "string", enum: ["open", "documents"] },
@@ -92,6 +93,7 @@ export const draftWithAI = action({
       name: String(d.name ?? "").trim().slice(0, 80),
       description: String(d.description ?? "").trim().slice(0, 500),
       instructions: String(d.instructions ?? "").trim().slice(0, 8000),
+      toolMode: d.toolMode === "custom" ? "custom" : "all",
       allowedTools: [...new Set<string>((Array.isArray(d.allowedTools) ? d.allowedTools : []).map((t: unknown) => String(t)))].filter((t) => names.has(t)),
       dataScope: (["everyone", "member", "all"].includes(d.dataScope) ? d.dataScope : "all") as "everyone" | "member" | "all",
       grounding: (d.grounding === "documents" ? "documents" : "open") as "open" | "documents",

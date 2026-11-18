@@ -10,6 +10,7 @@
 //   - anything saved in a sensitive space ... classified sensitive with that space as origin
 // Content is returned by mutations (open/export) so opens of sensitive outputs are audited.
 
+import { scheduleIngest } from "./ingest";
 import { OneBaseError, v } from "onebase/values";
 import ExcelJS from "exceljs";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -543,6 +544,8 @@ export const saveRenderedFile = internalMutation({
       updatedAt: now,
     });
     await ctx.db.insert("fileVersions", { fileId, version: 1, storageId: a.storageId, name: a.name, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: a.userId, uploadedAt: now });
+    // Like an upload: index it, so the assistant can read and search the documents it made.
+    await scheduleIngest(ctx, fileId);
     await writeAudit(ctx, {
       userId: a.userId,
       action: "file.upload",

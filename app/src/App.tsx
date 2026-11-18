@@ -10,6 +10,7 @@ import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
 import { SkillsView } from "./SkillsView";
+import { LevelsView } from "./LevelsView";
 import { SpaceView, SpacesPage } from "./SpaceView";
 import { TasksPage } from "./TasksView";
 import { MentionsPage } from "./MentionsView";
@@ -185,6 +186,7 @@ function Shell({ me }: { me: Me }) {
   else if (head === "ranking") screen = <Wide><RankingView spaces={spaces} /></Wide>;
   else if (head === "admin" && isAdmin) screen = <Wide><AdminView /></Wide>;
   else if (head === "agents" && isAdmin) screen = <Wide><AgentsView spaces={spaces} /></Wide>;
+  else if (head === "levels" && isAdmin) screen = <Wide><LevelsView /></Wide>;
   else if (head === "audit" && (isAdmin || managesAny)) screen = <Wide><AuditView isAdmin={isAdmin} spaces={spaces} /></Wide>;
   else screen = <NotAvailable />;
 
@@ -339,6 +341,7 @@ function NavLink({ href, icon, on, count, children }: { href: string; icon: Icon
 function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; managesAny: boolean; go: (p: string) => void }) {
   const { signOut } = useAuthActions();
   const [open, setOpen] = useState(false);
+  const level = useQuery(api.levels.mine);
   const item = (label: string, path: string) => (
     <button
       key={path}
@@ -355,6 +358,12 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
     <div className="relative shrink-0 border-t border-line p-3">
       {open && (
         <div className="absolute inset-x-3 bottom-full z-20 mb-1 rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="menu">
+          {level?.configured && (
+            <div className="mb-1 rounded-md bg-sunken px-3 py-2 text-xs text-muted">
+              مستواك: <span className="font-medium text-ink">{level.name}</span>
+              {level.dailyQuestions > 0 && <span className="num"> · {Math.max(0, level.dailyQuestions - level.usedToday)} من {level.dailyQuestions} سؤالاً باقية اليوم</span>}
+            </div>
+          )}
           {item("مهاراتي", "/skills")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
@@ -363,6 +372,7 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
           {(isAdmin || managesAny) && <div className="my-1 border-t border-rule" />}
           {isAdmin && item("إدارة مساحة العمل", "/admin")}
           {isAdmin && item("الوكلاء", "/agents")}
+          {isAdmin && item("المستويات", "/levels")}
           {(isAdmin || managesAny) && item("سجل التدقيق", "/audit")}
           <div className="my-1 border-t border-rule" />
           <button className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-start text-sm hover:bg-active" onClick={() => void signOut()}>
