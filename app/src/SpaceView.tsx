@@ -1,68 +1,251 @@
-import { useRef, useState } from "react";
+// A space is a project (UX redesign): the page opens on what you do with it — start a chat that
+// knows the space (its instructions and files), and pick up your earlier chats in it — with the
+// space's knowledge beside it (instructions, files, members) and its tasks. The secondary work of
+// a space (all files, outputs, records, templates and documents, members, its audit log) sits in
+// the tabs. Chats in a space are private to whoever started them.
+
+import { useRef, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "onebase/react";
-import { api, badge, errorText, formatDate, formatSize, ROLE_LABELS, type SpaceInfo } from "./lib";
+import { api, badge, errorText, formatDate, formatSize, ROLE_LABELS, spaceName, uploadBytes, type SpaceInfo } from "./lib";
+import { Icon } from "./icons";
 import { AuditTable } from "./AuditView";
-import { TaskBoard } from "./TasksView";
+import { STATUS, TaskBoard } from "./TasksView";
 import { SpaceInstructions } from "./SpaceInstructions";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
 import { DocumentsTab } from "./DocumentsView";
-import { askAboutFile } from "./ChatView";
+import { askAboutFile, Page, relTime, startChatWith } from "./ChatView";
 
-export function SpaceView({ spaceId, spaces }: { spaceId: string; spaces: SpaceInfo[] }) {
-  const space = spaces.find((s) => s._id === spaceId)!;
-  const [tab, setTab] = useState<"files" | "members" | "audit" | "tasks" | "instructions" | "outputs" | "records" | "documents">("files");
+/** "المساحات": my personal space and the shared spaces I can read. */
+export function SpacesPage({ spaces }: { spaces: SpaceInfo[] }) {
+  const personal = spaces.filter((s) => s.kind === "personal");
+  const shared = spaces.filter((s) => s.kind === "shared");
+  const row = (s: SpaceInfo) => {
+    const b = badge(s);
+    return (
+      <li key={s._id}>
+        <a href={`#/space/${s._id}`} className="flex min-h-[64px] items-center gap-3 border-b border-rule px-2 py-3 hover:bg-[#fbfbfa]">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#ebeae6] text-[#3d3d3d]">
+            <Icon name={b.icon} size={16} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block truncate text-[15px] font-medium">{spaceName(s)}</span>
+            <span className="block truncate text-xs text-muted">
+              {b.label} · {ROLE_LABELS[s.myRole] ?? s.myRole}
+              {s.sensitive ? " · حسّاسة: كل فتح يُسجَّل" : ""}
+            </span>
+          </span>
+          <Icon name="chevron" size={16} className="text-muted" />
+        </a>
+      </li>
+    );
+  };
+  return (
+    <Page title="المساحات" sub="كل مساحة مشروع: تعليمات وملفات يعرفها المساعد، ومحادثاتك فيها، ومهامها.">
+      <div className="max-w-[760px]">
+        <ul>{personal.map(row)}</ul>
+        <h2 className="mt-8 text-base font-medium">المساحات المشتركة</h2>
+        <p className="text-sm text-muted num">{shared.length ? `${shared.length} مساحة` : "لم تُضف إلى أي مساحة مشتركة بعد. يضيفك مدير المساحة."}</p>
+        <ul className="mt-2">{shared.map(row)}</ul>
+      </div>
+    </Page>
+  );
+}
+
+type Tab = { id: string; label: string; show: boolean };
+
+export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces: SpaceInfo[]; tab: string; go: (p: string) => void }) {
   // Tasks are for the space's named members (not "everyone" readers); the server enforces it too.
   const hasTasks = space.kind === "shared" && ["manager", "member", "reader"].includes(space.myRole);
+  const shared = space.kind === "shared";
+  const tabs: Tab[] = [
+    { id: "overview", label: "المحادثات", show: true },
+    { id: "files", label: "الملفات", show: true },
+    { id: "tasks", label: "المهام", show: hasTasks },
+    { id: "outputs", label: "المخرجات", show: true },
+    { id: "records", label: "السجلات", show: shared },
+    { id: "documents", label: "القوالب والمستندات", show: shared },
+    { id: "members", label: "الأعضاء", show: shared },
+    { id: "audit", label: "سجل المساحة", show: shared && space.canManage },
+  ];
+  const current = tabs.find((t) => t.id === tab && t.show)?.id ?? "overview";
   const b = badge(space);
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <header className="flex flex-wrap items-center gap-3">
-        <h1 className="text-xl font-semibold">{space.kind === "personal" ? "مساحتي" : space.name}</h1>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs">
-          {b.icon} {b.label}
+    <div className="mx-auto w-full max-w-[1100px] px-4 py-6 lg:px-8 lg:py-9">
+      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <h1 className="text-2xl font-medium">{spaceName(space)}</h1>
+        <span className="flex items-center gap-1 rounded bg-[#ebeae6] px-2 py-0.5 text-xs text-[#3d3d3d]">
+          <Icon name={b.icon} size={12} /> {b.label}
         </span>
-        {space.sensitive && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs text-amber-800">حسّاسة — كل فتح وتنزيل يُسجَّل</span>}
-        <span className="text-xs text-slate-500">دورك: {ROLE_LABELS[space.myRole] ?? space.myRole}</span>
+        {space.sensitive && <span className="rounded bg-[#fffbeb] px-2 py-0.5 text-xs text-[#92400e]">حسّاسة: كل فتح وتنزيل يُسجَّل</span>}
+        <span className="text-xs text-muted">دورك: {ROLE_LABELS[space.myRole] ?? space.myRole}</span>
+        <button className="btn-primary ms-auto" onClick={() => startChatWith({ spaceId: space._id })}>
+          <Icon name="plus" /> محادثة في المساحة
+        </button>
       </header>
-      {space.kind === "personal" && <p className="text-sm text-slate-500">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. المشاركة تكون بنقل الملف أو نسخه لمساحة مشتركة.</p>}
-      <div className="flex gap-1 border-b border-slate-200">
-        <Tab on={tab === "files"} onClick={() => setTab("files")}>الملفات</Tab>
-        <Tab on={tab === "outputs"} onClick={() => setTab("outputs")}>المخرجات</Tab>
-        {hasTasks && <Tab on={tab === "tasks"} onClick={() => setTab("tasks")}>المهام</Tab>}
-        {space.kind === "shared" && <Tab on={tab === "records"} onClick={() => setTab("records")}>السجلات</Tab>}
-        {space.kind === "shared" && <Tab on={tab === "documents"} onClick={() => setTab("documents")}>القوالب والمستندات</Tab>}
-        {space.kind === "shared" && <Tab on={tab === "members"} onClick={() => setTab("members")}>الأعضاء</Tab>}
-        {space.kind === "shared" && <Tab on={tab === "instructions"} onClick={() => setTab("instructions")}>التعليمات</Tab>}
-        {space.kind === "shared" && space.canManage && <Tab on={tab === "audit"} onClick={() => setTab("audit")}>سجل المساحة</Tab>}
+      {space.kind === "personal" && <p className="mt-1 text-muted">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. المشاركة بنقل الملف أو نسخه إلى مساحة مشتركة.</p>}
+      <nav className="mt-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="أقسام المساحة">
+        {tabs
+          .filter((t) => t.show)
+          .map((t) => (
+            <a
+              key={t.id}
+              href={`#/space/${space._id}${t.id === "overview" ? "" : "/" + t.id}`}
+              className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm ${current === t.id ? "border-ink font-medium text-ink" : "border-transparent text-muted hover:text-ink"}`}
+              aria-current={current === t.id ? "page" : undefined}
+            >
+              {t.label}
+            </a>
+          ))}
+      </nav>
+      <div className="mt-6">
+        {current === "overview" && <Overview space={space} hasTasks={hasTasks} go={go} />}
+        {current === "files" && <FilesPanel space={space} spaces={spaces} />}
+        {current === "outputs" && <OutputsTab space={space} spaces={spaces} />}
+        {current === "records" && shared && <RecordsTab space={space} />}
+        {current === "documents" && shared && <DocumentsTab space={space} />}
+        {current === "members" && shared && <MembersPanel space={space} />}
+        {current === "audit" && space.canManage && <AuditTable args={{ spaceId: space._id }} />}
+        {current === "tasks" && hasTasks && <TaskBoard space={space} />}
       </div>
-      {tab === "files" && <FilesPanel space={space} spaces={spaces} />}
-      {tab === "outputs" && <OutputsTab space={space} spaces={spaces} />}
-      {tab === "records" && space.kind === "shared" && <RecordsTab space={space} />}
-      {tab === "documents" && space.kind === "shared" && <DocumentsTab space={space} />}
-      {tab === "members" && space.kind === "shared" && <MembersPanel space={space} />}
-      {tab === "audit" && space.canManage && <AuditTable args={{ spaceId: space._id }} />}
-      {tab === "tasks" && hasTasks && <TaskBoard space={space} />}
-      {tab === "instructions" && space.kind === "shared" && <SpaceInstructions space={space} />}
     </div>
   );
 }
 
-function Tab({ on, onClick, children }: { on: boolean; onClick: () => void; children: React.ReactNode }) {
+/** The project page: my chats here on the main column; the space's knowledge and tasks beside them. */
+function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean; go: (p: string) => void }) {
+  const threads = useQuery(api.chat.spaceThreads, { spaceId: space._id });
+  const files = useQuery(api.files.list, { spaceId: space._id as any });
+  const ingest = useQuery(api.ingest.statuses, { spaceId: space._id as any });
+  const info = useQuery(api.spaces.get, { spaceId: space._id as any });
+  const tasks = useQuery(api.tasks.board, hasTasks ? { spaceId: space._id as any } : "skip");
+  const members = useQuery(api.spaces.members, space.kind === "shared" ? { spaceId: space._id as any } : "skip");
+  const openTasks = (tasks ?? []).filter((t: any) => t.status !== "done");
   return (
-    <button onClick={onClick} className={`-mb-px border-b-2 px-3 py-2 text-sm ${on ? "border-teal-700 font-semibold text-teal-800" : "border-transparent text-slate-500"}`}>
-      {children}
-    </button>
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <section>
+        <button
+          className="flex w-full items-center gap-3 rounded-lg border border-control bg-surface px-4 py-3.5 text-start text-muted hover:border-ink"
+          onClick={() => startChatWith({ spaceId: space._id })}
+        >
+          <Icon name="chat" size={18} />
+          <span className="flex-1">ابدأ محادثة تعرف تعليمات هذه المساحة وملفاتها…</span>
+          <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-white">
+            <Icon name="send" size={16} />
+          </span>
+        </button>
+        <h2 className="mt-7 text-base font-medium">محادثاتك في المساحة</h2>
+        <p className="text-xs text-muted num">{threads ? `${threads.length} محادثة · لا يراها غيرك` : " "}</p>
+        <ul className="mt-2">
+          {threads?.length === 0 && <li className="rounded-lg border border-dashed border-control p-4 text-sm text-muted">لا محادثات بعد. ابدأ أول محادثة من الحقل أعلاه.</li>}
+          {threads?.map((t) => (
+            <li key={t.threadId}>
+              <a href={`#/chat/${t.threadId}`} className="flex min-h-[56px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-[#fbfbfa]">
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate">{t.title}</span>
+                  {t.scheduled && <span className="block text-xs text-muted">مهمة مجدولة</span>}
+                </span>
+                <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+      <aside className="space-y-4">
+        <Panel title="التعليمات" action={space.kind === "shared" && space.canManage ? undefined : null}>
+          {space.kind === "shared" ? (
+            <SpaceInstructions space={space} />
+          ) : (
+            <p className="text-sm text-muted">تعليمات المساحة للمساحات المشتركة، ويكتبها مديرها.</p>
+          )}
+          {info?.instructions === null && space.kind === "shared" && !space.canManage && <p className="text-sm text-muted">لا تعليمات لهذه المساحة.</p>}
+        </Panel>
+        <Panel
+          title="الملفات"
+          count={files?.length}
+          action={
+            <a href={`#/space/${space._id}/files`} className="text-xs text-muted hover:text-ink">
+              {space.canWrite ? "رفع وإدارة" : "عرض الكل"}
+            </a>
+          }
+        >
+          {files?.length === 0 && <p className="text-sm text-muted">لا ملفات بعد{space.canWrite ? ". ارفع ملفات من «رفع وإدارة» ليعرفها المساعد." : "."}</p>}
+          <ul>
+            {files?.slice(0, 6).map((f) => {
+              const st = ingest?.find((x) => x.fileId === f._id);
+              return (
+                <li key={f._id} className="flex h-9 items-center gap-2 text-sm">
+                  <Icon name="file" size={14} className="text-muted" />
+                  <span className="min-w-0 flex-1 truncate" title={f.name}>
+                    {f.name}
+                  </span>
+                  {st && st.state !== "ready" ? (
+                    <span className="shrink-0 text-xs text-muted">{st.label}</span>
+                  ) : (
+                    <button className="shrink-0 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-active hover:text-ink" onClick={() => askAboutFile(f._id, f.name, space._id)}>
+                      اسأل عنه
+                    </button>
+                  )}
+                </li>
+              );
+            })}
+          </ul>
+          {files && files.length > 6 && (
+            <a href={`#/space/${space._id}/files`} className="mt-1 block text-xs text-muted hover:text-ink num">
+              و{files.length - 6} ملفات أخرى
+            </a>
+          )}
+        </Panel>
+        {hasTasks && (
+          <Panel
+            title="المهام المفتوحة"
+            count={tasks ? openTasks.length : undefined}
+            action={
+              <a href={`#/space/${space._id}/tasks`} className="text-xs text-muted hover:text-ink">
+                اللوحة
+              </a>
+            }
+          >
+            {tasks && openTasks.length === 0 && <p className="text-sm text-muted">لا مهام مفتوحة.</p>}
+            <ul>
+              {openTasks.slice(0, 5).map((t: any) => (
+                <li key={t._id}>
+                  <button className="flex h-9 w-full items-center gap-2 text-start text-sm hover:text-ink" onClick={() => go(`/tasks/${t._id}`)}>
+                    <span className="min-w-0 flex-1 truncate">{t.title}</span>
+                    <span className="shrink-0 text-xs text-muted">{STATUS[t.status]?.label}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
+        {members && members.length > 0 && (
+          <Panel title="الأعضاء" count={members.length}>
+            <ul className="flex flex-wrap gap-1.5">
+              {members.slice(0, 12).map((m) => (
+                <li key={m.userId} className="rounded bg-[#ebeae6] px-2 py-0.5 text-xs" title={ROLE_LABELS[m.role]}>
+                  {m.name ?? m.email}
+                </li>
+              ))}
+            </ul>
+          </Panel>
+        )}
+      </aside>
+    </div>
   );
 }
 
-async function uploadBytes(getUrl: () => Promise<string>, file: File): Promise<string> {
-  // Same-origin path: the server's --url may differ from the address the page was opened on.
-  const u = new URL(await getUrl(), location.origin);
-  const res = await fetch(u.pathname + u.search, { method: "POST", headers: { "Content-Type": file.type || "application/octet-stream" }, body: file });
-  const body = await res.json();
-  if (!body.storageId) throw new Error(body.error ?? "فشل الرفع");
-  return body.storageId;
+function Panel({ title, count, action, children }: { title: string; count?: number; action?: ReactNode; children: ReactNode }) {
+  return (
+    <section className="card p-4">
+      <div className="mb-2 flex items-center gap-2">
+        <h2 className="text-sm font-medium">{title}</h2>
+        {count !== undefined && <span className="text-xs text-muted num">{count}</span>}
+        <span className="ms-auto">{action}</span>
+      </div>
+      {children}
+    </section>
+  );
 }
 
 function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }) {
@@ -105,9 +288,9 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
       {space.canWrite && (
         <div className="flex items-center gap-2">
           <button className="btn-primary" disabled={!!busy} onClick={() => input.current?.click()}>
-            ⬆️ رفع ملفات
+            رفع ملفات
           </button>
-          {busy && <span className="text-xs text-slate-500">جارٍ التنفيذ…</span>}
+          {busy && <span className="text-xs text-neutral-500">جارٍ التنفيذ…</span>}
           <input
             ref={input}
             type="file"
@@ -144,7 +327,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
       {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
       <div className="card overflow-hidden">
         <table className="w-full">
-          <thead className="bg-slate-50">
+          <thead className="bg-neutral-50">
             <tr>
               <th className="th">الاسم</th>
               <th className="th">الحجم</th>
@@ -156,12 +339,12 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
           <tbody>
             {files === undefined && (
               <tr>
-                <td className="td text-slate-400" colSpan={5}>جارٍ التحميل…</td>
+                <td className="td text-neutral-400" colSpan={5}>جارٍ التحميل…</td>
               </tr>
             )}
             {files?.length === 0 && (
               <tr>
-                <td className="td text-slate-400" colSpan={5}>لا ملفات بعد</td>
+                <td className="td text-neutral-400" colSpan={5}>لا ملفات بعد</td>
               </tr>
             )}
             {files?.map((f) => (
@@ -206,25 +389,25 @@ function FileRow(props: {
   const versions = useQuery(api.files.versions, props.showVersions ? { fileId: f._id as any } : "skip");
   return (
     <>
-      <tr className="border-t border-slate-100">
+      <tr className="border-t border-neutral-100">
         <td className="td font-semibold">
           {f.name}
           <IngestBadge fileId={f._id} ingest={props.ingest} canWrite={space.canWrite} />
         </td>
-        <td className="td text-slate-500">{formatSize(f.size)}</td>
+        <td className="td text-neutral-500">{formatSize(f.size)}</td>
         <td className="td">
-          <button className="text-teal-700 underline-offset-2 hover:underline" onClick={props.onToggleVersions}>
+          <button className="text-neutral-900 underline-offset-2 hover:underline" onClick={props.onToggleVersions}>
             {f.version}
           </button>
         </td>
-        <td className="td text-slate-500">
+        <td className="td text-neutral-500">
           {formatDate(f.updatedAt)}
           {f.uploadedByName && <span className="block text-xs">{f.uploadedByName}</span>}
         </td>
         <td className="td">
           <div className="flex flex-wrap justify-end gap-1">
             {props.ingest?.state === "ready" && (
-              <button className="btn-ghost" title="محادثة تبحث في هذا الملف فقط" onClick={() => askAboutFile(f._id, f.name)}>💬 اسأل عن هذا الملف</button>
+              <button className="btn-ghost" title="محادثة جديدة عن هذا الملف" onClick={() => askAboutFile(f._id, f.name, space._id)}>اسأل عنه</button>
             )}
             <button className="btn-ghost" onClick={() => props.onDownload()}>تنزيل</button>
             {/^(image\/|application\/pdf|text\/plain)/.test(f.mime) && (
@@ -237,16 +420,16 @@ function FileRow(props: {
         </td>
       </tr>
       {props.showVersions && (
-        <tr className="bg-slate-50">
+        <tr className="bg-neutral-50">
           <td className="td" colSpan={5}>
             <div className="space-y-1">
               {versions?.map((v) => (
                 <div key={v.version} className="flex items-center gap-3 text-xs">
                   <span className="font-semibold">نسخة {v.version}</span>
                   <span>{v.name}</span>
-                  <span className="text-slate-500">{formatSize(v.size)}</span>
-                  <span className="text-slate-500">{formatDate(v.uploadedAt)}</span>
-                  <button className="text-teal-700 hover:underline" onClick={() => props.onDownload(v.version)}>تنزيل</button>
+                  <span className="text-neutral-500">{formatSize(v.size)}</span>
+                  <span className="text-neutral-500">{formatDate(v.uploadedAt)}</span>
+                  <button className="text-neutral-900 hover:underline" onClick={() => props.onDownload(v.version)}>تنزيل</button>
                 </div>
               ))}
             </div>
@@ -284,7 +467,7 @@ function TransferDialog({ file, from, spaces, onClose }: { file: { fileId: strin
       <div className="card w-full max-w-md space-y-3 p-5" onClick={(e) => e.stopPropagation()}>
         <h2 className="font-semibold">نقل أو نسخ "{file.name}"</h2>
         {targets.length === 0 ? (
-          <p className="text-sm text-slate-500">لا توجد مساحة أخرى تملك صلاحية الكتابة فيها.</p>
+          <p className="text-sm text-neutral-500">لا توجد مساحة أخرى تملك صلاحية الكتابة فيها.</p>
         ) : (
           <>
             <select className="input w-full" value={to} onChange={(e) => setTo(e.target.value)}>
@@ -294,7 +477,7 @@ function TransferDialog({ file, from, spaces, onClose }: { file: { fileId: strin
                 </option>
               ))}
             </select>
-            <p className="rounded-lg bg-teal-50 p-2 text-sm text-teal-900">بعد النقل أو النسخ سيرى الملف: {audience}</p>
+            <p className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-900">بعد النقل أو النسخ سيرى الملف: {audience}</p>
             {from.sensitive && <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">الملف في مساحة حسّاسة: إخراجه منها لمديرها فقط، ويُسجَّل.</p>}
           </>
         )}
@@ -328,7 +511,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
   };
   return (
     <div className="space-y-3">
-      {space.everyone && <p className="text-sm text-slate-500">🌐 مساحة للجميع: كل موظفي مساحة العمل يقرؤونها. الأعضاء المسمَّون أدناه يكتبون حسب أدوارهم.</p>}
+      {space.everyone && <p className="text-sm text-neutral-500">مساحة للجميع: كل موظفي مساحة العمل يقرؤونها. الأعضاء المسمَّون أدناه يكتبون حسب أدوارهم.</p>}
       {space.canManage && (
         <div className="card flex flex-wrap items-center gap-2 p-3">
           <select className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
@@ -350,12 +533,12 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
         </div>
       )}
       {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <div className="card divide-y divide-slate-100">
+      <div className="card divide-y divide-neutral-100">
         {members?.map((m) => (
           <div key={m.userId} className="flex items-center gap-3 p-3 text-sm">
             <div className="flex-1">
               <div className="font-semibold">{m.name ?? m.email}</div>
-              <div className="text-xs text-slate-500" dir="ltr">{m.email}</div>
+              <div className="text-xs text-neutral-500" dir="ltr">{m.email}</div>
             </div>
             {space.canManage ? (
               <>
@@ -369,7 +552,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
                 </button>
               </>
             ) : (
-              <span className="text-xs text-slate-500">{ROLE_LABELS[m.role]}</span>
+              <span className="text-xs text-neutral-500">{ROLE_LABELS[m.role]}</span>
             )}
           </div>
         ))}
@@ -383,7 +566,7 @@ function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { 
   const retry = useMutation(api.ingest.retry);
   if (!ingest) return null;
   const color =
-    ingest.state === "ready" ? "bg-emerald-50 text-emerald-700" : ingest.state === "failed" ? "bg-red-50 text-red-700" : ingest.state === "skipped" ? "bg-slate-100 text-slate-500" : "bg-sky-50 text-sky-700";
+    ingest.state === "ready" ? "bg-emerald-50 text-emerald-700" : ingest.state === "failed" ? "bg-red-50 text-red-700" : ingest.state === "skipped" ? "bg-neutral-100 text-neutral-500" : "bg-neutral-100 text-neutral-800";
   return (
     <span className="ms-2 inline-flex items-center gap-1 align-middle text-[11px] font-normal">
       <span className={`rounded px-1.5 ${color}`} title={ingest.error ?? ingest.note ?? ""}>
@@ -392,7 +575,7 @@ function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { 
       {ingest.ocr && <span className="rounded bg-amber-50 px-1.5 text-amber-700" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
       {ingest.state === "failed" && ingest.error && <span className="text-red-600">{ingest.error}</span>}
       {ingest.state === "failed" && canWrite && (
-        <button className="text-teal-700 hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
+        <button className="text-neutral-900 hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
           إعادة المحاولة
         </button>
       )}

@@ -1,20 +1,74 @@
 @import "@fontsource/readex-pro/arabic-400.css";
+@import "@fontsource/readex-pro/arabic-500.css";
 @import "@fontsource/readex-pro/arabic-600.css";
 @import "@fontsource/readex-pro/latin-400.css";
+@import "@fontsource/readex-pro/latin-500.css";
 @import "@fontsource/readex-pro/latin-600.css";
 @import "tailwindcss";
 
+/* Style: "achromatic ledger" (design-taste-frontend app sheet, seed 396497580). No colour in the
+   chrome: near-black primary, grey secondary, ink text. The one hue (#1d5fbf) is kept for data —
+   here the citation chips that tie an answer to its source. Face: a stone ground from the world of
+   paper files (#f4f3f1) instead of the kit's #f8f8f8; cards stay white. Type: Readex Pro (Arabic
+   and Latin), bundled from npm, nothing from a CDN. */
 @theme {
-  --font-sans: "Readex Pro", "Noto Sans Arabic", system-ui, sans-serif;
+  --font-sans: "Readex Pro", system-ui, sans-serif;
+  --color-ground: #f4f3f1;
+  --color-surface: #ffffff;
+  --color-raised: #eeeeee;
+  --color-active: #e8e7e4;
+  --color-line: #e6e6e6;
+  --color-rule: #f0f0f0;
+  --color-control: #d4d4d4;
+  --color-ink: #0a0a0a;
+  --color-muted: #5f5f5f;
+  --color-primary: #141414;
+  --color-data: #1d5fbf;
+  --color-positive: #2e7d32;
+  --color-negative: #c4242a;
 }
 
-html, body, #root { height: 100%; }
-body { @apply bg-slate-50 text-slate-900 antialiased; }
-@utility btn { @apply inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-sm font-semibold transition disabled:opacity-50; }
-@utility btn-primary { @apply btn bg-teal-700 text-white hover:bg-teal-800; }
-@utility btn-ghost { @apply btn text-slate-700 hover:bg-slate-200; }
-@utility btn-danger { @apply btn text-red-700 hover:bg-red-50; }
-@utility input { @apply rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-teal-600 focus:ring-2 focus:ring-teal-100; }
-@utility card { @apply rounded-xl border border-slate-200 bg-white; }
-@utility th { @apply px-3 py-2 text-start text-xs font-semibold text-slate-500; }
+@layer base { html, body, #root { height: 100%; } }
+body { background: var(--color-ground); color: var(--color-ink); font-size: 14px; -webkit-font-smoothing: antialiased; }
+@layer base { :focus-visible { outline: 2px solid var(--color-ink); outline-offset: 2px; } }
+
+@utility btn { @apply inline-flex h-9 items-center justify-center gap-1.5 rounded-md px-3 text-sm font-medium whitespace-nowrap transition-colors disabled:cursor-not-allowed disabled:opacity-60; }
+@utility btn-primary { @apply btn bg-primary text-white hover:bg-neutral-700; }
+@utility btn-secondary { @apply btn bg-[#e5e5e5] text-ink hover:bg-[#dadada]; }
+@utility btn-ghost { @apply btn text-ink hover:bg-active; }
+@utility btn-danger { @apply btn text-negative hover:bg-[#ffedea]; }
+@utility input { @apply h-9 rounded-md border border-control bg-white px-3 text-sm text-ink outline-none placeholder:text-[#6b6b6b] focus:border-ink; }
+@utility card { @apply rounded-lg border border-line bg-surface; }
+@utility th { @apply px-3 py-2 text-start text-xs font-normal text-muted; }
 @utility td { @apply px-3 py-2 text-sm; }
+@utility num { font-variant-numeric: tabular-nums; }
+
+/* Answers: Markdown rendered from the model (marked, raw HTML escaped). */
+.md { line-height: 1.85; font-size: 15px; overflow-wrap: anywhere; }
+.md > * + * { margin-top: 0.75em; }
+.md h1, .md h2, .md h3 { font-weight: 600; line-height: 1.4; margin-top: 1.1em; }
+.md h1 { font-size: 18px; }
+.md h2 { font-size: 16px; }
+.md h3 { font-size: 15px; }
+.md ul { list-style: disc; padding-inline-start: 1.4em; }
+.md ol { list-style: decimal; padding-inline-start: 1.4em; }
+.md li + li { margin-top: 0.25em; }
+.md a { text-decoration: underline; text-underline-offset: 3px; }
+.md strong { font-weight: 600; }
+.md blockquote { border-inline-start: 3px solid var(--color-control); padding-inline-start: 0.9em; color: var(--color-muted); }
+.md code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.9em; background: var(--color-raised); border-radius: 4px; padding: 0.1em 0.35em; }
+.md pre { background: #f6f6f5; border: 1px solid var(--color-line); border-radius: 8px; padding: 12px; overflow-x: auto; direction: ltr; text-align: left; }
+.md pre code { background: none; padding: 0; }
+.md table { border-collapse: collapse; width: 100%; font-size: 14px; display: block; overflow-x: auto; }
+.md th, .md td { border-bottom: 1px solid var(--color-line); padding: 6px 10px; text-align: start; }
+.md th { font-weight: 500; color: var(--color-muted); }
+.md hr { border: 0; border-top: 1px solid var(--color-line); }
+.md .cite {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 18px; height: 18px; padding: 0 4px;
+  margin-inline: 2px; border-radius: 4px; background: #e8eef8; color: var(--color-data); font-size: 11px; font-weight: 600;
+  vertical-align: 2px; cursor: pointer; font-variant-numeric: tabular-nums;
+}
+.md .cite:hover { background: #d6e2f5; }
+.caret > :last-child::after { content: ""; display: inline-block; width: 7px; height: 1.1em; margin-inline-start: 2px; background: var(--color-ink); vertical-align: -3px; animation: blink 1s steps(2) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .caret > :last-child::after { animation: none; } }

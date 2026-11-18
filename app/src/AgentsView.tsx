@@ -16,6 +16,7 @@ type Config = {
   modelRole: "main" | "fast";
   maxSteps: number;
   visibility: { kind: "workspace" | "spaces"; spaceIds: string[] };
+  grounding?: "open" | "documents";
 };
 
 const EMPTY: Config = {
@@ -27,6 +28,7 @@ const EMPTY: Config = {
   modelRole: "main",
   maxSteps: 4,
   visibility: { kind: "workspace", spaceIds: [] },
+  grounding: "open",
 };
 
 const SCOPES: Record<Config["dataScope"], string> = {
@@ -50,7 +52,7 @@ export function AgentsView(_props: { spaces: SpaceInfo[] }) {
     <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row">
       <aside className="shrink-0 space-y-2 lg:w-64">
         <h1 className="text-xl font-semibold">الوكلاء</h1>
-        <p className="text-xs text-slate-500">كل وكيل يعمل بهوية المستخدم وصلاحياته، ولا يوسّعها. تختار أدواته من الموجود في النظام.</p>
+        <p className="text-xs text-neutral-500">كل وكيل يعمل بهوية المستخدم وصلاحياته، ولا يوسّعها. تختار أدواته من الموجود في النظام.</p>
         <button className="btn-primary w-full justify-center" onClick={() => setSelected("new")}>
           ＋ وكيل جديد
         </button>
@@ -58,12 +60,12 @@ export function AgentsView(_props: { spaces: SpaceInfo[] }) {
           {agents?.map((a) => {
             const cfg = a.draft ?? a.live;
             return (
-              <button key={a._id} className={`block w-full rounded-lg px-2 py-1.5 text-start text-sm ${selected === a._id ? "bg-teal-50" : "hover:bg-slate-100"}`} onClick={() => setSelected(a._id)}>
+              <button key={a._id} className={`block w-full rounded-lg px-2 py-1.5 text-start text-sm ${selected === a._id ? "bg-neutral-100" : "hover:bg-neutral-100"}`} onClick={() => setSelected(a._id)}>
                 <div className="flex items-center gap-1">
                   <span className="truncate font-semibold">{(a.live ?? cfg)?.name}</span>
-                  {a.isDefault && <span className="rounded bg-teal-100 px-1 text-[10px] text-teal-800">افتراضي</span>}
+                  {a.isDefault && <span className="rounded bg-neutral-100 px-1 text-[10px] text-neutral-900">افتراضي</span>}
                 </div>
-                <div className="flex gap-1 text-[11px] text-slate-500">
+                <div className="flex gap-1 text-[11px] text-neutral-500">
                   <span>{a.version ? `النسخة ${a.version}` : "لم يُنشر"}</span>
                   {a.draft && <span className="text-amber-700">· مسودة</span>}
                   {!a.enabled && <span className="text-red-700">· معطّل</span>}
@@ -130,7 +132,7 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
       <div className="card space-y-4 p-4">
         <div className="flex flex-wrap items-center gap-2">
           <h2 className="text-lg font-semibold">{agent ? (agent.live ?? agent.draft)?.name : "وكيل جديد"}</h2>
-          {agent && <span className="text-xs text-slate-500">{agent.version ? `المنشور: النسخة ${agent.version}` : "لم يُنشر بعد (لا يراه الموظفون)"}</span>}
+          {agent && <span className="text-xs text-neutral-500">{agent.version ? `المنشور: النسخة ${agent.version}` : "لم يُنشر بعد (لا يراه الموظفون)"}</span>}
           {agent?.draft && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800">مسودة غير منشورة</span>}
           {agent && (
             <span className="ms-auto flex gap-2">
@@ -147,43 +149,51 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
             </span>
           )}
         </div>
-        {agent?.live && agent.draft && <p className="text-xs text-slate-500">الموظفون يستخدمون النسخة المنشورة حتى تنشر المسودة.</p>}
+        {agent?.live && agent.draft && <p className="text-xs text-neutral-500">الموظفون يستخدمون النسخة المنشورة حتى تنشر المسودة.</p>}
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">
-            <span className="text-slate-600">الاسم</span>
+            <span className="text-neutral-600">الاسم</span>
             <input className="input w-full" value={form.name} maxLength={80} onChange={(e) => set("name", e.target.value)} />
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-slate-600">الوصف (يراه الموظف في القائمة)</span>
+            <span className="text-neutral-600">الوصف (يراه الموظف في القائمة)</span>
             <input className="input w-full" value={form.description} maxLength={500} onChange={(e) => set("description", e.target.value)} />
           </label>
         </div>
         <label className="block space-y-1 text-sm">
-          <span className="text-slate-600">التعليمات</span>
+          <span className="text-neutral-600">التعليمات</span>
           <textarea className="input min-h-[8rem] w-full" value={form.instructions} maxLength={8000} onChange={(e) => set("instructions", e.target.value)} />
-          <span className="block text-xs text-slate-400">تُضاف بعد قواعد النظام الثابتة (الاستشهاد، الامتناع، تجاهل الأوامر داخل الملفات). لا تمنح أي صلاحية: الأدوات تفحص صلاحية الموظف بنفسها.</span>
+          <span className="block text-xs text-neutral-400">تُضاف بعد قواعد النظام الثابتة (الاستشهاد، الامتناع، تجاهل الأوامر داخل الملفات). لا تمنح أي صلاحية: الأدوات تفحص صلاحية الموظف بنفسها.</span>
         </label>
 
         <div className="space-y-1 text-sm">
-          <span className="text-slate-600">الأدوات المسموحة ({form.allowedTools.length})</span>
+          <span className="text-neutral-600">الأدوات المسموحة ({form.allowedTools.length})</span>
           <div className="grid gap-1 sm:grid-cols-2">
             {tools?.map((t) => (
-              <label key={t.name} className="flex items-start gap-2 rounded-lg border border-slate-200 p-2" title={t.description}>
+              <label key={t.name} className="flex items-start gap-2 rounded-lg border border-neutral-200 p-2" title={t.description}>
                 <input type="checkbox" checked={form.allowedTools.includes(t.name)} onChange={() => toggleTool(t.name)} />
                 <span>
-                  <span className="font-semibold">{t.label.replace(/…$/, "")}</span> <span className="text-xs text-slate-400" dir="ltr">{t.name}</span>
+                  <span className="font-semibold">{t.label.replace(/…$/, "")}</span> <span className="text-xs text-neutral-400" dir="ltr">{t.name}</span>
                   {t.requiresConfirmation && <span className="ms-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">يحتاج «نفّذ»</span>}
                 </span>
               </label>
             ))}
           </div>
-          {!form.allowedTools.includes("search_documents") && <p className="text-xs text-slate-400">بلا أداة البحث لا يبحث الوكيل في المستندات قبل الإجابة.</p>}
+          {!form.allowedTools.includes("search_documents") && <p className="text-xs text-neutral-400">بلا أداة البحث لا يبحث الوكيل في المستندات قبل الإجابة.</p>}
         </div>
+
+        <label className="block space-y-1 text-sm">
+          <span className="text-neutral-600">طريقة الإجابة</span>
+          <select className="input w-full" value={form.grounding ?? "documents"} onChange={(e) => set("grounding", e.target.value as Config["grounding"])}>
+            <option value="open">مساعد عام: يجيب عن أي سؤال، ويرجع إلى المستندات ويستشهد بها حين يتعلق السؤال بها</option>
+            <option value="documents">من المستندات فقط: لا يجيب إلا بما في المستندات، ويعتذر إن لم يجده</option>
+          </select>
+        </label>
 
         <div className="grid gap-3 sm:grid-cols-3">
           <label className="space-y-1 text-sm">
-            <span className="text-slate-600">نطاق البيانات</span>
+            <span className="text-neutral-600">نطاق البيانات</span>
             <select className="input w-full" value={form.dataScope} onChange={(e) => set("dataScope", e.target.value as Config["dataScope"])}>
               {Object.entries(SCOPES).map(([k, label]) => (
                 <option key={k} value={k}>
@@ -193,20 +203,20 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
             </select>
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-slate-600">النموذج</span>
+            <span className="text-neutral-600">النموذج</span>
             <select className="input w-full" value={form.modelRole} onChange={(e) => set("modelRole", e.target.value as Config["modelRole"])}>
               <option value="main">الرئيسي</option>
               <option value="fast">السريع</option>
             </select>
           </label>
           <label className="space-y-1 text-sm">
-            <span className="text-slate-600">أقصى عدد خطوات</span>
+            <span className="text-neutral-600">أقصى عدد خطوات</span>
             <input className="input w-full" type="number" min={1} max={8} value={form.maxSteps} onChange={(e) => set("maxSteps", Number(e.target.value))} />
           </label>
         </div>
 
         <div className="space-y-1 text-sm">
-          <span className="text-slate-600">من يستخدمه</span>
+          <span className="text-neutral-600">من يستخدمه</span>
           <div className="flex gap-4">
             <label className="flex items-center gap-1">
               <input type="radio" checked={form.visibility.kind === "workspace"} onChange={() => set("visibility", { kind: "workspace", spaceIds: [] })} /> كل مساحة العمل
@@ -218,7 +228,7 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
           {form.visibility.kind === "spaces" && (
             <div className="flex flex-wrap gap-2">
               {sharedSpaces?.map((sp) => (
-                <label key={sp._id} className="flex items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-xs">
+                <label key={sp._id} className="flex items-center gap-1 rounded-full border border-neutral-200 px-2 py-0.5 text-xs">
                   <input type="checkbox" checked={form.visibility.spaceIds.includes(sp._id)} onChange={() => toggleSpace(sp._id)} />
                   {sp.name}
                 </label>
@@ -229,14 +239,14 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
 
         {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
         {note && <p className="rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{note}</p>}
-        <div className="flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+        <div className="flex flex-wrap gap-2 border-t border-neutral-100 pt-3">
           {!agent ? (
             <button className="btn-primary" disabled={busy || !form.name.trim()} onClick={() => void run(async () => onCreated((await create({ config: form as any })) as string), "حُفظ كمسودة. جرّبه ثم انشره.")}>
               حفظ كمسودة
             </button>
           ) : (
             <>
-              <button className="btn-ghost border border-slate-200" disabled={busy || !dirty} onClick={() => void run(() => saveDraft({ agentId: agent._id, config: form as any }), "حُفظت المسودة")}>
+              <button className="btn-ghost border border-neutral-200" disabled={busy || !dirty} onClick={() => void run(() => saveDraft({ agentId: agent._id, config: form as any }), "حُفظت المسودة")}>
                 حفظ المسودة
               </button>
               <button
@@ -274,12 +284,12 @@ function TestPanel({ agent }: { agent: AgentRow }) {
   return (
     <div className="card space-y-3 p-4">
       <div className="flex items-center gap-2">
-        <h3 className="font-semibold">🧪 جرّب الوكيل</h3>
-        <span className="text-xs text-slate-500">{agent.draft ? "يجرّب المسودة غير المنشورة" : "يجرّب النسخة المنشورة"} بصلاحياتك أنت</span>
+        <h3 className="font-semibold">جرّب الوكيل</h3>
+        <span className="text-xs text-neutral-500">{agent.draft ? "يجرّب المسودة غير المنشورة" : "يجرّب النسخة المنشورة"} بصلاحياتك أنت</span>
       </div>
       <textarea className="input min-h-[5rem] w-full" placeholder="سؤال اختبار في كل سطر (حتى 10)" value={text} onChange={(e) => setText(e.target.value)} />
       <div className="flex gap-2">
-        <button className="btn-ghost border border-slate-200" disabled={!dirty} onClick={() => void setQuestions({ agentId: agent._id, questions: saved }).catch((e) => setError(errorText(e)))}>
+        <button className="btn-ghost border border-neutral-200" disabled={!dirty} onClick={() => void setQuestions({ agentId: agent._id, questions: saved }).catch((e) => setError(errorText(e)))}>
           حفظ الأسئلة
         </button>
         <button
@@ -296,16 +306,16 @@ function TestPanel({ agent }: { agent: AgentRow }) {
       {error && <p className="text-sm text-red-700">{error}</p>}
       <div className="space-y-2">
         {results?.map((r) => (
-          <div key={r.threadId} className="rounded-lg border border-slate-200 p-2 text-sm">
-            <div className="flex items-center gap-2 text-xs text-slate-500">
+          <div key={r.threadId} className="rounded-lg border border-neutral-200 p-2 text-sm">
+            <div className="flex items-center gap-2 text-xs text-neutral-500">
               <span>{formatDate(r.at)}</span>
-              <span>{r.state === "done" ? "✅" : r.state === "failed" ? "⚠️" : "⏳"}</span>
-              {r.toolRuns.length > 0 && <span title={r.toolRuns.map((t) => `${t.name}: ${t.summary}`).join("\n")}>🔧 {r.toolRuns.map((t) => `${t.name}${t.ok ? "" : "✗"}`).join("، ")}</span>}
+              <span>{r.state === "done" ? "" : r.state === "failed" ? "" : ""}</span>
+              {r.toolRuns.length > 0 && <span title={r.toolRuns.map((t) => `${t.name}: ${t.summary}`).join("\n")}>{r.toolRuns.map((t) => `${t.name}${t.ok ? "" : " (رُفضت)"}`).join("، ")}</span>}
             </div>
             <div className="font-semibold">{r.question}</div>
-            {r.answer && <div className="whitespace-pre-wrap text-slate-700">{r.answer}</div>}
+            {r.answer && <div className="whitespace-pre-wrap text-neutral-700">{r.answer}</div>}
             {r.error && <div className="text-red-700">{r.error}</div>}
-            {r.citations.length > 0 && <div className="text-xs text-slate-400">المصادر: {r.citations.map((c) => `[${c.n}] ${c.fileName}`).join("، ")}</div>}
+            {r.citations.length > 0 && <div className="text-xs text-neutral-400">المصادر: {r.citations.map((c) => `[${c.n}] ${c.fileName}`).join("، ")}</div>}
           </div>
         ))}
       </div>
@@ -323,7 +333,7 @@ function History({ agentId }: { agentId: string }) {
       <h3 className="font-semibold">النسخ المنشورة</h3>
       {error && <p className="text-sm text-red-700">{error}</p>}
       <table className="w-full text-sm">
-        <thead className="bg-slate-50">
+        <thead className="bg-neutral-50">
           <tr>
             <th className="th">النسخة</th>
             <th className="th">نُشرت</th>
@@ -334,11 +344,11 @@ function History({ agentId }: { agentId: string }) {
         </thead>
         <tbody>
           {versions.map((v) => (
-            <tr key={v.version} className="border-t border-slate-100">
+            <tr key={v.version} className="border-t border-neutral-100">
               <td className="td">
                 {v.version}
-                {v.current && <span className="ms-1 rounded bg-teal-50 px-1 text-[10px] text-teal-800">الحالية</span>}
-                {v.revertedFrom !== null && <span className="ms-1 text-xs text-slate-400">(من {v.revertedFrom})</span>}
+                {v.current && <span className="ms-1 rounded bg-neutral-100 px-1 text-[10px] text-neutral-900">الحالية</span>}
+                {v.revertedFrom !== null && <span className="ms-1 text-xs text-neutral-400">(من {v.revertedFrom})</span>}
               </td>
               <td className="td text-xs">{formatDate(v.publishedAt)}</td>
               <td className="td text-xs">{v.publishedBy ?? "—"}</td>
@@ -349,7 +359,7 @@ function History({ agentId }: { agentId: string }) {
                     استرجع
                   </button>
                 )}
-                <details className="text-xs text-slate-400">
+                <details className="text-xs text-neutral-400">
                   <summary className="cursor-pointer">التعليمات</summary>
                   <pre className="whitespace-pre-wrap">{v.config.instructions || "—"}</pre>
                 </details>
