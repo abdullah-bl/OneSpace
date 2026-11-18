@@ -1,5 +1,6 @@
 import { defineSchema, defineTable } from "onebase/server";
 import { v } from "onebase/values";
+import { outputsTables } from "./outputsSchema";
 
 export const userStatus = v.union(v.literal("pending"), v.literal("active"), v.literal("disabled"));
 export const memberRole = v.union(v.literal("manager"), v.literal("member"), v.literal("reader"));
@@ -14,9 +15,12 @@ export default defineSchema({
     emailVerificationTime: v.optional(v.number()),
     status: v.optional(userStatus),
     employeeNo: v.optional(v.string()),
+    nationalId: v.optional(v.string()), // set by the workspace admin only; my_records matches on it (Phase 4)
   })
     .index("email", ["email"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_employeeNo", ["employeeNo"])
+    .index("by_nationalId", ["nationalId"]),
 
   // The single workspace (the department). Its members and their admin|member roles live in
   // the @onebase/teams component under `teamId`.
@@ -105,4 +109,7 @@ export default defineSchema({
     .index("by_at", ["at"])
     .index("by_space_at", ["spaceId", "at"])
     .index("by_user_at", ["userId", "at"]),
+
+  // Phase 4: artifacts, records, templates, issued documents (see outputsSchema.ts).
+  ...outputsTables,
 });
