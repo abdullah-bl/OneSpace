@@ -1,0 +1,34 @@
+{
+  "name": "onespace",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev:backend": "onebase dev --port 8090 --public dist",
+    "dev:web": "vite",
+    "build": "vite build",
+    "serve": "onebase serve --port 8090 --public dist",
+    "codegen": "onebase codegen",
+    "doctor": "onebase doctor",
+    "typecheck": "tsc --noEmit",
+    "test": "bun test tests",
+    "bootstrap-admin": "bun scripts/bootstrap-admin.ts",
+    "backup-restore-test": "bash scripts/backup-restore-test.sh"
+  },
+  "dependencies": {
+    "@fontsource/readex-pro": "5.3.0",
+    "onebase": "github:abdullah-bl/onebase#da2693688ba9942c5f3c23cf1bb02e524ff4280d",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "onebase-components": "github:abdullah-bl/onebase-components#50b98c2e8dd6f7c5f650fade2a029008fb2fe1f8"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "4.3.5",
+    "@types/bun": "1.4.4",
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0",
+    "@vitejs/plugin-react": "6.2.1",
+    "tailwindcss": "4.3.5",
+    "typescript": "5.9.3",
+    "vite": "8.3.5"
+  }
+}
