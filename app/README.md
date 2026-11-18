@@ -92,7 +92,7 @@ is loaded, so they must be in the server's **process** environment at start-up.
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | `http://127.0.0.1:8401/v1`, `qwen3.8-27b` | answers, tools, OCR (mmproj) |
 | `LLM_FAST_BASE_URL`, `LLM_FAST_MODEL` | `http://127.0.0.1:8402/v1`, `lfm3-1.7b` | follow-up rewriting (JSON-schema constrained) |
 | `EMBED_BASE_URL`, `EMBED_MODEL`, `EMBED_DIMENSIONS` | `http://127.0.0.1:8403/v1`, `embeddinggemma-2`, `768` | measured: 768 |
-| `EMBED_QUERY_PREFIX`, `EMBED_DOC_PREFIX` | defaults: `task: search result \| query: ` / `title: none \| text: ` | set to empty to turn off |
+| `EMBED_QUERY_PREFIX`, `EMBED_DOC_PREFIX` | defaults: `task: search result \| query: ` / `title: {title} \| text: ` ({title} = document name) | set to empty to turn off |
 | `RERANK_BASE_URL`, `RERANK_MODEL` | `http://127.0.0.1:8404/v1`, `qwen3-reranker-0.6b` | optional; unset = no rerank |
 | `RAG_ABSTAIN_SCORE` | `0.01` (measured, see eval) | best rerank score below this → "لم أجد هذا…" |
 | `GPU_SLOTS` | `4` (= llama-server `-np`) | work-queue parallelism for chat turns |
@@ -150,6 +150,19 @@ users, injection test, removal test).
 bun scripts/build-golden.ts ../bench/data   # eval/golden.json: 12 docs, 120 + 15 unanswerable questions
 bun scripts/eval-rag.ts --turns 60          # needs bench/servers.sh running; writes eval/results-<date>.json
 ```
+
+Results on 2026-11-18, synthetic corpus (bench/REPORT.md caveat: model-generated, near-duplicate rules
+across policies; re-run on real documents before closing Phase 2):
+
+| run | Recall@10 | @6 (context) | citation accuracy | gold cited | false abstain | correct abstain (15) | median / p90 turn |
+|---|---|---|---|---|---|---|---|
+| v1 `eval/results-2026-11-18.json` (doc prefix `title: none`, gate 0.05) | 95.8 | 90.0 | 82.0* | 78.3 | 15.0 | 86.7 | 13 s / 36 s |
+| v2 (doc prefix `title: {title}`, gate 0.01, strict "same case" rule) | 93.3 | 88.3 | 87.0 | 71.7 | 21.7 | 86.7 | 12 s / 37 s |
+| **v3 current** `eval/results-2026-11-18-v3.json` (softened rule) | **93.3** | 88.3 | **88.1** | 76.7 | 18.3 | **86.7** | 13 s / 49 s |
+
+\* v1 counted key matches by digits only; v2+ also match non-numeric keys. Most remaining "wrong"
+citations answer a question that names no policy with the equivalent rule from a neighbouring
+policy; most false abstentions are on dialect questions about one specific clause.
 
 ## Backup and restore
 

@@ -37,7 +37,7 @@ export function aiConfig() {
       dimensions: Number(env("EMBED_DIMENSIONS") ?? 768),
       // embeddinggemma's task prefixes (model card); empty string turns a prefix off.
       queryPrefix: process.env.EMBED_QUERY_PREFIX ?? "task: search result | query: ",
-      docPrefix: process.env.EMBED_DOC_PREFIX ?? "title: none | text: ",
+      docPrefix: process.env.EMBED_DOC_PREFIX ?? "title: {title} | text: ",
       apiKey: env("EMBED_API_KEY") ?? env("LLM_API_KEY"),
     },
     rerank: { baseUrl: env("RERANK_BASE_URL"), model: env("RERANK_MODEL") ?? "default", apiKey: env("RERANK_API_KEY") ?? env("LLM_API_KEY") },
@@ -177,13 +177,23 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
 /** Marks a text handed to the rag embedder as a search query (vs. a document chunk). */
 export const QUERY_MARK = "\u0001query\u0001";
 
+/**
+ * Applies the task prefix. `{title}` in the document prefix is the document name taken from the
+ * chunk's context line `[name | section | p]` (embeddinggemma: "title: … | text: …"), or "none".
+ */
+export function withPrefix(prefix: string, text: string, kind: "query" | "document") {
+  if (kind === "query" || !prefix.includes("{title}")) return prefix + text;
+  const title = /^\[([^|\]\n]+)/.exec(text)?.[1]?.trim() || "none";
+  return prefix.replace("{title}", title) + text;
+}
+
 export async function embed(texts: string[], kind: "query" | "document"): Promise<number[][]> {
   const cfg = aiConfig().embed;
   if (!cfg.baseUrl) throw new OneBaseError("خادم التضمين غير مضبوط (EMBED_BASE_URL)");
   const prefix = kind === "query" ? cfg.queryPrefix : cfg.docPrefix;
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += 64) {
-    const batch = texts.slice(i, i + 64).map((t) => prefix + t);
+    const batch = texts.slice(i, i + 64).map((t) => withPrefix(prefix, t, kind));
     const data = await postJson(`${cfg.baseUrl}/embeddings`, { model: cfg.model, input: batch }, cfg.apiKey);
     const rows = [...(data.data ?? [])].sort((a: any, b: any) => a.index - b.index);
     if (rows.length !== batch.length) throw new Error(`خادم التضمين أعاد ${rows.length} متجهاً لـ${batch.length} نصاً`);

@@ -75,7 +75,8 @@ function ModelStatus() {
     };
   }, []);
   if (!s) return null;
-  const ok = s.main === "ok" && s.embed === "ok";
+  // Phase 0 decision: rerank is required for acceptable recall, so a missing reranker is "degraded".
+  const ok = s.main === "ok" && s.embed === "ok" && s.rerank === "ok";
   return (
     <span className="flex items-center gap-1 text-xs text-slate-500" title={`النموذج: ${s.main} · التضمين: ${s.embed} · الترتيب: ${s.rerank}`}>
       <span className={`inline-block h-2 w-2 rounded-full ${ok ? "bg-emerald-500" : "bg-amber-500"}`} />
