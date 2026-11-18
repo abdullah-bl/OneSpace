@@ -1,9 +1,10 @@
-import { Component, useState, type ReactNode } from "react";
+import { Component, useEffect, useState, type ReactNode } from "react";
 import { useAuthActions, useOnebaseAuth, useQuery } from "onebase/react";
 import { api, badge, errorText, ROLE_LABELS, STATUS_LABELS } from "./lib";
 import { SpaceView } from "./SpaceView";
 import { AdminView } from "./AdminView";
 import { AuditView } from "./AuditView";
+import { ChatView, type Scope } from "./ChatView";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -85,12 +86,19 @@ function Gate() {
   return <Shell me={me} />;
 }
 
-type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" };
+type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" } | { kind: "chat" };
 
 function Shell({ me }: { me: { name: string | null; email: string | null; workspaceRole: string | null; workspaceName: string | null } }) {
   const spaces = useQuery(api.spaces.mine);
   const { signOut } = useAuthActions();
   const [route, setRoute] = useState<Route | null>(null);
+  const [askScope, setAskScope] = useState<Scope | null>(null);
+  // "اسأل عن هذا الملف" (SpaceView) opens the chat scoped to that file.
+  useEffect(() => {
+    const onAsk = (e: Event) => (setAskScope((e as CustomEvent<Scope>).detail), setRoute({ kind: "chat" }));
+    window.addEventListener("onespace:ask", onAsk);
+    return () => window.removeEventListener("onespace:ask", onAsk);
+  }, []);
   const isAdmin = me.workspaceRole === "admin";
   // A space I lose access to (removed, space deleted) drops out of the list: fall back to my own space.
   const stale = route?.kind === "space" && spaces !== undefined && !spaces.some((s) => s._id === route.id);
@@ -107,6 +115,9 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
           <div className="text-xs text-slate-500">{me.workspaceName}</div>
         </div>
         <nav className="flex-1 space-y-4 overflow-y-auto p-3">
+          <NavItem active={current?.kind === "chat"} onClick={() => (setAskScope(null), setRoute({ kind: "chat" }))}>
+            💬 المحادثة
+          </NavItem>
           <div className="space-y-1">
             {personal.map((s) => (
               <NavItem key={s._id} active={current?.kind === "space" && current.id === s._id} onClick={() => setRoute({ kind: "space", id: s._id })}>
@@ -153,6 +164,7 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
           {current?.kind === "space" && spaces && <SpaceView spaceId={current.id} spaces={spaces} />}
           {current?.kind === "admin" && <AdminView />}
           {current?.kind === "audit" && <AuditView isAdmin={isAdmin} spaces={spaces ?? []} />}
+          {current?.kind === "chat" && <ChatView spaces={spaces ?? []} initialScope={askScope} />}
         </ErrorBoundary>
       </main>
     </div>

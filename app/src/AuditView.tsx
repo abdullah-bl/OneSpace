@@ -23,6 +23,7 @@ const ACTION_LABELS: Record<string, string> = {
   "file.copy_in": "نسخ ملف إلى المساحة",
   "file.open": "فتح ملف حسّاس",
   "file.download": "تنزيل ملف حسّاس",
+  "ai.turn": "سؤال للمساعد استخدم محتوى المساحة",
 };
 
 /** Workspace admin: everything with filters. Space manager: pick one of the spaces they manage. */
