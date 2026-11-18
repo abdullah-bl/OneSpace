@@ -4,16 +4,14 @@
 // file is checked with access.ts for *this user* and must be inside the turn's scope; the target
 // must be writable; sensitive inputs keep their outputs in their space. Only the checked files'
 // bytes are sent to sandbox-runner (which has no network and no database). Outputs come back as
-// regular files in the target space.
-//
-// Integration point (Phase 4 artifacts): outputs are stored as files for now and their ids are
-// returned. After the merge, `finish` should also create an artifact (kind by mime: image/table/
-// html…) with `artifactVersions.runId = runId`, and this tool should return its id in
-// `artifactIds` so the side panel opens it.
+// regular files in the target space, and each output the side panel can show (table, markdown,
+// html, image; lib/outputArtifacts.ts) also becomes a Phase 4 artifact with
+// `artifactVersions.runId = runId`, in the same space; the tool returns their ids in `artifactIds`.
 
 import { OneBaseError } from "onebase/values";
 import { internal } from "../_generated/api";
 import type { Id } from "../_generated/dataModel";
+import { artifactForOutput } from "../lib/outputArtifacts";
 import { callSandbox, SandboxUnavailable } from "../lib/sandboxClient";
 import type { AppTool, ToolContext, ToolResult } from "./types";
 
@@ -22,6 +20,8 @@ export type RunAnalysisArgs = { code: string; fileIds: string[]; targetSpaceId?:
 /** Server-side limits for one run; the runner clamps them again to its own ceilings. */
 export const RUN_LIMITS = { timeoutMs: 60_000, memoryMb: 1024, cpus: 1, pids: 64, outputMb: 20 };
 const MAX_INPUT_BYTES = 100 * 1024 * 1024;
+/** At most this many outputs per run also become artifacts (the rest stay files only). */
+const MAX_ARTIFACTS = 20;
 
 export type AnalysisOutcome = {
   runId: string;
@@ -37,6 +37,7 @@ export type AnalysisOutcome = {
   inputSpaceIds: string[];
   inputs: { fileId: string; name: string }[];
   outputs: { fileId: string; name: string; size: number; sha256: string }[];
+  artifactIds: string[];
 };
 
 export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "scopeSpaceIds" | "threadId" | "agentId">, args: RunAnalysisArgs): Promise<AnalysisOutcome> {
@@ -71,12 +72,15 @@ export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "s
     }
     const res = await callSandbox({ code: args.code, files, limits });
     const outputs = [];
+    const artifacts = [];
     for (const f of res.files ?? []) {
       const bytes = Buffer.from(f.b64, "base64");
       const storageId = await ctx.storage.store(new Blob([bytes]));
+      const art = artifactForOutput(f.name, new Uint8Array(bytes));
+      if (art && artifacts.length < MAX_ARTIFACTS) artifacts.push({ output: outputs.length, ...art });
       outputs.push({ storageId, name: f.name, size: bytes.length, sha256: f.sha256 });
     }
-    const saved = await ctx.runMutation(internal.analysis.finish, {
+    const { files: saved, artifactIds } = await ctx.runMutation(internal.analysis.finish, {
       runId,
       inputSha256,
       result: {
@@ -93,6 +97,7 @@ export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "s
         limits: res.limits,
       },
       outputs,
+      artifacts,
     });
     return {
       runId,
@@ -108,6 +113,7 @@ export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "s
       inputSpaceIds: begun.inputSpaceIds,
       inputs: begun.inputs.map((i) => ({ fileId: i.fileId, name: i.name })),
       outputs: saved,
+      artifactIds,
     };
   } catch (e) {
     const message = e instanceof SandboxUnavailable ? e.message : "فشل التشغيل";
@@ -131,6 +137,7 @@ export function summarize(r: AnalysisOutcome): string {
   if (r.stdout.trim()) lines.push("المخرج النصي:", clip(r.stdout.trim(), 4000));
   if (!r.ok && r.stderr.trim()) lines.push("الأخطاء:", clip(r.stderr.trim().split("\n").slice(-30).join("\n"), 3000));
   if (r.outputs.length) lines.push(`ملفات المخرجات (حُفظت في ${r.targetName}):`, ...r.outputs.map((o) => `- ${o.name} (fileId: ${o.fileId}, ${o.size} بايت)`));
+  if (r.artifactIds.length) lines.push(`مخرجات معروضة في اللوحة الجانبية: ${r.artifactIds.map((id) => `artifactId=${id}`).join("، ")}`);
   return lines.join("\n");
 }
 
@@ -140,14 +147,15 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
   description:
     "Runs Python 3 code (pandas, numpy, matplotlib, openpyxl; Arabic fonts; `import onespace` for onespace.ar() / onespace.arabic_plots()) " +
     "in an isolated sandbox with no network. The chosen files are available read-only under /input/<file name>. " +
-    "Write result files (charts, tables) to /output/; they are saved as files in the target space. Print a short summary to stdout. " +
+    "Write result files (charts, tables) to /output/; they are saved as files in the target space, and CSV/XLSX tables, .md, .html, .txt and images " +
+    "also open in the side panel (their ids come back as artifactIds). Print a short summary to stdout. " +
     "Only files the user can read can be used. Never use this tool to rank or score people: ranking has its own approved criteria.",
   parameters: {
     type: "object",
     properties: {
       code: { type: "string", description: "Python 3 code to run." },
       fileIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of the files to place in /input." },
-      targetSpaceId: { type: "string", description: "Space to save /output files in. Default: the inputs' space if writable, else the user's personal space." },
+      targetSpaceId: { type: "string", description: "Space to save /output files in: the inputs' space or the user's personal space (inputs from several spaces: personal; a sensitive space: that space). Default: the inputs' space if writable, else the personal space." },
       timeoutSeconds: { type: "number", minimum: 1, maximum: 60 },
     },
     required: ["code", "fileIds"],
@@ -156,6 +164,6 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
   requiresConfirmation: true,
   async run(t: ToolContext, args: RunAnalysisArgs): Promise<ToolResult> {
     const r = await executeAnalysis(t, args);
-    return { content: summarize(r), spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])] };
+    return { content: summarize(r), artifactIds: r.artifactIds, spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])] };
   },
 };

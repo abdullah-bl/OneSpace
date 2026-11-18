@@ -13,6 +13,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, requireActive, requireUserId } from "./access";
 import { writeAudit } from "./audit";
+import { snapshotSource } from "./schema";
 import {
   canonicalJson,
   explainCriterion,
@@ -27,7 +28,7 @@ import {
   type RankingSpec,
   type Row,
 } from "./lib/ranking";
-import type { RecordRef, RecordSet, RecordSourceInfo } from "./lib/records";
+import { recordsToTable, type RecordRef, type RecordSet, type RecordSourceInfo } from "./lib/records";
 import { parseTable, TableError } from "./lib/tabular";
 
 const directionV = v.union(v.literal("desc"), v.literal("asc"));
@@ -180,8 +181,42 @@ export const fileForRanking = internalQuery({
   },
 });
 
-/** Loads a RecordSet for a reference. One implementation per source kind (records tables come with Phase 4). */
+/**
+ * Checks the user may read the record set and that it lives in the ranking's space (same rule as
+ * a file); returns the rows of one import version (the current one unless `version` is given).
+ */
+export const recordsForRanking = internalQuery({
+  args: { userId: v.id("users"), recordSetId: v.string(), spaceId: v.id("spaces"), version: v.optional(v.number()) },
+  handler: async (ctx, { userId, recordSetId, spaceId, version }) => {
+    const id = ctx.db.normalizeId("recordSets", recordSetId);
+    const set = id ? await ctx.db.get(id) : null;
+    if (!set) throw new Denied();
+    await assertCan(ctx, userId, set.spaceId, "read");
+    if (set.spaceId !== spaceId) throw new OneBaseError("مجموعة السجلات يجب أن تكون في مساحة المعايير نفسها");
+    const ver = version ?? set.currentVersion;
+    if (set.currentVersion === 0) throw new OneBaseError("لم تُستورد أي سجلات في هذه المجموعة بعد");
+    if (!Number.isInteger(ver) || ver < 1 || ver > set.currentVersion) throw new OneBaseError("نسخة السجلات غير موجودة");
+    const imp = await ctx.db.query("recordImports").withIndex("by_set_version", (q) => q.eq("recordSetId", set._id).eq("version", ver)).unique();
+    const rows = await ctx.db.query("records").withIndex("by_set_version", (q) => q.eq("recordSetId", set._id).eq("version", ver)).collect();
+    return {
+      recordSetId: set._id as string,
+      name: set.name,
+      version: ver,
+      sha256: imp?.source.sha256 ?? null,
+      columns: set.columns.map((c) => ({ key: c.key, header: c.header })),
+      rows: rows.map((r) => ({ rowNo: r.rowNo, data: r.data })),
+    };
+  },
+});
+
+/** Loads a RecordSet for a reference. One implementation per source kind; both go through access.ts and the same-space rule. */
 async function loadRecords(ctx: any, userId: Id<"users">, spaceId: Id<"spaces">, ref: RecordRef): Promise<RecordSet> {
+  if (ref.kind === "records") {
+    const r = await ctx.runQuery(internal.ranking.recordsForRanking, { userId, recordSetId: ref.recordSetId, spaceId, version: ref.version });
+    const table = recordsToTable(r.columns, r.rows);
+    const source: RecordSourceInfo = { kind: "records", recordSetId: r.recordSetId, version: r.version, name: r.name, sha256: r.sha256 };
+    return { ...table, source };
+  }
   if (ref.kind !== "file") throw new OneBaseError("مصدر بيانات غير معروف");
   const f = await ctx.runQuery(internal.ranking.fileForRanking, { userId, fileId: ref.fileId, spaceId });
   const blob: Blob | null = await ctx.storage.get(f.storageId);
@@ -285,7 +320,7 @@ export const saveRun = internalMutation({
         size: v.number(),
         fields: v.array(v.string()),
         rowCount: v.number(),
-        source: v.object({ kind: v.literal("file"), fileId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
+        source: snapshotSource,
       }),
     ),
     results: v.array(resultV),
@@ -337,7 +372,12 @@ export const saveRun = internalMutation({
       spaceId: c.spaceId,
       status: "done",
       codeHash: sha256Hex(RANKING_ALGORITHM),
-      inputs: [{ fileId: snap.source.fileId, name: snap.source.name, sha256: snap.sha256, size: snap.rowCount, spaceId: c.spaceId }],
+      // A file source names its file; a records source has no file (the snapshot keeps the set id + version).
+      inputs: [
+        snap.source.kind === "file"
+          ? { fileId: snap.source.fileId, name: snap.source.name, sha256: snap.sha256, size: snap.rowCount, spaceId: c.spaceId }
+          : { name: `${snap.source.name} (v${snap.source.version})`, sha256: snap.sha256, size: snap.rowCount, spaceId: c.spaceId },
+      ],
       outputs: [],
       exit: { code: 0, timedOut: false, oomKilled: false, durationMs: 0, outputTruncated: false },
       rankingRunId,
@@ -356,13 +396,18 @@ export const saveRun = internalMutation({
   },
 });
 
-/** Ranks the rows of a CSV/XLSX file (in the criteria's space) with an approved criteria version. Result: a draft run. */
+/**
+ * Ranks the rows of a CSV/XLSX file, or of an imported record set (one import version, the
+ * current one by default), in the criteria's space with an approved criteria version. Result: a draft run.
+ */
 export const createRun = action({
-  args: { criteriaId: v.string(), fileId: v.string() },
-  handler: async (ctx, { criteriaId, fileId }): Promise<string> => {
+  args: { criteriaId: v.string(), fileId: v.optional(v.string()), recordSetId: v.optional(v.string()), recordVersion: v.optional(v.number()) },
+  handler: async (ctx, { criteriaId, fileId, recordSetId, recordVersion }): Promise<string> => {
     const userId = await requireUserId(ctx);
+    if (!fileId === !recordSetId) throw new OneBaseError("اختر مصدر البيانات: ملفاً أو مجموعة سجلات");
     const prep = await ctx.runQuery(internal.ranking.prepareRun, { userId, criteriaId });
-    const records = await loadRecords(ctx, userId, prep.spaceId, { kind: "file", fileId });
+    const ref: RecordRef = recordSetId ? { kind: "records", recordSetId, version: recordVersion } : { kind: "file", fileId: fileId! };
+    const records = await loadRecords(ctx, userId, prep.spaceId, ref);
     checkFields(prep.spec, records.fields);
     const snapshotJson = canonicalJson({ fields: records.fields, rows: records.rows });
     const sha256 = sha256Hex(snapshotJson);
@@ -429,7 +474,15 @@ async function runView(ctx: Ctx, run: Doc<"rankingRuns">) {
     resultsHash: run.resultsHash,
     algorithm: run.algorithm,
     count: run.count,
-    source: snap ? { name: snap.source.name, version: snap.source.version, fileId: snap.source.fileId } : null,
+    source: snap
+      ? {
+          kind: snap.source.kind,
+          name: snap.source.name,
+          version: snap.source.version,
+          fileId: snap.source.kind === "file" ? snap.source.fileId : null,
+          recordSetId: snap.source.kind === "records" ? snap.source.recordSetId : null,
+        }
+      : null,
     correctsRunId: run.correctsRunId ?? null,
     createdAt: run.createdAt,
     createdByName: creator?.name ?? creator?.email ?? null,

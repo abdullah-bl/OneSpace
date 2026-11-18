@@ -85,24 +85,22 @@ async function nameOf(ctx: Ctx, cache: Map<string, string | null>, userId: Id<"u
 }
 
 /**
- * Where a link target lives, or null if it doesn't exist (or its kind isn't installed yet).
- * Artifacts arrive with Phase 4 (`artifacts` table with spaceId + title); until then the lookup
- * fails and such links are refused — fail-closed, and it starts working once the table exists.
+ * Where a link target lives, or null if it doesn't exist. Files and Phase 4 artifacts
+ * (`artifacts.spaceId` + `title`). The caller compares the space with the task's own space, on
+ * add and on every read, so an artifact moved out of the space (e.g. a sensitive output
+ * transferred with its manager's approval) stops showing on the task.
  */
-async function linkTarget(ctx: Ctx, type: LinkType, id: string): Promise<{ spaceId: string; name: string } | null> {
-  try {
-    if (type === "file") {
-      const fid = ctx.db.normalizeId("files", id);
-      const file = fid ? await ctx.db.get(fid) : null;
-      return file && file.status === "active" ? { spaceId: file.spaceId, name: file.name } : null;
-    }
-    if (type === "artifact") {
-      const db = ctx.db as any;
-      const aid = db.normalizeId("artifacts", id);
-      const doc = aid ? await db.get(aid) : null;
-      return doc && typeof doc.spaceId === "string" ? { spaceId: doc.spaceId, name: String(doc.title ?? doc.name ?? "") } : null;
-    }
-  } catch {}
+async function linkTarget(ctx: Ctx, type: LinkType, id: string): Promise<{ spaceId: string; name: string; sensitive?: boolean } | null> {
+  if (type === "file") {
+    const fid = ctx.db.normalizeId("files", id);
+    const file = fid ? await ctx.db.get(fid) : null;
+    return file && file.status === "active" ? { spaceId: file.spaceId, name: file.name } : null;
+  }
+  if (type === "artifact") {
+    const aid = ctx.db.normalizeId("artifacts", id);
+    const art = aid ? await ctx.db.get(aid) : null;
+    return art ? { spaceId: art.spaceId, name: art.title, sensitive: art.classification === "sensitive" } : null;
+  }
   return null;
 }
 
@@ -214,7 +212,7 @@ export const get = query({
       const target = await linkTarget(ctx, l.type, l.id);
       // Re-checked on every read: a target that left the space (or vanished) shows no name.
       const available = target !== null && target.spaceId === task.spaceId;
-      links.push({ type: l.type, id: l.id, name: available ? target.name : null, available, addedByName: await nameOf(ctx, names, l.addedBy), addedAt: l.addedAt });
+      links.push({ type: l.type, id: l.id, name: available ? target.name : null, available, sensitive: available && !!target.sensitive, addedByName: await nameOf(ctx, names, l.addedBy), addedAt: l.addedAt });
     }
     const commentRows = await ctx.db.query("taskComments").withIndex("by_task", (q) => q.eq("taskId", task._id)).collect();
     const comments = [];
@@ -348,7 +346,7 @@ async function requireAttach(ctx: MutationCtx, me: Actor, taskId: string) {
   return access;
 }
 
-/** Attaches a file (or, from Phase 4, an artifact) that lives in the task's own space. */
+/** Attaches a file or an artifact that lives in the task's own space. */
 export const addLink = mutation({
   args: { taskId: v.id("tasks"), type: taskLinkType, id: v.string() },
   handler: async (ctx, { taskId, type, id }) => {

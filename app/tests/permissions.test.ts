@@ -163,6 +163,17 @@ const OPS: Op[] = [
     run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:addLink", { taskId, type: "file", id: f.files[sp] }, tok(a))),
   },
   {
+    // Phase 4 artifacts as task links: same rule as files (an output of the task's own space)
+    name: "tasks:addLink (an artifact of the same space)",
+    need: "taskWork",
+    run: (a, sp) =>
+      withTask(sp, async (taskId) => {
+        const owner = sp === "P_mem" ? "mem" : "mgr";
+        const art = must(await s.call("mutation", "artifacts:create", { title: "مخرج", kind: "markdown", content: "x", spaceId: f.spaces[sp] }, tok(owner))).artifactId;
+        return s.call("mutation", "tasks:addLink", { taskId, type: "artifact", id: art }, tok(a));
+      }),
+  },
+  {
     name: "tasks:removeLink",
     need: "taskWork",
     run: (a, sp) =>

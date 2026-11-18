@@ -23,7 +23,7 @@ import { sha256Hex } from "./recordSources";
 type Ctx = QueryCtx | MutationCtx;
 export type ArtifactKind = "markdown" | "html" | "table";
 export type SourceRef = { type: "file" | "recordSet" | "artifact"; id: string };
-type Source = SourceRef & { spaceId: Id<"spaces"> };
+export type Source = SourceRef & { spaceId: Id<"spaces"> };
 
 const MAX_CONTENT = 512 * 1024;
 const MAX_TABLE_ROWS = 5000;
@@ -103,8 +103,21 @@ async function resolveSources(ctx: Ctx, actor: Actor, refs: SourceRef[], scope: 
   return { sources: out, sensitiveOrigins };
 }
 
-/** Where an artifact built on these sources may live. Throws if the requested space isn't allowed. */
-async function place(ctx: Ctx, actor: Actor, sources: Source[], sensitiveOrigins: Set<Id<"spaces">>, requested: Id<"spaces"> | string | undefined, scope: Set<string> | null) {
+/**
+ * Where an artifact built on these sources may live. Throws if the requested space isn't allowed.
+ * `managerMayExport`: a manager of the sensitive origin space may name another target directly
+ * (the same thing as creating it in the origin and then `move`-ing it, which only they may do);
+ * the output stays classified sensitive with that origin. Used by sandbox runs (analysis.ts).
+ */
+export async function place(
+  ctx: Ctx,
+  actor: Actor,
+  sources: Source[],
+  sensitiveOrigins: Set<Id<"spaces">>,
+  requested: Id<"spaces"> | string | undefined,
+  scope: Set<string> | null,
+  opts: { managerMayExport?: boolean } = {},
+) {
   const personal = await personalSpaceOf(ctx, actor);
   const spaceIds = [...new Set(sources.map((s) => s.spaceId))];
   const spaces = (await Promise.all(spaceIds.map((id) => ctx.db.get(id)))).filter(Boolean) as Doc<"spaces">[];
@@ -120,7 +133,11 @@ async function place(ctx: Ctx, actor: Actor, sources: Source[], sensitiveOrigins
     const S = [...sensitive][0]!;
     if (spaceIds.some((id) => id !== S)) throw new OneBaseError("لا يُدمج محتوى مساحة حسّاسة مع مصادر من مساحات أخرى في مخرج واحد");
     target = req ?? S;
-    if (target !== S) throw new OneBaseError("المخرج المبني على مساحة حسّاسة يُحفظ فيها، ونقله يحتاج موافقة مديرها");
+    if (target !== S) {
+      const origin = await ctx.db.get(S);
+      const manages = opts.managerMayExport && origin ? roleAllows(await spaceRoleOf(ctx, actor.userId, origin, actor), "manage") : false;
+      if (!manages) throw new OneBaseError("المخرج المبني على مساحة حسّاسة يُحفظ فيها، ونقله يحتاج موافقة مديرها");
+    }
     classification = "sensitive";
     originSpaceId = S;
   } else if (spaceIds.length === 1) {
@@ -154,23 +171,67 @@ export async function createArtifact(ctx: MutationCtx, actor: Actor, input: Crea
   const content = normalizeContent(input.kind, input.content);
   const { sources, sensitiveOrigins } = await resolveSources(ctx, actor, input.sources ?? [], opts.scope);
   const { space, classification, originSpaceId } = await place(ctx, actor, sources, sensitiveOrigins, input.spaceId, opts.scope);
-  const now = Date.now();
-  const artifactId = await ctx.db.insert("artifacts", {
+  const artifactId = await insertArtifact(ctx, {
     spaceId: space._id,
     ownerId: actor.userId,
     kind: input.kind,
     title,
-    currentVersion: 1,
-    sourceThreadId: opts.threadId,
+    content,
     sources,
     classification,
     originSpaceId,
+    threadId: opts.threadId,
+    runId: input.runId,
+    via: opts.via,
+  });
+  return { artifactId, spaceId: space._id, classification, version: 1 };
+}
+
+/**
+ * Inserts version 1 of an artifact whose placement and classification were already decided by
+ * `place()` (createArtifact, or analysis:begin for sandbox runs) and whose content went through
+ * normalizeContent. Audited as artifact.create.
+ */
+export async function insertArtifact(
+  ctx: MutationCtx,
+  a: {
+    spaceId: Id<"spaces">;
+    ownerId: Id<"users">;
+    kind: ArtifactKind;
+    title: string;
+    content: string;
+    sources: Source[];
+    classification: "normal" | "sensitive";
+    originSpaceId?: Id<"spaces">;
+    threadId?: string;
+    runId?: string;
+    via: string;
+  },
+) {
+  const now = Date.now();
+  const artifactId = await ctx.db.insert("artifacts", {
+    spaceId: a.spaceId,
+    ownerId: a.ownerId,
+    kind: a.kind,
+    title: a.title,
+    currentVersion: 1,
+    sourceThreadId: a.threadId,
+    sources: a.sources,
+    classification: a.classification,
+    originSpaceId: a.originSpaceId,
     createdAt: now,
     updatedAt: now,
   });
-  await ctx.db.insert("artifactVersions", { artifactId, version: 1, content, sha256: sha256Hex(content), size: content.length, createdBy: actor.userId, createdAt: now, runId: input.runId });
-  await writeAudit(ctx, { userId: actor.userId, action: "artifact.create", resourceType: "artifact", resourceId: artifactId, spaceId: space._id, detail: { name: title, kind: input.kind, classification, via: opts.via } });
-  return { artifactId, spaceId: space._id, classification, version: 1 };
+  await ctx.db.insert("artifactVersions", { artifactId, version: 1, content: a.content, sha256: sha256Hex(a.content), size: a.content.length, createdBy: a.ownerId, createdAt: now, runId: a.runId });
+  await writeAudit(ctx, {
+    userId: a.ownerId,
+    action: "artifact.create",
+    resourceType: "artifact",
+    resourceId: artifactId,
+    spaceId: a.spaceId,
+    detail: { name: a.title, kind: a.kind, classification: a.classification, via: a.via, ...(a.runId ? { runId: a.runId } : {}) },
+  });
+  return artifactId;
 }
 
 export type UpdateInput = { artifactId: string; content: unknown; title?: string; note?: string; sources?: SourceRef[]; runId?: string };
@@ -247,7 +308,7 @@ export const versions = query({
     const me = await requireActive(ctx);
     const { art } = await loadReadable(ctx, me.userId, artifactId);
     const rows = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id)).order("desc").collect();
-    return { artifact: shape(art), versions: rows.map((r) => ({ version: r.version, sha256: r.sha256, size: r.size, createdAt: r.createdAt, note: r.note ?? null })) };
+    return { artifact: shape(art), versions: rows.map((r) => ({ version: r.version, sha256: r.sha256, size: r.size, createdAt: r.createdAt, note: r.note ?? null, runId: r.runId ?? null })) };
   },
 });
 
