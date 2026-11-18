@@ -16,7 +16,8 @@ export class Server {
   dataDir: string;
   adminKey = "test-admin-key-" + crypto.randomUUID();
 
-  constructor(dataDir?: string) {
+  /** `env`: extra environment for the server process (e.g. the fake model servers' URLs). */
+  constructor(dataDir?: string, public env: Record<string, string> = {}) {
     this.dataDir = dataDir ?? mkdtempSync(join(tmpdir(), "onespace-test-"));
   }
 
@@ -25,7 +26,7 @@ export class Server {
     this.url = `http://127.0.0.1:${p}`;
     this.proc = Bun.spawn([join(APP, "node_modules/.bin/onebase"), "serve", "--port", String(p), "--host", "127.0.0.1", "--data", this.dataDir, "--dir", join(APP, "onebase"), "--url", this.url], {
       cwd: APP,
-      env: { ...process.env, ONEBASE_ADMIN_KEY: this.adminKey },
+      env: { ...process.env, ...this.env, ONEBASE_ADMIN_KEY: this.adminKey },
       stdout: "pipe",
       stderr: "pipe",
     });
@@ -80,10 +81,10 @@ export class Server {
   }
 
   /** Uploads bytes the way the browser does: upload URL from the backend, then POST the body. Returns the storageId. */
-  async upload(token: string, content: string, type = "text/plain"): Promise<string> {
+  async upload(token: string, content: string | Uint8Array, type = "text/plain"): Promise<string> {
     const u = await this.call("mutation", "files:generateUploadUrl", {}, token);
     if (!u.ok) throw new Error("generateUploadUrl: " + u.error);
-    const res = await fetch(u.value, { method: "POST", headers: { "Content-Type": type }, body: content });
+    const res = await fetch(u.value, { method: "POST", headers: { "Content-Type": type }, body: content as BodyInit });
     const body: any = await res.json();
     if (!body.storageId) throw new Error("upload failed " + JSON.stringify(body));
     return body.storageId;

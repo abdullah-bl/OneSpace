@@ -28,6 +28,7 @@ const ACTION_LABELS: Record<string, string> = {
   "task.close": "إغلاق مهمة",
   "task.reopen": "إعادة فتح مهمة",
   "task.delete": "حذف مهمة",
+  "ai.turn": "سؤال للمساعد استخدم محتوى المساحة",
 };
 
 /** Workspace admin: everything with filters. Space manager: pick one of the spaces they manage. */

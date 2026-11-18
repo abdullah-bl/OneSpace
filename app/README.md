@@ -1,4 +1,4 @@
-# OneSpace (مساحة) — Phase 1: الأساس
+# OneSpace (مساحة) — Phases 1–2: الأساس، RAG والمحادثة
 
 Workspace with users, personal/shared spaces, files with versions, permissions and an audit log.
 No AI yet. Backend: OneBase (`onebase/`). Frontend: React 19 + Vite + Tailwind 4, Arabic/RTL,
@@ -132,7 +132,7 @@ Arabic in PDFs: fontkit shapes Arabic runs; mixed text is ordered with a small b
 ## Tests
 
 ```bash
-bun test tests          # starts real onebase servers on temp dirs; ~5 s
+bun test tests          # starts real onebase servers on temp dirs (+ a fake model server); ~25 s
 ```
 
 - `tests/permissions.test.ts`: the matrix — 15 operations × 4 spaces (personal, shared,
@@ -218,6 +218,93 @@ runner (`tests/sandbox.ts`) and skip themselves when Docker or the image is miss
   same spaces × 8 actors (881 cases); `tests/phase4-coverage.ts` lists the Phase 4 functions.
 - `tests/outputs-acceptance.test.ts`: one block per Phase 4 checkbox, plus placement, transfers,
   versions, exports, verification and the subject's own certificates.
+
+## Phase 2: RAG and chat
+
+Chat on the documents a user may read, with numbered citations (plans/03-rag.md).
+
+### Model servers (environment)
+
+Read by `onebase/ai.ts` on every call (set with `onebase env set` or the process environment).
+`EMBED_DIMENSIONS`, `GPU_SLOTS`, `CHAT_BURST`, `CHAT_RATE_PER_MIN` are read when `components.ts`
+is loaded, so they must be in the server's **process** environment at start-up.
+
+| var | bench/servers.sh value | |
+|---|---|---|
+| `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | `http://127.0.0.1:8401/v1`, `qwen3.8-27b` | answers, tools, OCR (mmproj) |
+| `LLM_FAST_BASE_URL`, `LLM_FAST_MODEL` | `http://127.0.0.1:8402/v1`, `lfm3-1.7b` | follow-up rewriting (JSON-schema constrained) |
+| `EMBED_BASE_URL`, `EMBED_MODEL`, `EMBED_DIMENSIONS` | `http://127.0.0.1:8403/v1`, `embeddinggemma-2`, `768` | measured: 768 |
+| `EMBED_QUERY_PREFIX`, `EMBED_DOC_PREFIX` | defaults: `task: search result \| query: ` / `title: {title} \| text: ` ({title} = document name) | set to empty to turn off |
+| `RERANK_BASE_URL`, `RERANK_MODEL` | `http://127.0.0.1:8404/v1`, `qwen3-reranker-0.6b` | optional; unset = no rerank |
+| `RAG_ABSTAIN_SCORE` | `0.01` (measured, see eval) | best rerank score below this → "لم أجد هذا…" |
+| `GPU_SLOTS` | `4` (= llama-server `-np`) | work-queue parallelism for chat turns |
+| `CHAT_BURST`, `CHAT_RATE_PER_MIN` | `6`, `10` | per-user token bucket |
+| `LLM_THINKING=1`, `VISION_BASE_URL/MODEL`, `OCR_MAX_PAGES` | off, main model, 50 | |
+
+The status dot in the chat screen calls `ai:status` (each server's `/models`). Without
+`EMBED_BASE_URL` uploads still work; their index state shows "فشل: الفهرسة غير مفعّلة".
+
+**Embedding model pin.** The first ingest stores the embedding model, size and prefixes in
+`aiSettings`; ingest and search refuse to run if the environment differs (a different model means a
+full re-index). To change model on purpose: set the new env (and `EMBED_DIMENSIONS`, then restart),
+run `ai:repinEmbedding` then `ingest:reindexAll` with the admin key.
+
+### Pipeline (`onebase/ingest.ts`, `onebase/lib/*`)
+
+`files:create|uploadVersion|copy` → `scheduleIngest` → a `workflow` run: extract (pdftotext per page
+with repeated header/footer removal; pages without text → `pdftoppm` → vision model, file marked
+OCR; `.docx` via `unzip` with heading styles, tables and Word's rendered page breaks; `.xlsx/.csv`
+described — sheets, columns, row count — not chunked; `.doc/.xls/.odt` converted by LibreOffice) →
+normalize (diacritics, tatweel, digits) → structural chunks (`الباب › الفصل › المادة`, long articles
+split on sentences with overlap, tables kept whole) each starting with
+`[document | section | ص n]` → `chunks` table (with a folded, prefix-stripped shadow for Arabic
+keyword search) + the `rag` component (namespace = space id, vectors) → wait for embeddings → ready.
+Server needs `poppler-utils`, `unzip`, and `libreoffice` for legacy formats.
+`files:remove` deletes from the index in the same mutation; `files:move` takes the file out of the
+old namespace at once and re-embeds it into the new one; a new version `replace`s (old chunks
+serve until the new ones are ready). Space membership needs nothing: search reads
+`readableSpaceIds` on every question.
+
+### Answering (`onebase/chat.ts`, `onebase/search.ts`, `onebase/tools/`)
+
+`chat:send` (owner check, per-user rate limit) saves the question and queues `runTurn` on the
+`gpu` work-queue (`maxParallelism = GPU_SLOTS`; others see "في الانتظار — أمامك n"). `runTurn`:
+rewrite a follow-up with the fast model → **mandatory** `searchDocuments` (spaces =
+`readableSpaceIds ∩ thread scope`, recomputed per call; vector per namespace + keyword per space
+filter → RRF → rerank top 30 → top 6) → abstain if nothing passes `RAG_ABSTAIN_SCORE` (naming
+the nearest documents) → stream the answer (`createStream/addDelta`) with numbered sources and the
+tool registry (`search_documents`, `read_file`, …) running with the user's `ToolContext`; write
+tools (`requiresConfirmation`) are never run from the model → save the message +
+`messageMeta` (citations `{n, fileId, fileName, page, section, quote}`, tool runs, abstained,
+usage) → `ai.turn` audit row per space whose content was used. Threads are private: every
+`chat:*` function checks `threadMeta.userId` before a threadId reaches the agent component.
+
+### Tests and evaluation
+
+`tests/fake-ai.ts` is a deterministic OpenAI-compatible fake (hashed bag-of-words embeddings,
+keyword-overlap rerank, a chat model that echoes its sources with `[n]` and **obeys**
+`CALL_TOOL` instructions found in documents). `tests/rag.test.ts` (pipeline, versions/moves/
+deletes, abstention, rewrite, streaming, queue, rate limit, model pin) and
+`tests/rag-security.test.ts` (matrix for every new public function, 20-phrasing leak test ×4
+users, injection test, removal test).
+
+```bash
+bun scripts/build-golden.ts ../bench/data   # eval/golden.json: 12 docs, 120 + 15 unanswerable questions
+bun scripts/eval-rag.ts --turns 60          # needs bench/servers.sh running; writes eval/results-<date>.json
+```
+
+Results on 2026-11-18, synthetic corpus (bench/REPORT.md caveat: model-generated, near-duplicate rules
+across policies; re-run on real documents before closing Phase 2):
+
+| run | Recall@10 | @6 (context) | citation accuracy | gold cited | false abstain | correct abstain (15) | median / p90 turn |
+|---|---|---|---|---|---|---|---|
+| v1 `eval/results-2026-11-18.json` (doc prefix `title: none`, gate 0.05) | 95.8 | 90.0 | 82.0* | 78.3 | 15.0 | 86.7 | 13 s / 36 s |
+| v2 (doc prefix `title: {title}`, gate 0.01, strict "same case" rule) | 93.3 | 88.3 | 87.0 | 71.7 | 21.7 | 86.7 | 12 s / 37 s |
+| **v3 current** `eval/results-2026-11-18-v3.json` (softened rule) | **93.3** | 88.3 | **88.1** | 76.7 | 18.3 | **86.7** | 13 s / 49 s |
+
+\* v1 counted key matches by digits only; v2+ also match non-numeric keys. Most remaining "wrong"
+citations answer a question that names no policy with the equivalent rule from a neighbouring
+policy; most false abstentions are on dialect questions about one specific clause.
 
 ## Backup and restore
 

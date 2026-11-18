@@ -283,7 +283,9 @@ describe("✓ no path lets the model write text into an official document", () =
 
   test("no agent tool can create or edit templates or documents other than fill_template's ids", () => {
     const names = Object.keys(tools);
-    const touching = names.filter((n) => /template|document|certificate|issue/i.test(n));
+    // search_documents (Phase 2) only reads indexed space files; it never touches templates or issued documents.
+    const READ_ONLY = new Set(["search_documents"]);
+    const touching = names.filter((n) => /template|document|certificate|issue/i.test(n) && !READ_ONLY.has(n));
     expect(touching).toEqual(["fill_template"]);
   });
 

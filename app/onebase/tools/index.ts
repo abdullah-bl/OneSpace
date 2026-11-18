@@ -1,6 +1,8 @@
 // Registry of every agent tool. Admins pick from this list when defining an agent (Phase 6);
 // they never write tools. Add each new tool here.
 
+import { readFileTool } from "./read_file";
+import { searchDocumentsTool } from "./search_documents";
 import type { AppTool } from "./types";
 import { runAnalysisTool } from "./run_analysis";
 import { create_artifact } from "./create_artifact";
@@ -18,6 +20,9 @@ export const tools: Record<string, AppTool> = {
   fill_template,
   // Phase 5: sandbox analysis
   run_analysis: runAnalysisTool,
+  // Phase 2 (RAG)
+  [searchDocumentsTool.name]: searchDocumentsTool,
+  [readFileTool.name]: readFileTool,
 };
 
 export function getTool(name: string): AppTool | undefined {

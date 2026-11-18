@@ -7,6 +7,7 @@ import { SpaceInstructions } from "./SpaceInstructions";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
 import { DocumentsTab } from "./DocumentsView";
+import { askAboutFile } from "./ChatView";
 
 export function SpaceView({ spaceId, spaces }: { spaceId: string; spaces: SpaceInfo[] }) {
   const space = spaces.find((s) => s._id === spaceId)!;
@@ -66,6 +67,7 @@ async function uploadBytes(getUrl: () => Promise<string>, file: File): Promise<s
 
 function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }) {
   const files = useQuery(api.files.list, { spaceId: space._id as any });
+  const ingest = useQuery(api.ingest.statuses, { spaceId: space._id as any });
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
   const create = useMutation(api.files.create);
   const uploadVersion = useMutation(api.files.uploadVersion);
@@ -166,6 +168,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
               <FileRow
                 key={f._id}
                 f={f}
+                ingest={ingest?.find((x) => x.fileId === f._id)}
                 space={space}
                 showVersions={openVersions === f._id}
                 onToggleVersions={() => setOpenVersions(openVersions === f._id ? null : f._id)}
@@ -190,6 +193,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
 
 function FileRow(props: {
   f: { _id: string; name: string; size: number; version: number; updatedAt: number; uploadedByName: string | null; mime: string };
+  ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean };
   space: SpaceInfo;
   showVersions: boolean;
   onToggleVersions: () => void;
@@ -203,7 +207,10 @@ function FileRow(props: {
   return (
     <>
       <tr className="border-t border-slate-100">
-        <td className="td font-semibold">{f.name}</td>
+        <td className="td font-semibold">
+          {f.name}
+          <IngestBadge fileId={f._id} ingest={props.ingest} canWrite={space.canWrite} />
+        </td>
         <td className="td text-slate-500">{formatSize(f.size)}</td>
         <td className="td">
           <button className="text-teal-700 underline-offset-2 hover:underline" onClick={props.onToggleVersions}>
@@ -216,6 +223,9 @@ function FileRow(props: {
         </td>
         <td className="td">
           <div className="flex flex-wrap justify-end gap-1">
+            {props.ingest?.state === "ready" && (
+              <button className="btn-ghost" title="محادثة تبحث في هذا الملف فقط" onClick={() => askAboutFile(f._id, f.name)}>💬 اسأل عن هذا الملف</button>
+            )}
             <button className="btn-ghost" onClick={() => props.onDownload()}>تنزيل</button>
             {/^(image\/|application\/pdf|text\/plain)/.test(f.mime) && (
               <button className="btn-ghost" onClick={() => props.onDownload(undefined, true)}>فتح</button>
@@ -365,5 +375,27 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
         ))}
       </div>
     </div>
+  );
+}
+
+/** Ingest state for the AI index: قيد المعالجة · جاهز · فشل (with the reason and a retry), and an OCR mark. */
+function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean }; canWrite: boolean }) {
+  const retry = useMutation(api.ingest.retry);
+  if (!ingest) return null;
+  const color =
+    ingest.state === "ready" ? "bg-emerald-50 text-emerald-700" : ingest.state === "failed" ? "bg-red-50 text-red-700" : ingest.state === "skipped" ? "bg-slate-100 text-slate-500" : "bg-sky-50 text-sky-700";
+  return (
+    <span className="ms-2 inline-flex items-center gap-1 align-middle text-[11px] font-normal">
+      <span className={`rounded px-1.5 ${color}`} title={ingest.error ?? ingest.note ?? ""}>
+        {ingest.label}
+      </span>
+      {ingest.ocr && <span className="rounded bg-amber-50 px-1.5 text-amber-700" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
+      {ingest.state === "failed" && ingest.error && <span className="text-red-600">{ingest.error}</span>}
+      {ingest.state === "failed" && canWrite && (
+        <button className="text-teal-700 hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
+          إعادة المحاولة
+        </button>
+      )}
+    </span>
   );
 }

@@ -8,6 +8,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx } from "./_generated/server";
 import { assertCan, Denied, requireActive, type Actor } from "./access";
 import { writeAudit } from "./audit";
+import { moveIndex, scheduleIngest, unindexFile } from "./ingest";
 
 const TICKET_TTL_MS = 60_000;
 
@@ -91,6 +92,7 @@ export const create = mutation({
     });
     await ctx.db.insert("fileVersions", { fileId, version: 1, storageId, name: fileName, mime, size: meta.size, sha256: meta.sha256 ?? null, uploadedBy: me.userId, uploadedAt: now });
     await writeAudit(ctx, { userId: me.userId, action: "file.upload", resourceType: "file", resourceId: fileId, spaceId: space._id, detail: { fileName, size: meta.size } });
+    await scheduleIngest(ctx, fileId);
     return fileId;
   },
 });
@@ -110,6 +112,7 @@ export const uploadVersion = mutation({
     await ctx.db.insert("fileVersions", { fileId, version, storageId, name: fileName, mime, size: meta.size, sha256: meta.sha256 ?? null, uploadedBy: me.userId, uploadedAt: now });
     await ctx.db.patch(fileId, { storageId, name: fileName, mime, size: meta.size, sha256: meta.sha256 ?? null, version, uploadedBy: me.userId, updatedAt: now, ingest: "pending" });
     await writeAudit(ctx, { userId: me.userId, action: "file.version", resourceType: "file", resourceId: fileId, spaceId: file.spaceId, detail: { fileName, version } });
+    await scheduleIngest(ctx, fileId);
     return version;
   },
 });
@@ -152,6 +155,7 @@ export const remove = mutation({
     await assertCan(ctx, me.userId, file.spaceId, "write");
     const versions = await ctx.db.query("fileVersions").withIndex("by_file_version", (q) => q.eq("fileId", file._id)).collect();
     const storageIds = new Set<Id<"_storage">>([file.storageId, ...versions.map((v) => v.storageId)]);
+    await unindexFile(ctx, file);
     for (const row of versions) await ctx.db.delete(row._id);
     await ctx.db.delete(file._id);
     for (const s of storageIds) await releaseStorage(ctx, s);
@@ -176,6 +180,7 @@ export const move = mutation({
     const file = await loadFile(ctx, fileId);
     const { src, dst } = await checkTransfer(ctx, me, file, toSpaceId, "write");
     await ctx.db.patch(file._id, { spaceId: dst._id, updatedAt: Date.now() });
+    await moveIndex(ctx, file._id);
     const detail = { fileName: file.name, from: src._id, to: dst._id };
     await writeAudit(ctx, { userId: me.userId, action: "file.move_out", resourceType: "file", resourceId: file._id, spaceId: src._id, detail });
     await writeAudit(ctx, { userId: me.userId, action: "file.move_in", resourceType: "file", resourceId: file._id, spaceId: dst._id, detail });
@@ -207,6 +212,7 @@ export const copy = mutation({
     const detail = { fileName: file.name, from: src._id, to: dst._id, copyId: newId };
     await writeAudit(ctx, { userId: me.userId, action: "file.copy_out", resourceType: "file", resourceId: file._id, spaceId: src._id, detail });
     await writeAudit(ctx, { userId: me.userId, action: "file.copy_in", resourceType: "file", resourceId: newId, spaceId: dst._id, detail });
+    await scheduleIngest(ctx, newId);
     return newId;
   },
 });
