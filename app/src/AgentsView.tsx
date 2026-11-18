@@ -4,8 +4,9 @@
 // earlier version can be published again.
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "onebase/react";
+import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
+import { Icon } from "./icons";
 
 type Config = {
   name: string;
@@ -100,6 +101,9 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
   const publish = useMutation(api.agents.publish);
   const setEnabled = useMutation(api.agents.setEnabled);
   const setDefault = useMutation(api.agents.setDefault);
+  const draftWithAI = useAction(api.agentDrafts.draftWithAI);
+  const [goal, setGoal] = useState("");
+  const [drafting, setDrafting] = useState(false);
   const [form, setForm] = useState<Config>(() => ((agent?.draft ?? agent?.live ?? EMPTY) as Config));
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
@@ -150,6 +154,43 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
           )}
         </div>
         {agent?.live && agent.draft && <p className="text-xs text-muted">الموظفون يستخدمون النسخة المنشورة حتى تنشر المسودة.</p>}
+
+        <div className="space-y-2 rounded-lg bg-primary-soft p-3">
+          <div className="flex items-center gap-2 text-sm font-medium text-primary">
+            <Icon name="bot" size={16} /> {form.instructions.trim() ? "حسّن الوكيل بالذكاء الاصطناعي" : "اكتب الوكيل بالذكاء الاصطناعي"}
+          </div>
+          <textarea
+            className="textarea w-full bg-surface"
+            rows={2}
+            dir="auto"
+            value={goal}
+            onChange={(e) => setGoal(e.target.value)}
+            placeholder={form.instructions.trim() ? "ما الذي تريد تحسينه؟ (اختياري) مثل: اجعل الإجابات جداول، واطلب رقم المعاملة دائماً" : "صف ما يفعله الوكيل، مثل: يراجع عقود المشتريات ويستخرج المدد والغرامات ويذكر المادة"}
+          />
+          <div className="flex items-center gap-2">
+            <button
+              className="btn-primary"
+              disabled={drafting || busy || (!goal.trim() && !form.instructions.trim())}
+              onClick={() =>
+                void run(async () => {
+                  setDrafting(true);
+                  try {
+                    const d = await draftWithAI({
+                      goal,
+                      ...(form.instructions.trim() ? { current: { name: form.name, description: form.description, instructions: form.instructions, allowedTools: form.allowedTools } } : {}),
+                    });
+                    setForm((f) => ({ ...f, ...d, modelRole: f.modelRole ?? "main" }));
+                  } finally {
+                    setDrafting(false);
+                  }
+                }, "عُبّئت الحقول بمسودة من الذكاء الاصطناعي. راجعها ثم احفظها وجرّبها قبل النشر.")
+              }
+            >
+              {drafting ? "يكتب المسودة…" : form.instructions.trim() ? "حسّن" : "صمّم الوكيل"}
+            </button>
+            <span className="text-xs text-muted">يعبّئ الحقول أدناه فقط؛ لا يُحفظ شيء ولا يُنشر حتى تراجعه.</span>
+          </div>
+        </div>
 
         <div className="grid gap-3 sm:grid-cols-2">
           <label className="space-y-1 text-sm">

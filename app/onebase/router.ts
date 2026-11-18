@@ -5,14 +5,33 @@
 // computed exactly as if the user had picked it (agents.resolveAgent / effectiveScope).
 
 import { v } from "onebase/values";
-import type { Id } from "./_generated/dataModel";
-import { internalQuery } from "./_generated/server";
+import type { Doc, Id } from "./_generated/dataModel";
+import { internalQuery, type QueryCtx } from "./_generated/server";
 import { effectiveScope, narrowByMentions, visibleTo } from "./agents";
 import { chat } from "./ai";
 import { tools as registry } from "./tools";
 
 export type Candidate = { agentId: string; name: string; description: string; tools: string[]; isDefault: boolean };
-export type RouteInput = { question: string; recent: string[]; mentioned: string[]; candidates: Candidate[] };
+export type RouteInput = { question: string; recent: string[]; mentioned: string[]; candidates: Candidate[]; previous?: string | null; skill?: string | null };
+/** How far back a follow-up without its own @mentions inherits the chat's files and agent. */
+const LOOKBACK_TURNS = 6;
+
+/**
+ * A turn's @mentions, or — for a follow-up that names nothing ("على نفس الملف", "90 يوم") — those of
+ * the chat's last question that named some, within LOOKBACK_TURNS. Like an attachment that stays in
+ * the chat until the user points at something else. Mentions only ever narrow a turn's scope, so
+ * inheriting them can't widen anything. Also returns the agent that answered before.
+ */
+export async function chatMentions(ctx: QueryCtx, turn: Doc<"turns">) {
+  const earlier = await ctx.db
+    .query("turns")
+    .withIndex("by_thread", (q) => q.eq("threadId", turn.threadId))
+    .order("desc")
+    .take(LOOKBACK_TURNS + 1);
+  const before = earlier.filter((t) => t._id !== turn._id && t.queuedAt <= turn.queuedAt);
+  const inherited = turn.mentions?.length ? undefined : before.find((t) => t.mentions?.length)?.mentions;
+  return { mentions: turn.mentions?.length ? turn.mentions : inherited, inherited: !!inherited, prevAgentId: before.find((t) => t.state === "done" && t.agentId)?.agentId ?? null };
+}
 
 const TABULAR = /\.(csv|tsv|xlsx|xls|json)$/i;
 function fileKind(name: string) {
@@ -53,15 +72,20 @@ export const candidates = internalQuery({
     const question = msgs[lastUser]!.text!.replace(/@\S+/g, " ").replace(/\s+/g, " ").trim().slice(0, 1500);
     const recent = msgs.slice(Math.max(0, lastUser - 2), lastUser).map((m) => `${m.role === "user" ? "المستخدم" : "المساعد"}: ${m.text!.replace(/\s+/g, " ").slice(0, 240)}`);
 
+    // A follow-up ("على نفس الملف", "90 يوم") names nothing itself: it inherits the files of the
+    // chat's last question that named some, and the agent that answered before. Measured on a real
+    // chat: without this, follow-ups about a personal PDF went to a skill that can't read it.
+    const { mentions, inherited, prevAgentId } = await chatMentions(ctx, turn);
+
     const mentioned: string[] = [];
-    const fileIds = (turn.mentions ?? []).filter((m) => m.kind === "file").map((m) => m.id);
+    const fileIds = (mentions ?? []).filter((m) => m.kind === "file").map((m) => m.id);
     if (meta.scope.kind === "file" && meta.scope.id) fileIds.push(meta.scope.id);
     for (const id of fileIds) {
       const fid = ctx.db.normalizeId("files", id);
       const f = fid ? await ctx.db.get(fid) : null;
-      if (f && f.status === "active") mentioned.push(`${f.name} (${fileKind(f.name)})`);
+      if (f && f.status === "active") mentioned.push(`${f.name} (${fileKind(f.name)}${inherited ? "، من سؤال سابق في المحادثة" : ""})`);
     }
-    const pointsAtData = fileIds.length > 0 || (turn.mentions ?? []).some((m) => m.kind === "space");
+    const pointsAtData = fileIds.length > 0 || (mentions ?? []).some((m) => m.kind === "space");
 
     const out: Candidate[] = [];
     for (const a of await ctx.db.query("agents").collect()) {
@@ -69,7 +93,7 @@ export const candidates = internalQuery({
       if (pointsAtData) {
         // The question names files/spaces: only skills that can read them, inside their scope.
         if (!a.live.allowedTools.some((t) => FILE_TOOLS.includes(t))) continue;
-        const scope = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId as Id<"users">, a.live.dataScope, meta.scope), turn.mentions);
+        const scope = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId as Id<"users">, a.live.dataScope, meta.scope), mentions);
         if (!scope.spaceIds.length) continue;
       }
       out.push({
@@ -81,7 +105,10 @@ export const candidates = internalQuery({
       });
     }
     out.sort((x, y) => Number(y.isDefault) - Number(x.isDefault) || x.name.localeCompare(y.name, "ar"));
-    return { state: turn.state, route: { question, recent, mentioned, candidates: out } };
+    const previous = out.find((c) => c.agentId === prevAgentId)?.name ?? null;
+    const sk = turn.skillId ? await ctx.db.get(turn.skillId) : null;
+    const skill = sk && sk.ownerId === turn.userId ? `${sk.title}${sk.description ? `: ${sk.description}` : ""}` : null;
+    return { state: turn.state, route: { question, recent, mentioned, candidates: out, previous, skill } };
   },
 });
 
@@ -92,12 +119,15 @@ export function routerPrompt(r: RouteInput) {
     "- اختر المهارة التي تملك الأدوات اللازمة.\n" +
     "- إن كان بين الملفات المشار إليها «جدول بيانات» والطلب تلخيصه أو حسابه أو رسمه أو تحليله، فاختر المهارة التي تملك «يشغّل التحليل في بيئة معزولة»؛ لا تُقرأ الجداول كنص.\n" +
     "- إنشاء ملف Word/PDF/PowerPoint يحتاج «يُنشئ ملفاً»؛ السجلات والشهادات والقوالب تحتاج «يستعلم في السجلات» أو «يجهّز مسودة المستند»؛ الأنظمة واللوائح المنشورة للجميع للمهارة التي تجيب عنها.\n" +
-    "- إن كان الطلب عاماً (كتابة، ترجمة، سؤال عام، متابعة عادية) فاختر الافتراضية.\n" +
+    "- إن كان الطلب متابعة للسؤال السابق (مثل «على نفس الملف»، «وماذا عن…»، رقم أو كلمات قليلة تكمل ما قبلها) فاختر المهارة التي أجابت عن السؤال السابق.\n" +
+    "- إن كان الطلب عاماً جديداً (كتابة، ترجمة، سؤال عام) فاختر الافتراضية.\n" +
     "- confidence بين 0 و1: مدى تأكدك.\n\nالمهارات:\n" +
     list;
   const user = [
     r.recent.length ? `آخر المحادثة:\n${r.recent.join("\n")}` : "",
     r.mentioned.length ? `الملفات المشار إليها: ${r.mentioned.join("، ")}` : "",
+    r.previous ? `المهارة التي أجابت عن السؤال السابق: ${r.previous}` : "",
+    r.skill ? `طريقة العمل التي اختارها المستخدم لهذا الطلب: ${r.skill}` : "",
     `الطلب: ${r.question}`,
   ]
     .filter(Boolean)

@@ -259,7 +259,7 @@ describe("acceptance: an agent without the sandbox tool can't run code, whatever
     const nudged = chatRequestsWith(ai, "CUTCALL-3").filter((req) => JSON.stringify(req.body.messages).includes("انقطع استدعاء الأداة"));
     expect(nudged.length).toBeGreaterThan(0);
     // Every agent step asks for the larger answer budget, not the 1500-token default.
-    for (const req of chatRequestsWith(ai, "CUTCALL-3")) expect(req.body.max_tokens).toBe(6000);
+    for (const req of chatRequestsWith(ai, "CUTCALL-3")) expect(req.body.max_tokens).toBe(8192);
   }, 30_000);
 
   test("an admin can't give an agent a tool that isn't in the code registry", async () => {

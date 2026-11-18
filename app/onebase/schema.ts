@@ -368,7 +368,8 @@ export default defineSchema({
     // What the model needs to know about this message but the user shouldn't read (ids, details):
     // appended to the message in the model's history only (chat.turnContext).
     modelNote: v.optional(v.string()),
-    routed: v.optional(v.boolean()), // answered by a skill the router chose
+    routed: v.optional(v.boolean()), // answered by an agent the router chose
+    skillName: v.optional(v.string()), // the asker's "/name" skill applied to this answer
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))),
   })
     .index("by_message", ["messageId"])
@@ -376,6 +377,21 @@ export default defineSchema({
     .index("by_feedback", ["feedback"]),
 
   // One row per question: queued (waiting for a GPU slot) → running → done | failed.
+  // The user's own skills (plans/07, "/" in the chat box): named instructions they write, or let
+  // the AI draft from a finished chat, and apply to a question with /name. Private to their owner.
+  skills: defineTable({
+    ownerId: v.id("users"),
+    name: v.string(), // the /name: letters, digits, - and _ (unique per owner)
+    title: v.string(),
+    description: v.string(), // when to use it
+    instructions: v.string(),
+    source: v.union(v.literal("manual"), v.literal("chat")),
+    fromThreadId: v.optional(v.string()),
+    uses: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_owner", ["ownerId", "name"]),
+
   turns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),
@@ -391,6 +407,8 @@ export default defineSchema({
     scheduleId: v.optional(v.string()), // a scheduled run (schedules.ts)
     afterProposal: v.optional(v.id("proposals")), // answers the request from a confirmed run's output
     routed: v.optional(v.boolean()), // the agent was chosen by the router for this question (plans/07 §C)
+    stopRequested: v.optional(v.boolean()), // «إيقاف»: the running turn ends with what it has written so far
+    skillId: v.optional(v.id("skills")), // "/name": the asker's own skill applied to this question
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),

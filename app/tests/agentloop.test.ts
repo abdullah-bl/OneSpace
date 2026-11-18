@@ -49,7 +49,7 @@ describe("router: one assistant, the skill is chosen per question", () => {
     await ask(s, tok("mem"), t, "SKILL=التحليل حلّل بياناتي ROUTE-1");
     const a = await lastAnswer(tok("mem"), t);
     expect(a.skill).toEqual({ agentId: analysisAgent, name: "التحليل", routed: true });
-    expect(a.steps[0].label).toBe("يختار المهارة…");
+    expect(a.steps[0].label).toBe("يختار الوكيل…");
     expect(a.steps[0].detail).toBe("→ التحليل");
     // The analysis skill's tools are what the main model was offered for this question.
     const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("ROUTE-1")).at(-1);

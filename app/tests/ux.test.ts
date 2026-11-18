@@ -17,7 +17,7 @@ const ACTIVE = (a: ActorKey) => !["pend", "dis", "anon"].includes(a);
 
 beforeAll(async () => {
   ai = startFakeAI();
-  s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: "600000" })).start();
+  s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: "600000", CHAT_HISTORY_KEEP: "8", CHAT_HISTORY_MAX: "12" /* a small window, so 10 turns exercise the summary */ })).start();
   f = await buildFixture(s);
   for (const sp of SPACES) await waitIngest(s, sp === "P_mem" ? tok("mem")! : tok("mgr")!, f.spaces[sp], f.files[sp]);
 }, 90_000);

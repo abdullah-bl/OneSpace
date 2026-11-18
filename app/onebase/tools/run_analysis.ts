@@ -134,8 +134,8 @@ export function summarize(r: AnalysisOutcome): string {
   if (r.error) lines.push(`خطأ: ${r.error}`);
   if (r.exitCode !== null && r.exitCode !== 0) lines.push(`رمز الخروج: ${r.exitCode}`);
   lines.push(`المدخلات: ${r.inputs.map((i) => i.name).join("، ") || "لا شيء"}`);
-  if (r.stdout.trim()) lines.push("المخرج النصي:", clip(r.stdout.trim(), 4000));
-  if (!r.ok && r.stderr.trim()) lines.push("الأخطاء:", clip(r.stderr.trim().split("\n").slice(-30).join("\n"), 3000));
+  if (r.stdout.trim()) lines.push("المخرج النصي:", clip(r.stdout.trim(), 20_000));
+  if (!r.ok && r.stderr.trim()) lines.push("الأخطاء:", clip(r.stderr.trim().split("\n").slice(-30).join("\n"), 6000));
   if (r.outputs.length) lines.push(`ملفات المخرجات (حُفظت في ${r.targetName}):`, ...r.outputs.map((o) => `- ${o.name} (fileId: ${o.fileId}, ${o.size} بايت)`));
   if (r.artifactIds.length) lines.push(`مخرجات معروضة في اللوحة الجانبية: ${r.artifactIds.map((id) => `artifactId=${id}`).join("، ")}`);
   return lines.join("\n");

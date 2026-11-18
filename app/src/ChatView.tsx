@@ -10,6 +10,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
 import { Menu } from "./ui";
+import { openSkillDraft } from "./SkillsView";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { renderAnswer } from "./markdown";
@@ -19,12 +20,13 @@ type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spa
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string };
 type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; steps: Step[]; ms: number | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; steps: Step[]; ms: number | null };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
-let pendingDraft: { spaceId?: string; mentions: Mention[]; text?: string } | null = null;
-export function startChatWith(draft: { spaceId?: string; mentions?: Mention[]; text?: string }) {
-  pendingDraft = { spaceId: draft.spaceId, mentions: draft.mentions ?? [], text: draft.text };
+type SkillRef = { id: string; name: string };
+let pendingDraft: { spaceId?: string; mentions: Mention[]; text?: string; skill?: SkillRef } | null = null;
+export function startChatWith(draft: { spaceId?: string; mentions?: Mention[]; text?: string; skill?: SkillRef }) {
+  pendingDraft = { spaceId: draft.spaceId, mentions: draft.mentions ?? [], text: draft.text, skill: draft.skill };
   window.location.hash = draft.spaceId ? `#/space/${draft.spaceId}/new` : "#/new";
 }
 /** Opens a new chat in the file's space with the file already mentioned. */
@@ -32,18 +34,73 @@ export function askAboutFile(fileId: string, name: string, spaceId?: string) {
   startChatWith({ spaceId, mentions: [{ kind: "file", id: fileId, name, spaceId }] });
 }
 
-const STARTERS = [
+type Starter = { title: string; text?: string; mention?: Mention; skill?: SkillRef; threadId?: string; personal?: boolean };
+
+/** A larger pool than fits on screen: a different few on every visit. */
+const GENERAL: Starter[] = [
   { title: "اكتب خطاباً رسمياً", text: "اكتب خطاباً رسمياً موجهاً إلى " },
   { title: "لخّص ملفاً من ملفاتي", text: "لخّص لي الملف @" },
   { title: "ترجم نصاً", text: "ترجم النص التالي إلى الإنجليزية:\n" },
   { title: "اسأل عن الأنظمة واللوائح", text: "ما الذي تنص عليه سياسة " },
+  { title: "صُغ رداً على بريد", text: "اكتب رداً مهنياً مختصراً على هذا البريد:\n" },
+  { title: "اكتب محضر اجتماع", text: "حوّل هذه الملاحظات إلى محضر اجتماع بالقرارات والمهام والمسؤولين:\n" },
+  { title: "حسّن صياغة نص", text: "حسّن صياغة النص التالي بلغة رسمية واضحة:\n" },
+  { title: "اكتب مذكرة داخلية", text: "اكتب مذكرة داخلية بخصوص " },
+  { title: "حلّل جدول بيانات", text: "حلّل بيانات @" },
+  { title: "جهّز عرضاً تقديمياً", text: "جهّز عرضاً تقديمياً من خمس شرائح عن " },
+  { title: "اكتب تقريراً أسبوعياً", text: "اكتب تقريراً أسبوعياً مختصراً عن الإنجازات والعوائق والخطوات القادمة:\n" },
+  { title: "قارن بين ملفين", text: "قارن بين @" },
 ];
+const BY_TIME: Record<"morning" | "evening", Starter[]> = {
+  morning: [{ title: "رتّب أولويات يومي", text: "ساعدني أرتب أولويات اليوم، هذه مهامي:\n" }],
+  evening: [{ title: "لخّص ما أنجزته اليوم", text: "اكتب ملخصاً لما أنجزته اليوم من هذه النقاط:\n" }],
+};
+
+/** «صباح الخير» until noon, «مساء الخير» after, with the user's first name. */
+export function greeting(name: string | null | undefined, now = new Date()) {
+  const h = now.getHours();
+  const part = h >= 4 && h < 12 ? "صباح الخير" : "مساء الخير";
+  const first = (name ?? "").trim().split(/\s+/)[0];
+  return first && !first.includes("@") ? `${part}، ${first}` : part;
+}
+
+/** Seeded shuffle: stable while the page is open, different on the next visit. */
+function shuffle<T>(xs: T[], seed: number): T[] {
+  const a = [...xs];
+  let x = Math.floor(seed * 2 ** 31) || 1;
+  for (let i = a.length - 1; i > 0; i--) {
+    x = (x * 48271) % 2147483647;
+    const j = x % (i + 1);
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+function useStarters(spaceId: string | undefined): Starter[] {
+  const [seed] = useState(() => Math.random());
+  const mine = useQuery(api.home.suggestions, spaceId ? { spaceId } : {});
+  return useMemo(() => {
+    const personal: Starter[] = (mine ?? []).map((s) =>
+      s.kind === "file"
+        ? { title: s.title, text: s.text, mention: { kind: "file", id: s.file.id, name: s.file.name, spaceId: s.file.spaceId }, personal: true }
+        : s.kind === "skill"
+          ? { title: s.title, text: s.text, skill: s.skill, personal: true }
+          : { title: s.title, threadId: s.threadId, personal: true },
+    );
+    const h = new Date().getHours();
+    const general = shuffle([...GENERAL, ...BY_TIME[h >= 4 && h < 12 ? "morning" : "evening"]], seed);
+    // Up to two of the user's own (in a varying order), the rest general.
+    const own = shuffle(personal, seed).slice(0, 2);
+    return [...own, ...general].slice(0, 4);
+  }, [mine, seed]);
+}
 
 export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string | null; spaceId?: string | null; spaces: SpaceInfo[]; go: (path: string) => void }) {
   const data = useQuery(api.chat.messages, threadId ? { threadId } : "skip");
   const createThread = useMutation(api.chat.createThread);
   const send = useMutation(api.chat.send);
   const retry = useMutation(api.chat.retry);
+  const stopTurn = useMutation(api.chat.stop);
   const setAgent = useMutation(api.chat.setAgent);
   const [draft] = useState(() => {
     const d = !threadId ? pendingDraft : null;
@@ -69,12 +126,12 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
 
-  const submit = async (text: string, mentions: Mention[]) => {
+  const submit = async (text: string, mentions: Mention[], skill?: SkillRef | null) => {
     setError("");
     try {
       let id = threadId;
       if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace } : {}) })) as string;
-      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })) });
+      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })), ...(skill ? { skillId: skill.id } : {}) });
       stick.current = true;
       if (!threadId) go(`/chat/${id}`);
       return true;
@@ -95,7 +152,8 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   };
 
   const empty = !threadId;
-  const title = empty ? (space ? `محادثة جديدة في ${space.kind === "personal" ? "مساحتي" : space.name}` : "بماذا أساعدك اليوم؟") : (data?.title ?? "…");
+  const me = useQuery(api.account.me, empty ? {} : "skip");
+  const title = empty ? (space ? `محادثة جديدة في ${space.kind === "personal" ? "مساحتي" : space.name}` : me === undefined ? "\u00a0" : greeting(me?.name)) : (data?.title ?? "…");
 
   return (
     <div className="flex h-full min-h-0">
@@ -119,7 +177,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
             <span className="ms-auto" />
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
           </header>
         )}
         <div
@@ -133,11 +191,11 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
           <div className={`mx-auto w-full max-w-[760px] px-4 ${empty ? "flex min-h-full flex-col justify-center py-10" : "space-y-6 pb-6 pt-2"}`}>
             {empty && (
               <div className="mb-6">
-                <h1 className="overflow-hidden pb-1 text-[clamp(28px,2.4vw+18px,44px)] leading-tight font-bold tracking-tight"><span className="block animate-mask">{title}</span></h1>
+                <h1 className="overflow-hidden pb-1 text-[clamp(28px,2.4vw+18px,44px)] leading-tight font-bold tracking-tight"><span key={title} className="block animate-mask">{title}</span></h1>
                 <p className="mt-2 text-muted">
                   {space
                     ? "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
-                    : "اسأل عن أي شيء، أو اطلب كتابة أو ترجمة أو تلخيصاً. حين يكون سؤالك عن ملفاتك يرجع إليها ويذكر المصدر. اكتب @ لتحدد ملفاً أو مساحة."}
+                    : "بماذا أساعدك اليوم؟ اسأل عن أي شيء، أو اطلب كتابة أو ترجمة أو تلخيصاً. اكتب @ لتحدد ملفاً أو مساحة، و/ لمهاراتك."}
                 </p>
               </div>
             )}
@@ -146,14 +204,14 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
-            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} working={false} onSubmit={submit} initial={draft} starters />}
+            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} working={false} onSubmit={submit} initial={draft} starters go={go} />}
           </div>
         </div>
         {!empty && (
           <div className="shrink-0 px-4 pb-4">
             <div className="mx-auto w-full max-w-[760px]">
               {error && <p className="mb-2 text-sm text-negative">{error}</p>}
-              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} working={working} onSubmit={submit} />
+              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
             </div>
           </div>
         )}
@@ -164,13 +222,30 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   );
 }
 
-function ThreadMenu({ threadId, title, onDeleted }: { threadId: string; title: string; onDeleted: () => void }) {
+function ThreadMenu({ threadId, title, onDeleted, go }: { threadId: string; title: string; onDeleted: () => void; go: (path: string) => void }) {
   const rename = useMutation(api.chat.rename);
   const del = useMutation(api.chat.deleteThread);
+  const draftSkill = useAction(api.skills.draftFromThread);
+  const [drafting, setDrafting] = useState(false);
   return (
     <Menu
-      label="خيارات المحادثة"
+      label={drafting ? "يكتب مسودة المهارة…" : "خيارات المحادثة"}
+      icon={drafting ? "clock" : "dots"}
       items={[
+        {
+          label: "اصنع مهارة من المحادثة",
+          icon: "bot",
+          hint: "يكتبها الذكاء الاصطناعي",
+          disabled: drafting,
+          onSelect: () => {
+            setDrafting(true);
+            draftSkill({ threadId })
+              .then((d) => openSkillDraft({ ...d, fromThreadId: threadId }, go))
+              .catch((e) => alert(errorText(e)))
+              .finally(() => setDrafting(false));
+          },
+        },
+        "divider",
         {
           label: "إعادة التسمية",
           icon: "pencil",
@@ -185,6 +260,24 @@ function ThreadMenu({ threadId, title, onDeleted }: { threadId: string; title: s
   );
 }
 
+function Starters({ spaceId, onPick }: { spaceId?: string; onPick: (s: Starter) => void }) {
+  const starters = useStarters(spaceId);
+  return (
+    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      {starters.map((s) => (
+        <button
+          key={s.title}
+          className="flex items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-start text-sm hover:border-control hover:bg-sunken animate-fade"
+          onClick={() => onPick(s)}
+        >
+          {s.personal && <Icon name={s.threadId ? "chat" : s.skill ? "bot" : "file"} size={15} className="shrink-0 text-faint" />}
+          <span className="min-w-0 truncate">{s.title}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------- composer
 
 function Composer(props: {
@@ -193,9 +286,11 @@ function Composer(props: {
   agentId: string | null;
   onAgent?: (id: string | null) => void;
   working: boolean;
-  onSubmit: (text: string, mentions: Mention[]) => Promise<boolean>;
-  initial?: { mentions: Mention[]; text?: string } | null;
+  onStop?: () => void;
+  onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null) => Promise<boolean>;
+  initial?: { mentions: Mention[]; text?: string; skill?: SkillRef } | null;
   starters?: boolean;
+  go?: (path: string) => void;
 }) {
   const [text, setText] = useState(props.initial?.text ?? (props.initial?.mentions.length ? props.initial.mentions.map((m) => `@${m.name} `).join("") : ""));
   const [mentions, setMentions] = useState<Mention[]>(props.initial?.mentions ?? []);
@@ -204,6 +299,15 @@ function Composer(props: {
   const [uploadError, setUploadError] = useState("");
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  // "/": my skills. One per message; its "/name" stays in the text.
+  const [slash, setSlash] = useState<string | null>(null);
+  const [skill, setSkill] = useState<SkillRef | null>(props.initial?.skill ?? null);
+  const mySkills = useQuery(api.skills.list, slash !== null || skill ? {} : "skip");
+  const skillItems = useMemo(() => {
+    if (slash === null || !mySkills) return [];
+    const q = slash.toLowerCase();
+    return mySkills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.title.toLowerCase().includes(q)).slice(0, 8);
+  }, [slash, mySkills]);
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -236,9 +340,26 @@ function Composer(props: {
   }, [text]);
 
   const updateQuery = (value: string, caret: number) => {
-    const m = /(^|\s)@([^\s@]{0,40})$/.exec(value.slice(0, caret));
+    const before = value.slice(0, caret);
+    const m = /(^|\s)@([^\s@]{0,40})$/.exec(before);
     setQuery(m ? m[2]! : null);
+    const sl = /(^|\s)\/([^\s/]{0,40})$/.exec(before);
+    setSlash(!m && sl ? sl[2]! : null);
     setActive(0);
+  };
+
+  const pickSkill = (s: { _id: string; name: string }) => {
+    const el = ta.current!;
+    const caret = el.selectionStart ?? text.length;
+    const before = text.slice(0, caret).replace(/\/([^\s/]{0,40})$/, `/${s.name} `);
+    const next = before + text.slice(caret);
+    setText(next);
+    setSlash(null);
+    setSkill({ id: s._id, name: s.name });
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(before.length, before.length);
+    });
   };
 
   const pick = (item: Mention) => {
@@ -262,12 +383,15 @@ function Composer(props: {
     setBusy(true);
     // A mention whose "@name" was deleted from the text no longer counts.
     const kept = mentions.filter((m) => m.kind !== "agent" && q.includes(`@${m.name}`));
-    const ok = await props.onSubmit(q, kept);
+    // Same for the skill: deleting its "/name" from the text drops it.
+    const used = skill && q.includes(`/${skill.name}`) ? skill : null;
+    const ok = await props.onSubmit(q, kept, used);
     setBusy(false);
     if (ok) {
       setText("");
       setMentions([]);
       setUploads([]);
+      setSkill(null);
     }
   };
 
@@ -303,8 +427,50 @@ function Composer(props: {
         {query !== null && items.length > 0 && (
           <MentionList items={items as (Mention & { detail: string })[]} active={active} onPick={pick} />
         )}
-        {visibleMentions.length > 0 && (
+        {slash !== null && mySkills && (
+          <div className="absolute inset-x-2 bottom-full z-20 mb-2 max-h-72 animate-pop overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="listbox" aria-label="مهاراتي">
+            {skillItems.map((s, i) => (
+              <button
+                key={s._id}
+                role="option"
+                aria-selected={i === active}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-start text-sm ${i === active ? "bg-active" : "hover:bg-active"}`}
+                onMouseDown={(e) => (e.preventDefault(), pickSkill(s))}
+              >
+                <span className="font-medium text-primary" dir="ltr">
+                  /{s.name}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-muted">{s.title}</span>
+                <span className="max-w-[40%] shrink-0 truncate text-xs text-faint">{s.description}</span>
+              </button>
+            ))}
+            {skillItems.length === 0 && (
+              <a className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted hover:bg-active" href="#/skills">
+                <Icon name="plus" size={14} /> {mySkills.length ? "لا مهارة بهذا الاسم. أنشئ واحدة" : "لا مهارات بعد. أنشئ أول مهارة"}
+              </a>
+            )}
+          </div>
+        )}
+        {(visibleMentions.length > 0 || skill) && (
           <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+            {skill && (
+              <span className="flex h-7 items-center gap-1.5 rounded-md bg-primary-soft ps-2 pe-1 text-xs text-primary">
+                <span className="font-medium" dir="ltr">
+                  /{skill.name}
+                </span>
+                <span>مهارتك</span>
+                <button
+                  className="grid h-5 w-5 place-items-center rounded hover:bg-surface"
+                  aria-label={`إزالة /${skill.name}`}
+                  onClick={() => {
+                    setText((t) => t.replace(`/${skill.name} `, "").replace(`/${skill.name}`, ""));
+                    setSkill(null);
+                  }}
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              </span>
+            )}
             {visibleMentions.map((m) => {
               const up = uploads.find((u) => u.fileId === m.id);
               const st = up ? ingest?.find((x) => x.fileId === m.id) : null;
@@ -334,7 +500,7 @@ function Composer(props: {
           rows={props.starters ? 3 : 1}
           dir="auto"
           className="block max-h-60 w-full resize-none bg-transparent px-4 pt-3 focus-visible:outline-none text-[15px] leading-7 outline-none placeholder:text-faint"
-          placeholder={props.space ? "اكتب رسالتك… (@ لملف من المساحة)" : "اكتب رسالتك… (@ لملف أو مساحة)"}
+          placeholder={props.space ? "اكتب رسالتك… (@ لملف من المساحة، / لمهارة)" : "اكتب رسالتك… (@ لملف أو مساحة، / لمهارة)"}
           aria-label="الرسالة"
           value={text}
           onChange={(e) => {
@@ -343,6 +509,12 @@ function Composer(props: {
           }}
           onClick={(e) => updateQuery(text, e.currentTarget.selectionStart)}
           onKeyDown={(e) => {
+            if (slash !== null && skillItems.length) {
+              if (e.key === "ArrowDown") return e.preventDefault(), setActive((a) => (a + 1) % skillItems.length);
+              if (e.key === "ArrowUp") return e.preventDefault(), setActive((a) => (a - 1 + skillItems.length) % skillItems.length);
+              if (e.key === "Enter" || e.key === "Tab") return e.preventDefault(), pickSkill(skillItems[active]!);
+              if (e.key === "Escape") return e.preventDefault(), setSlash(null);
+            }
             if (query !== null && items.length) {
               if (e.key === "ArrowDown") return e.preventDefault(), setActive((a) => (a + 1) % items.length);
               if (e.key === "ArrowUp") return e.preventDefault(), setActive((a) => (a - 1 + items.length) % items.length);
@@ -386,33 +558,31 @@ function Composer(props: {
           </button>
           {props.onAgent && <AgentPicker value={props.agentId} onChange={props.onAgent} />}
           <span className="ms-auto text-xs text-muted">{pending.length ? "ينتظر تجهيز الملف…" : ""}</span>
-          <button className="btn-primary w-9 rounded-lg px-0" aria-label="إرسال" disabled={busy || props.working || !text.trim() || pending.length > 0} onClick={() => void submit()}>
-            <Icon name="send" size={18} />
-          </button>
+          {props.working && props.onStop ? (
+            <button className="btn-secondary w-9 animate-pop rounded-lg px-0" aria-label="إيقاف" title="إيقاف الإجابة" onClick={props.onStop}>
+              <Icon name="stop" size={16} />
+            </button>
+          ) : (
+            <button className="btn-primary w-9 rounded-lg px-0" aria-label="إرسال" disabled={busy || props.working || !text.trim() || pending.length > 0} onClick={() => void submit()}>
+              <Icon name="send" size={18} />
+            </button>
+          )}
         </div>
       </div>
       {uploadError && <p className="mt-2 text-sm text-negative">{uploadError}</p>}
-      {props.starters && (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {STARTERS.map((s) => (
-            <button
-              key={s.title}
-              className="rounded-lg border border-line bg-surface px-4 py-3 text-start text-sm hover:border-control hover:bg-sunken"
-              onClick={() => {
-                setText(s.text);
-                requestAnimationFrame(() => {
-                  const el = ta.current!;
-                  el.focus();
-                  el.setSelectionRange(s.text.length, s.text.length);
-                  updateQuery(s.text, s.text.length);
-                });
-              }}
-            >
-              {s.title}
-            </button>
-          ))}
-        </div>
-      )}
+      {props.starters && <Starters spaceId={props.space?._id} onPick={(s) => {
+        if (s.threadId) return props.go?.(`/chat/${s.threadId}`);
+        const t = s.text ?? "";
+        setText(t);
+        if (s.mention) setMentions((ms) => (ms.some((m) => m.id === s.mention!.id) ? ms : [...ms, s.mention!]));
+        if (s.skill) setSkill(s.skill);
+        requestAnimationFrame(() => {
+          const el = ta.current!;
+          el.focus();
+          el.setSelectionRange(t.length, t.length);
+          if (!s.mention) updateQuery(t, t.length);
+        });
+      }} />}
     </div>
   );
 }
@@ -446,12 +616,12 @@ function MentionList({ items, active, onPick }: { items: (Mention & { detail: st
 function AgentPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   const agents = useQuery(api.agents.available);
   if (!agents?.length) return null;
-  // No pick = «تلقائي»: the router chooses the skill for each question (plans/07 §C). A pick pins it.
+  // No pick = «تلقائي»: the router chooses the agent for each question (plans/07 §C). A pick pins it.
   const current = agents.find((a) => a._id === value);
   return (
-    <label className="relative flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-active" title={current?.description ?? "يختار المساعد المهارة المناسبة لكل سؤال"}>
+    <label className="relative flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-active" title={current?.description ?? "يختار المساعد الوكيل المناسب لنوع كل طلب"}>
       <Icon name="bot" size={16} />
-      <select className="cursor-pointer appearance-none bg-transparent pe-4 text-xs text-ink outline-none" aria-label="المهارة" value={current ? current._id : ""} onChange={(e) => onChange(e.target.value || null)}>
+      <select className="cursor-pointer appearance-none bg-transparent pe-4 text-xs text-ink outline-none" aria-label="الوكيل" value={current ? current._id : ""} onChange={(e) => onChange(e.target.value || null)}>
         <option value="">تلقائي</option>
         {agents.map((a) => (
           <option key={a._id} value={a._id}>
@@ -490,8 +660,8 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
   const stream = useQuery(api.chat.stream, turn.streamId && turn.state === "running" ? { threadId, streamId: turn.streamId } : "skip");
   if (turn.state === "failed")
     return (
-      <div className="flex items-center gap-3 rounded-md bg-negative-soft px-3 py-2 text-sm text-negative">
-        <span className="flex-1">تعذّر إكمال الإجابة: {turn.error}</span>
+      <div className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm ${turn.error === "أوقفتَ الإجابة قبل أن تبدأ" ? "bg-sunken text-muted" : "bg-negative-soft text-negative"}`}>
+        <span className="flex-1">{turn.error === "أوقفتَ الإجابة قبل أن تبدأ" ? turn.error : `تعذّر إكمال الإجابة: ${turn.error}`}</span>
         <button className="btn-ghost h-8 text-negative" onClick={onRetry}>
           <Icon name="retry" size={14} /> أعد المحاولة
         </button>
@@ -600,6 +770,11 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
               {m.ms ? <span className="num text-faint">· {secs(m.ms)}</span> : null}
             </button>
           )}
+          {m.userSkill && (
+            <span className="badge-primary" dir="ltr" title="مهارتك المطبّقة على هذا الطلب">
+              /{m.userSkill}
+            </span>
+          )}
           {m.skill && <SkillChip skill={m.skill} onReask={isLast ? onReask : undefined} />}
         </span>
       </div>
@@ -609,24 +784,24 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
   );
 }
 
-/** Which skill answered; on the last answer, a menu to answer again with another one (pins it). */
+/** Which agent answered; on the last answer, a menu to answer again with another one (pins it). */
 function SkillChip({ skill, onReask }: { skill: { agentId: string; name: string; routed: boolean }; onReask?: (agentId: string) => void }) {
   const agents = useQuery(api.agents.available, onReask ? {} : "skip");
   const label = `${skill.name}${skill.routed ? " · تلقائي" : ""}`;
   if (!onReask || !agents || agents.length < 2)
     return (
-      <span className="badge" title={skill.routed ? "اختار المساعد هذه المهارة لهذا السؤال" : "المهارة المثبّتة لهذه المحادثة"}>
+      <span className="badge" title={skill.routed ? "اختار المساعد هذا الوكيل لهذا الطلب" : "الوكيل المثبّت لهذه المحادثة"}>
         <Icon name="bot" size={12} /> {label}
       </span>
     );
   return (
     <Menu
-      label="المهارة"
+      label="الوكيل"
       icon="bot"
       text={label}
       items={agents
         .filter((a) => a._id !== skill.agentId)
-        .map((a) => ({ label: `أعد الإجابة بمهارة «${a.name}»`, hint: a.isDefault ? "الافتراضية" : undefined, onSelect: () => onReask(a._id) }))}
+        .map((a) => ({ label: `أعد الإجابة بوكيل «${a.name}»`, hint: a.isDefault ? "الافتراضية" : undefined, onSelect: () => onReask(a._id) }))}
     />
   );
 }

@@ -8,7 +8,8 @@ import { Component, useEffect, useState, type ReactNode } from "react";
 import { useAuthActions, useMutation, useOnebaseAuth, useQuery } from "onebase/react";
 import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
-import { ChatScreen, ChatsPage, relTime } from "./ChatView";
+import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
+import { SkillsView } from "./SkillsView";
 import { SpaceView, SpacesPage } from "./SpaceView";
 import { TasksPage } from "./TasksView";
 import { MentionsPage } from "./MentionsView";
@@ -171,6 +172,15 @@ function Shell({ me }: { me: Me }) {
   else if (head === "schedules") screen = <TasksPage tab="scheduled" taskId={null} go={go} spaces={spaces} />;
   else if (head === "mentions") screen = <MentionsPage go={go} />;
   else if (head === "me") screen = <Wide><MyRecordsView /></Wide>;
+  else if (head === "skills")
+    screen = (
+      <SkillsView
+        onTry={(s) => {
+          startChatWith({ text: `/${s.name} `, skill: s });
+          go("/new");
+        }}
+      />
+    );
   else if (head === "analysis") screen = <Wide><AnalysisView spaces={spaces} /></Wide>;
   else if (head === "ranking") screen = <Wide><RankingView spaces={spaces} /></Wide>;
   else if (head === "admin" && isAdmin) screen = <Wide><AdminView /></Wide>;
@@ -345,6 +355,7 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
     <div className="relative shrink-0 border-t border-line p-3">
       {open && (
         <div className="absolute inset-x-3 bottom-full z-20 mb-1 rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="menu">
+          {item("مهاراتي", "/skills")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
           {item("التحليل", "/analysis")}

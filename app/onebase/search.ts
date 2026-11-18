@@ -108,7 +108,7 @@ export async function searchDocuments(
 ): Promise<SearchResult> {
   const indexed = await assertIndexMatches(ctx);
   if (!indexed) return { hits: [], candidates: [], reranked: false, spaces: [] };
-  const limit = opts.limit ?? 6;
+  const limit = opts.limit ?? 8;
   const pool = opts.candidates ?? 30;
   const scope = await ctx.runQuery(internal.search.allowedScope, { userId: opts.userId, spaceIds: opts.spaceIds, fileIds: opts.fileIds });
   if (!scope.spaces.length || !opts.query.trim()) return { hits: [], candidates: [], reranked: false, spaces: scope.spaces };

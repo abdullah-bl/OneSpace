@@ -118,6 +118,12 @@ export function startFakeAI(dims = 64): FakeAI {
         let text: string;
         let toolCalls: { name: string; args: string }[] = [];
         if (messages.some((m) => Array.isArray(m.content) && m.content.some((p: any) => p.type === "image_url"))) text = OCR_TEXT;
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"allowedTools"'))
+          // AI-drafted agent (agentDrafts.ts): one unknown tool, to check it is dropped.
+          text = JSON.stringify({ name: "وكيل العقود", description: "يراجع العقود DRAFTAGENT-1", instructions: "أنت تراجع العقود وتذكر المادة.", allowedTools: ["read_file", "search_documents", "run_shell"], dataScope: "member", grounding: "documents", maxSteps: 3 });
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"instructions"'))
+          // AI-drafted skill (skills.draftFromThread): echoes a marker from the chat into the instructions.
+          text = JSON.stringify({ name: "خطاب رسمي", title: "خطاب رسمي", description: "حين أطلب خطاباً", instructions: `اكتب بصيغة رسمية. ${/SKILLMARK-\d+/.exec(JSON.stringify(messages))?.[0] ?? ""}` });
         else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
         else if (body.response_format && JSON.stringify(body.response_format).includes('"summary"')) text = JSON.stringify({ summary: `SUMMARY-OF ${[...JSON.stringify(messages).matchAll(/[A-Z]+Q-\d+/g)].map((x) => x[0]).filter((x, i, a) => a.indexOf(x) === i).join(" ")}` });
         else if (body.response_format && JSON.stringify(body.response_format).includes('"skill"')) {

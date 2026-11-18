@@ -22,6 +22,8 @@ export async function queueTurn(
     saveUser?: boolean;
     /** Scheduled runs aren't the user typing: no per-user rate limit. */
     skipLimit?: boolean;
+    /** "/name": the asker's own skill (checked by the caller). */
+    skillId?: Id<"skills">;
   },
 ): Promise<Id<"turns">> {
   if (!t.skipLimit) {
@@ -39,6 +41,7 @@ export async function queueTurn(
     mentions: t.mentions,
     scheduleId: t.scheduleId,
     afterProposal: t.afterProposal,
+    skillId: t.skillId,
   });
   await ctx.components.gpu.enqueueAction({ fn: internal.chat.runTurn, args: { turnId }, onComplete: internal.chat.turnDone, context: { turnId } });
   return turnId;

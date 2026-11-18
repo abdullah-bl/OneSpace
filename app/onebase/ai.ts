@@ -7,7 +7,7 @@
 //   EMBED_BASE_URL, EMBED_MODEL, EMBED_DIMENSIONS embeddings (dimensions fixed when rag is mounted)
 //   RERANK_BASE_URL, RERANK_MODEL                 reranker (optional: disabled when unset)
 //   EMBED_QUERY_PREFIX, EMBED_DOC_PREFIX          embeddinggemma task prefixes (defaults below)
-//   LLM_ANSWER_MAX_TOKENS=6000                    token budget of an agent step (tool-call code + answer)
+//   LLM_ANSWER_MAX_TOKENS=8192                    token budget of an agent step (tool-call code + answer)
 //   LLM_THINKING=1                                let Qwen think before answering (slower)
 //   VISION_BASE_URL, VISION_MODEL                 OCR model if not the main one
 //
@@ -43,7 +43,7 @@ export function aiConfig() {
     },
     rerank: { baseUrl: env("RERANK_BASE_URL"), model: env("RERANK_MODEL") ?? "default", apiKey: env("RERANK_API_KEY") ?? env("LLM_API_KEY") },
     thinking: env("LLM_THINKING") === "1",
-    answerMaxTokens: Math.max(500, Number(env("LLM_ANSWER_MAX_TOKENS") ?? 6000)),
+    answerMaxTokens: Math.max(500, Number(env("LLM_ANSWER_MAX_TOKENS") ?? 8192)),
     gpuSlots: Math.max(1, Number(env("GPU_SLOTS") ?? 4)),
   };
 }
@@ -52,8 +52,9 @@ function headers(apiKey?: string) {
   return { "Content-Type": "application/json", ...(apiKey ? { Authorization: `Bearer ${apiKey}` } : {}) };
 }
 
-async function post(url: string, body: unknown, apiKey?: string, timeoutMs = 600_000): Promise<Response> {
-  const res = await fetch(url, { method: "POST", headers: headers(apiKey), body: JSON.stringify(body), signal: AbortSignal.timeout(timeoutMs) });
+async function post(url: string, body: unknown, apiKey?: string, timeoutMs = 600_000, signal?: AbortSignal): Promise<Response> {
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const res = await fetch(url, { method: "POST", headers: headers(apiKey), body: JSON.stringify(body), signal: signal ? AbortSignal.any([signal, timeout]) : timeout });
   return res;
 }
 
@@ -84,6 +85,8 @@ export type ChatOptions = {
   temperature?: number;
   /** Called with each piece of answer text as it streams. */
   onDelta?: (text: string) => void | Promise<void>;
+  /** «إيقاف»: aborting it stops generation on the model server too (the connection closes). */
+  signal?: AbortSignal;
 };
 
 /** The server couldn't parse the model's tool call (usually cut off by max_tokens mid-JSON). */
@@ -114,10 +117,10 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
   if (opts.tools?.length) body.tools = opts.tools.map((t) => ({ type: "function", function: t }));
   if (opts.jsonSchema) body.response_format = { type: "json_schema", json_schema: { name: "answer", schema: opts.jsonSchema, strict: true } };
 
-  let res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey);
+  let res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
   if (!res.ok && opts.jsonSchema && res.status === 400) {
     body.response_format = { type: "json_object" };
-    res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey);
+    res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
   }
   if (!res.ok) {
     const err = (await res.text()).slice(0, 300);

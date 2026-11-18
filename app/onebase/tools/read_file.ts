@@ -5,7 +5,7 @@
 import { internal } from "../_generated/api";
 import type { AppTool, Citation } from "./types";
 
-const MAX_CHARS = 12_000;
+const MAX_CHARS = Number(process.env.READ_FILE_MAX_CHARS) > 0 ? Number(process.env.READ_FILE_MAX_CHARS) : 60_000;
 
 function parsePages(p: unknown): [number, number] | null {
   if (typeof p === "number" && p > 0) return [p, p];
