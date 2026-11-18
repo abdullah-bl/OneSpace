@@ -4,6 +4,8 @@ import { api, badge, errorText, ROLE_LABELS, STATUS_LABELS } from "./lib";
 import { SpaceView } from "./SpaceView";
 import { AdminView } from "./AdminView";
 import { AuditView } from "./AuditView";
+import { AnalysisView } from "./AnalysisView";
+import { RankingView } from "./RankingView";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -85,7 +87,7 @@ function Gate() {
   return <Shell me={me} />;
 }
 
-type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" };
+type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" } | { kind: "analysis" } | { kind: "ranking" };
 
 function Shell({ me }: { me: { name: string | null; email: string | null; workspaceRole: string | null; workspaceName: string | null } }) {
   const spaces = useQuery(api.spaces.mine);
@@ -127,6 +129,14 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
               ))}
             </div>
           </div>
+          <div className="space-y-1 border-t border-slate-100 pt-3">
+            <NavItem active={current?.kind === "analysis"} onClick={() => setRoute({ kind: "analysis" })}>
+              🧪 التحليل
+            </NavItem>
+            <NavItem active={current?.kind === "ranking"} onClick={() => setRoute({ kind: "ranking" })}>
+              ⚖️ المفاضلة
+            </NavItem>
+          </div>
           {(isAdmin || managesAny) && (
             <div className="space-y-1 border-t border-slate-100 pt-3">
               {isAdmin && (
@@ -153,6 +163,8 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
           {current?.kind === "space" && spaces && <SpaceView spaceId={current.id} spaces={spaces} />}
           {current?.kind === "admin" && <AdminView />}
           {current?.kind === "audit" && <AuditView isAdmin={isAdmin} spaces={spaces ?? []} />}
+          {current?.kind === "analysis" && spaces && <AnalysisView spaces={spaces} />}
+          {current?.kind === "ranking" && spaces && <RankingView spaces={spaces} />}
         </ErrorBoundary>
       </main>
     </div>

@@ -76,6 +76,52 @@ bun test tests          # starts real onebase servers on temp dirs; ~5 s
   role model (`tests/fixture.ts`). A final test asserts every public function is covered.
 - `tests/acceptance.test.ts`: one block per Phase 1 acceptance checkbox, the storage-URL finding,
   move/copy with versions, audit log behaviour, guard rails.
+- Phase 5: see below.
+
+## Phase 5: sandbox analysis and ranking (المفاضلة)
+
+**Sandbox.** `../sandbox-runner` (see its README) is a separate local service and the only thing
+with Docker access. OneBase reads `SANDBOX_URL` + `SANDBOX_SECRET` from its environment.
+
+- `onebase/tools/run_analysis.ts` — the agent tool (`requiresConfirmation: true`). `run(t, {code, fileIds, targetSpaceId?, timeoutSeconds?})`:
+  `analysis:begin` (internal mutation) checks every file with `assertCan(read)` **for the user**,
+  requires it to be in `t.scopeSpaceIds`, checks `write` on the target, keeps outputs of a
+  `sensitive` space in that space unless the user manages it, records the `runs` row and audits
+  `sandbox.export` (per file) + `sandbox.run`. Only then are those files' bytes read from storage
+  and sent to the runner. `analysis:finish` re-checks `write` and stores `/output` files as regular
+  files in the target space (audited `file.upload` via sandbox).
+  **Phase 4 integration point:** outputs are plain files for now; after the merge `finish` should
+  also create an artifact (`artifactVersions.runId`) and the tool should return `artifactIds`.
+- `analysis:run` (public action, the UI's "شغّل"), `analysis:myRuns`, `analysis:getRun` (runs are
+  private to who ran them: a run names inputs from spaces others may not read).
+  `analysis:runToolAs` (internal) calls `tool.run()` with a ToolContext — used by tests and by the
+  Phase 6 agent loop.
+- `runs`: kind, user, target space, code + sha256, inputs (file id, name, hex sha256 of the exact
+  bytes sent), outputs (file id, sha256), limits, exit (code, timedOut, oomKilled, duration), stdout/stderr.
+
+**Ranking.** The model never ranks and never proposes weights.
+
+- `onebase/lib/ranking.ts` — the pure function: per criterion `w × (v − min) ÷ (max − min)`
+  (or `(max − v)` when lower is better), values clamped to the declared scale, missing = 0 (flagged),
+  rounded to 6 decimals in a fixed order; sort by total, then the tie-break fields, shared rank when
+  everything is equal (1, 2, 2, 4), display order by id code points (no locale).
+- `rankingCriteria` — name, version, `seriesId`, fields, weights, direction, scale, tie-breaks,
+  `specHash`; draft (editable by writers) → approved (by the space manager, or the owner of a
+  personal space) → frozen; changes are `newCriteriaVersion`.
+- `rankingSnapshots` — the parsed input table as canonical JSON in storage + sha256 + source file
+  id/version. `rankingRuns` — criteria id/version/hash, snapshot id/hash, results hash, algorithm
+  version, draft → approved; `approveRun` only moves draft → approved and nothing else patches a run.
+  Corrections are `rerun` (same snapshot, verified by hash, optionally a newer approved criteria
+  version) → a new draft with `correctsRunId`. `rankingResults` — per student rank, total, per-criterion breakdown.
+- `ranking:justification` — the per-student page: their data as in the snapshot, the formula, each
+  criterion's line (`60 × (4.5 − 0) ÷ (5 − 0) = 54`), total, rank of N, ties, hashes, approval.
+- Input: a CSV/XLSX file in the criteria's space, parsed by code (`lib/tabular.ts`, no deps).
+  `lib/records.ts` is the seam for Phase 4's `records_*` tables (add a `RecordRef` kind; nothing else changes).
+
+UI: `src/AnalysisView.tsx` (🧪 التحليل) and `src/RankingView.tsx` (⚖️ المفاضلة, with the
+justification page). Tests: `tests/phase5.test.ts` (acceptance), `tests/phase5.permissions.test.ts`
+(matrix for every Phase 5 function), `tests/ranking.unit.test.ts`. Sandbox tests start the real
+runner (`tests/sandbox.ts`) and skip themselves when Docker or the image is missing.
 
 ## Backup and restore
 

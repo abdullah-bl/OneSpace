@@ -7,22 +7,44 @@ import type components from "../components";
 import type * as module0 from "../access";
 import type * as module1 from "../account";
 import type * as module2 from "../admin";
-import type * as module3 from "../audit";
-import type * as module4 from "../crons";
-import type * as module5 from "../files";
-import type * as module6 from "../http";
-import type * as module7 from "../spaces";
+import type * as module3 from "../analysis";
+import type * as module4 from "../audit";
+import type * as module5 from "../crons";
+import type * as module6 from "../files";
+import type * as module7 from "../http";
+import type * as module8 from "../lib/ranking";
+import type * as module9 from "../lib/records";
+import type * as module10 from "../lib/sandboxClient";
+import type * as module11 from "../lib/tabular";
+import type * as module12 from "../ranking";
+import type * as module13 from "../spaces";
+import type * as module14 from "../tools/index";
+import type * as module15 from "../tools/run_analysis";
+import type * as module16 from "../tools/types";
 
 /** References to public functions, e.g. `api.messages.list`. */
 export const api: {
   access: ApiFromModule<typeof module0, "public">;
   account: ApiFromModule<typeof module1, "public">;
   admin: ApiFromModule<typeof module2, "public">;
-  audit: ApiFromModule<typeof module3, "public">;
-  crons: ApiFromModule<typeof module4, "public">;
-  files: ApiFromModule<typeof module5, "public">;
-  http: ApiFromModule<typeof module6, "public">;
-  spaces: ApiFromModule<typeof module7, "public">;
+  analysis: ApiFromModule<typeof module3, "public">;
+  audit: ApiFromModule<typeof module4, "public">;
+  crons: ApiFromModule<typeof module5, "public">;
+  files: ApiFromModule<typeof module6, "public">;
+  http: ApiFromModule<typeof module7, "public">;
+  lib: {
+    ranking: ApiFromModule<typeof module8, "public">;
+    records: ApiFromModule<typeof module9, "public">;
+    sandboxClient: ApiFromModule<typeof module10, "public">;
+    tabular: ApiFromModule<typeof module11, "public">;
+  };
+  ranking: ApiFromModule<typeof module12, "public">;
+  spaces: ApiFromModule<typeof module13, "public">;
+  tools: {
+    index: ApiFromModule<typeof module14, "public">;
+    run_analysis: ApiFromModule<typeof module15, "public">;
+    types: ApiFromModule<typeof module16, "public">;
+  };
 } & { components: ComponentsApi<typeof components, "public"> } = anyApi;
 
 /** References to internal functions (callable from other functions only). */
@@ -30,9 +52,22 @@ export const internal: {
   access: ApiFromModule<typeof module0, "internal">;
   account: ApiFromModule<typeof module1, "internal">;
   admin: ApiFromModule<typeof module2, "internal">;
-  audit: ApiFromModule<typeof module3, "internal">;
-  crons: ApiFromModule<typeof module4, "internal">;
-  files: ApiFromModule<typeof module5, "internal">;
-  http: ApiFromModule<typeof module6, "internal">;
-  spaces: ApiFromModule<typeof module7, "internal">;
+  analysis: ApiFromModule<typeof module3, "internal">;
+  audit: ApiFromModule<typeof module4, "internal">;
+  crons: ApiFromModule<typeof module5, "internal">;
+  files: ApiFromModule<typeof module6, "internal">;
+  http: ApiFromModule<typeof module7, "internal">;
+  lib: {
+    ranking: ApiFromModule<typeof module8, "internal">;
+    records: ApiFromModule<typeof module9, "internal">;
+    sandboxClient: ApiFromModule<typeof module10, "internal">;
+    tabular: ApiFromModule<typeof module11, "internal">;
+  };
+  ranking: ApiFromModule<typeof module12, "internal">;
+  spaces: ApiFromModule<typeof module13, "internal">;
+  tools: {
+    index: ApiFromModule<typeof module14, "internal">;
+    run_analysis: ApiFromModule<typeof module15, "internal">;
+    types: ApiFromModule<typeof module16, "internal">;
+  };
 } & { components: ComponentsApi<typeof components, "internal"> } = anyApi;
