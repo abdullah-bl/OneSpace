@@ -49,7 +49,14 @@ const golden: { docs: { title: string; file: string; sections: { heading: string
 
 const pct = (a: number, b: number) => (b ? Math.round((1000 * a) / b) / 10 : 0);
 const digits = (s: string) => foldLetters(s).replace(/[^0-9]/g, " ").replace(/\s+/g, " ").trim();
-const isGold = (q: Q, h: { fileName: string; section?: string | null }) => h.fileName === q.file && (h.section ?? "").includes(q.heading!);
+/** The gold fact (bench "key") appears in the text: by its digits when it has any (≥2), else as folded words. */
+const keyIn = (text: string, key: string) => {
+  const d = digits(key);
+  if (d.replace(/\s/g, "").length >= 2) return ` ${digits(text)} `.includes(` ${d} `);
+  const k = foldLetters(key).trim();
+  return k.length >= 3 && foldLetters(text).includes(k);
+};
+const isGold =(q: Q, h: { fileName: string; section?: string | null }) => h.fileName === q.file && (h.section ?? "").includes(q.heading!);
 
 async function pool<T, R>(items: T[], n: number, fn: (t: T, i: number) => Promise<R>): Promise<R[]> {
   const out: R[] = new Array(items.length);
@@ -125,11 +132,11 @@ try {
     if (!("m" in t) || !t.m) continue;
     const m = t.m;
     if (m.abstained) falseAbstain++;
-    if (t.q.key && digits(t.q.key) && digits(m.text).includes(digits(t.q.key))) keyInAnswer++;
+    if (t.q.key && keyIn(m.text, t.q.key)) keyInAnswer++;
     let gold = false;
     for (const c of m.citations) {
       cites++;
-      const ok = isGold(t.q, c) || (!!t.q.key && digits(t.q.key).length >= 2 && digits(c.quote).includes(digits(t.q.key)));
+      const ok = isGold(t.q, c) || (!!t.q.key && keyIn(c.quote, t.q.key));
       if (ok) supported++;
       if (isGold(t.q, c)) gold = true;
     }

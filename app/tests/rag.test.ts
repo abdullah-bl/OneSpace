@@ -215,6 +215,14 @@ describe("answers", () => {
   });
 });
 
+describe("model output hygiene", () => {
+  test("tool-call / thinking markup written as text never reaches the saved answer", async () => {
+    const { stripMarkup } = await import("../onebase/chat");
+    expect(stripMarkup("<tool_call> <function=search_documents> <parameter=query> x </parameter> </function> </tool_call>")).toBe("");
+    expect(stripMarkup("<think>hmm</think>الجواب [1]")).toBe("الجواب [1]");
+  });
+});
+
 describe("GPU queue", () => {
   test("with 2 slots, a third simultaneous question waits (shown as queued) and then runs", async () => {
     const users = ["mem", "rdr", "out"];

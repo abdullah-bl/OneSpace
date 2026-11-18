@@ -94,7 +94,7 @@ is loaded, so they must be in the server's **process** environment at start-up.
 | `EMBED_BASE_URL`, `EMBED_MODEL`, `EMBED_DIMENSIONS` | `http://127.0.0.1:8403/v1`, `embeddinggemma-2`, `768` | measured: 768 |
 | `EMBED_QUERY_PREFIX`, `EMBED_DOC_PREFIX` | defaults: `task: search result \| query: ` / `title: none \| text: ` | set to empty to turn off |
 | `RERANK_BASE_URL`, `RERANK_MODEL` | `http://127.0.0.1:8404/v1`, `qwen3-reranker-0.6b` | optional; unset = no rerank |
-| `RAG_ABSTAIN_SCORE` | `0.05` | best rerank score below this → "لم أجد هذا…" |
+| `RAG_ABSTAIN_SCORE` | `0.01` (measured, see eval) | best rerank score below this → "لم أجد هذا…" |
 | `GPU_SLOTS` | `4` (= llama-server `-np`) | work-queue parallelism for chat turns |
 | `CHAT_BURST`, `CHAT_RATE_PER_MIN` | `6`, `10` | per-user token bucket |
 | `LLM_THINKING=1`, `VISION_BASE_URL/MODEL`, `OCR_MAX_PAGES` | off, main model, 50 | |
