@@ -4,6 +4,7 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must, type Result } from "./harness";
+import { PHASE2_COVERED } from "./phase2-covered";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -182,6 +183,7 @@ describe("workspace-level functions", () => {
       "files:move",
       "files:copy",
       "account:me",
+      ...PHASE2_COVERED,
     ]);
     expect(publicFns.filter((n) => !covered.has(n))).toEqual([]);
     // Nothing public writes or deletes audit rows, and no component function is exposed.

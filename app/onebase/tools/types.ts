@@ -11,6 +11,8 @@ export type ToolContext = {
   userId: Id<"users">;
   /** Spaces this turn may touch: readable spaces of the user ∩ the agent's data scope ∩ the chosen scope chips. */
   scopeSpaceIds: Id<"spaces">[];
+  /** Set when the turn is scoped to specific files ("اسأل عن هذا الملف"): tools stay inside them. (Phase 2, optional.) */
+  scopeFileIds?: string[];
   threadId?: string;
   agentId?: string;
   taskId?: string;

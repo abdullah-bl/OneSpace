@@ -7,22 +7,48 @@ import type components from "../components";
 import type * as module0 from "../access";
 import type * as module1 from "../account";
 import type * as module2 from "../admin";
-import type * as module3 from "../audit";
-import type * as module4 from "../crons";
-import type * as module5 from "../files";
-import type * as module6 from "../http";
-import type * as module7 from "../spaces";
+import type * as module3 from "../ai";
+import type * as module4 from "../audit";
+import type * as module5 from "../chat";
+import type * as module6 from "../crons";
+import type * as module7 from "../files";
+import type * as module8 from "../http";
+import type * as module9 from "../ingest";
+import type * as module10 from "../lib/arabic";
+import type * as module11 from "../lib/chunk";
+import type * as module12 from "../lib/extract";
+import type * as module13 from "../search";
+import type * as module14 from "../spaces";
+import type * as module15 from "../tools/index";
+import type * as module16 from "../tools/read_file";
+import type * as module17 from "../tools/search_documents";
+import type * as module18 from "../tools/types";
 
 /** References to public functions, e.g. `api.messages.list`. */
 export const api: {
   access: ApiFromModule<typeof module0, "public">;
   account: ApiFromModule<typeof module1, "public">;
   admin: ApiFromModule<typeof module2, "public">;
-  audit: ApiFromModule<typeof module3, "public">;
-  crons: ApiFromModule<typeof module4, "public">;
-  files: ApiFromModule<typeof module5, "public">;
-  http: ApiFromModule<typeof module6, "public">;
-  spaces: ApiFromModule<typeof module7, "public">;
+  ai: ApiFromModule<typeof module3, "public">;
+  audit: ApiFromModule<typeof module4, "public">;
+  chat: ApiFromModule<typeof module5, "public">;
+  crons: ApiFromModule<typeof module6, "public">;
+  files: ApiFromModule<typeof module7, "public">;
+  http: ApiFromModule<typeof module8, "public">;
+  ingest: ApiFromModule<typeof module9, "public">;
+  lib: {
+    arabic: ApiFromModule<typeof module10, "public">;
+    chunk: ApiFromModule<typeof module11, "public">;
+    extract: ApiFromModule<typeof module12, "public">;
+  };
+  search: ApiFromModule<typeof module13, "public">;
+  spaces: ApiFromModule<typeof module14, "public">;
+  tools: {
+    index: ApiFromModule<typeof module15, "public">;
+    read_file: ApiFromModule<typeof module16, "public">;
+    search_documents: ApiFromModule<typeof module17, "public">;
+    types: ApiFromModule<typeof module18, "public">;
+  };
 } & { components: ComponentsApi<typeof components, "public"> } = anyApi;
 
 /** References to internal functions (callable from other functions only). */
@@ -30,9 +56,24 @@ export const internal: {
   access: ApiFromModule<typeof module0, "internal">;
   account: ApiFromModule<typeof module1, "internal">;
   admin: ApiFromModule<typeof module2, "internal">;
-  audit: ApiFromModule<typeof module3, "internal">;
-  crons: ApiFromModule<typeof module4, "internal">;
-  files: ApiFromModule<typeof module5, "internal">;
-  http: ApiFromModule<typeof module6, "internal">;
-  spaces: ApiFromModule<typeof module7, "internal">;
+  ai: ApiFromModule<typeof module3, "internal">;
+  audit: ApiFromModule<typeof module4, "internal">;
+  chat: ApiFromModule<typeof module5, "internal">;
+  crons: ApiFromModule<typeof module6, "internal">;
+  files: ApiFromModule<typeof module7, "internal">;
+  http: ApiFromModule<typeof module8, "internal">;
+  ingest: ApiFromModule<typeof module9, "internal">;
+  lib: {
+    arabic: ApiFromModule<typeof module10, "internal">;
+    chunk: ApiFromModule<typeof module11, "internal">;
+    extract: ApiFromModule<typeof module12, "internal">;
+  };
+  search: ApiFromModule<typeof module13, "internal">;
+  spaces: ApiFromModule<typeof module14, "internal">;
+  tools: {
+    index: ApiFromModule<typeof module15, "internal">;
+    read_file: ApiFromModule<typeof module16, "internal">;
+    search_documents: ApiFromModule<typeof module17, "internal">;
+    types: ApiFromModule<typeof module18, "internal">;
+  };
 } & { components: ComponentsApi<typeof components, "internal"> } = anyApi;

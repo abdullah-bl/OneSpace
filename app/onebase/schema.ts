@@ -105,4 +105,93 @@ export default defineSchema({
     .index("by_at", ["at"])
     .index("by_space_at", ["spaceId", "at"])
     .index("by_user_at", ["userId", "at"]),
+
+  // ---- Phase 2: RAG and chat ----
+
+  // Ingestion details per file (files.ingest holds the state the file list shows).
+  fileIndex: defineTable({
+    fileId: v.id("files"),
+    spaceId: v.id("spaces"),
+    version: v.number(),
+    state: v.union(v.literal("pending"), v.literal("processing"), v.literal("ready"), v.literal("failed"), v.literal("skipped")),
+    step: v.optional(v.string()), // "extract" | "embed": shown while processing
+    error: v.optional(v.string()),
+    kind: v.optional(v.string()), // pdf | docx | sheet | text | image | unsupported
+    ocr: v.boolean(), // some pages were read by the vision model (lower accuracy)
+    ocrPages: v.optional(v.number()),
+    pages: v.optional(v.number()),
+    chunks: v.optional(v.number()),
+    note: v.optional(v.string()),
+    workflowId: v.optional(v.string()),
+    entryId: v.optional(v.string()), // the rag entry currently holding this file's vectors
+    updatedAt: v.number(),
+  }).index("by_file", ["fileId"]),
+
+  // The chunks of every indexed file, with a normalized "shadow" copy for Arabic keyword search
+  // (the rag component holds the vectors). Searched only with a spaceId filter (= namespace).
+  chunks: defineTable({
+    fileId: v.id("files"),
+    spaceId: v.id("spaces"),
+    version: v.number(),
+    ordinal: v.number(),
+    text: v.string(),
+    shadow: v.string(),
+    hash: v.string(),
+    section: v.optional(v.string()),
+    page: v.optional(v.number()),
+    pageEnd: v.optional(v.number()),
+  })
+    .index("by_file", ["fileId", "ordinal"])
+    .index("by_file_hash", ["fileId", "hash"])
+    .searchIndex("search_shadow", { searchField: "shadow", filterFields: ["spaceId", "fileId"] }),
+
+  // Thread ownership and scope (the agent component doesn't check who owns a thread).
+  threadMeta: defineTable({
+    threadId: v.string(),
+    userId: v.id("users"),
+    title: v.string(),
+    scope: v.object({ kind: v.union(v.literal("all"), v.literal("space"), v.literal("file")), id: v.optional(v.string()) }),
+    agentId: v.optional(v.string()),
+    taskId: v.optional(v.string()),
+    createdAt: v.number(),
+    lastAt: v.number(),
+  })
+    .index("by_thread", ["threadId"])
+    .index("by_user", ["userId", "lastAt"]),
+
+  // Structured citations, tool runs and feedback for an assistant message.
+  messageMeta: defineTable({
+    messageId: v.string(),
+    threadId: v.string(),
+    userId: v.id("users"),
+    citations: v.array(
+      v.object({ n: v.number(), fileId: v.string(), fileName: v.string(), page: v.optional(v.number()), section: v.optional(v.string()), quote: v.string() }),
+    ),
+    toolRuns: v.array(v.object({ name: v.string(), label: v.string(), args: v.any(), ok: v.boolean(), summary: v.string() })),
+    abstained: v.boolean(),
+    feedback: v.optional(v.union(v.literal("up"), v.literal("down"))),
+    usage: v.optional(v.object({ prompt: v.number(), completion: v.number() })),
+    ms: v.optional(v.number()),
+  })
+    .index("by_message", ["messageId"])
+    .index("by_thread", ["threadId"])
+    .index("by_feedback", ["feedback"]),
+
+  // One row per question: queued (waiting for a GPU slot) → running → done | failed.
+  turns: defineTable({
+    threadId: v.string(),
+    userId: v.id("users"),
+    state: v.union(v.literal("queued"), v.literal("running"), v.literal("done"), v.literal("failed")),
+    label: v.optional(v.string()), // the running tool's label, e.g. "يبحث في المستندات…"
+    streamId: v.optional(v.string()),
+    messageId: v.optional(v.string()),
+    error: v.optional(v.string()),
+    queuedAt: v.number(),
+    startedAt: v.optional(v.number()),
+    finishedAt: v.optional(v.number()),
+  })
+    .index("by_thread", ["threadId", "queuedAt"])
+    .index("by_state", ["state", "queuedAt"]),
+
+  aiSettings: defineTable({ key: v.string(), value: v.any(), updatedAt: v.number() }).index("by_key", ["key"]),
 });
