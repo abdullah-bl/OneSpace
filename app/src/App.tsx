@@ -6,6 +6,8 @@ import { AdminView } from "./AdminView";
 import { AuditView } from "./AuditView";
 import { MyTasksView } from "./TasksView";
 import { NotificationBell } from "./NotificationBell";
+import { AnalysisView } from "./AnalysisView";
+import { RankingView } from "./RankingView";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -87,7 +89,13 @@ function Gate() {
   return <Shell me={me} />;
 }
 
-type Route = { kind: "space"; id: string } | { kind: "admin" } | { kind: "audit" } | { kind: "tasks"; taskId: string | null };
+type Route =
+  | { kind: "space"; id: string }
+  | { kind: "admin" }
+  | { kind: "audit" }
+  | { kind: "tasks"; taskId: string | null }
+  | { kind: "analysis" }
+  | { kind: "ranking" };
 
 function Shell({ me }: { me: { name: string | null; email: string | null; workspaceRole: string | null; workspaceName: string | null } }) {
   const spaces = useQuery(api.spaces.mine);
@@ -135,6 +143,14 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
               ))}
             </div>
           </div>
+          <div className="space-y-1 border-t border-slate-100 pt-3">
+            <NavItem active={current?.kind === "analysis"} onClick={() => setRoute({ kind: "analysis" })}>
+              🧪 التحليل
+            </NavItem>
+            <NavItem active={current?.kind === "ranking"} onClick={() => setRoute({ kind: "ranking" })}>
+              ⚖️ المفاضلة
+            </NavItem>
+          </div>
           {(isAdmin || managesAny) && (
             <div className="space-y-1 border-t border-slate-100 pt-3">
               {isAdmin && (
@@ -162,6 +178,8 @@ function Shell({ me }: { me: { name: string | null; email: string | null; worksp
           {current?.kind === "admin" && <AdminView />}
           {current?.kind === "audit" && <AuditView isAdmin={isAdmin} spaces={spaces ?? []} />}
           {current?.kind === "tasks" && <MyTasksView openTaskId={current.taskId} onOpenTask={(taskId) => setRoute({ kind: "tasks", taskId })} />}
+          {current?.kind === "analysis" && spaces && <AnalysisView spaces={spaces} />}
+          {current?.kind === "ranking" && spaces && <RankingView spaces={spaces} />}
         </ErrorBoundary>
       </main>
     </div>
