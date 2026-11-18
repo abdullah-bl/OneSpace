@@ -1,0 +1,687 @@
+[
+ {
+  "q": "بكم يوم يكون سقف المبلغ المخصص لحل الخلافات المالية بشكل ودّي؟",
+  "key": "3,000 ريال",
+  "answer": "المقاطع المعطاة لا تذكر أي سقف زمني (بأيام) للمبلغ المخصص لحل الخلافات المالية، بل تذكر فقط تخصيص ميزانية قدرها 3,000 ريال لهذا الغرض [1].\n\nلا أعلم",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": true,
+  "arabic": true,
+  "seconds": 14.3,
+  "pass": false,
+  "pass_strict": false
+ },
+ {
+  "q": "إلى أي حد يمكن أن تصل المصاريف السنوية المخصصة لإصلاح المركبة المخصصة لي؟",
+  "key": "خمسة آلاف",
+  "answer": "تتحمل الجهة تكاليف الصيانة الدورية والطارئة التي لا تتجاوز خمسة آلاف ريال سنوياً لكل سيارة [2].",
+  "gold": 2,
+  "cited": [
+   2
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 10.1,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "لو تساوى عدد النقاط بين شخصين، مين اللي بيتم اختياره؟",
+  "key": "الترتيب الزمني",
+  "answer": "يُعتمد الترتيب الزمني لتقديم الطلبات كعامل حاسم في حالة تعادل الدرجات [3].",
+  "gold": 3,
+  "cited": [
+   3
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 7.5,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "كيف يتم احتساب قيمة الساعة الإضافية في الأوقات العادية مقارنةً بالراتب الأساسي؟",
+  "key": "مئة وخمسين",
+  "answer": "يُحسب أجر العمل الإضافي في الأوقات العادية بنسبة مئة وخمسين بالمئة من أجر الساعة النظامية [2].",
+  "gold": 2,
+  "cited": [
+   2
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 10.2,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بماذا نعتبر أي تغيير يدوي على السجلات غير مقبول؟",
+  "key": "غير صالح",
+  "answer": "يُعتبر أي تعديل يدوي على السجلات غير صالح إلا إذا كان مصحوباً بموافقة خطية من مدير إدارة الشؤون الإدارية خلال ثلاثة أيام عمل [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 8.8,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكم يوم قبل السفر لازم أرسل طلب التنقل وأرفق فيه تقرير عن أهداف الرحلة؟",
+  "key": "خمسة",
+  "answer": "يجب تقديم الطلب قبل موعد الرحلة بخمسة أيام عمل على الأقل [1]، مع إرفاق تقرير مهمات مفصل يوضح الأهداف المتوقعة [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 9.5,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "إذا قررت الترقية للدرجة الأولى على حسابي الشخصي، هل أتحمل الفرق أم تتكفل الدائرة به؟",
+  "key": "الموظف",
+  "answer": "تتحمل أنت (الموظف) الفروقات الناتجة عن الترقية الطوعية للدرجة الأولى على نفقتك الخاصة [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.6,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بعد كم فترة زمنية من عمر الورقة المالية يتم نقلها للمخزن المركزي؟",
+  "key": "خمس سنوات",
+  "answer": "يتم نقل المستندات القديمة التي تجاوز عمرها خمس سنوات إلى مخزن الأرشيف المركزي [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 7.8,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكم نسبة من قيمة الصفقة يتوجب دفع الضمان؟",
+  "key": "10%",
+  "answer": "يتوجب دفع ضمان جدية العرض بقيمة 3% من إجمالي المبلغ [2]، وضمان تنفيذ بقيمة 10% من قيمة العقد [4].",
+  "gold": 4,
+  "cited": [
+   2,
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": false,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 10.2,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "بكام يتم خصم من مكافأت الشهرية لو تأخرت يوم واحد عن تسليم إقرار الالتزام السنوي؟",
+  "key": "50 ريالاً",
+  "answer": "يتم خصم 50 ريالاً من مكافأة الأداء لكل يوم تأخير في تقديم الشهادة [2].",
+  "gold": 2,
+  "cited": [
+   2
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 8.2,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بمدي كم يوم عندي وقت بعد ما أسمع عن الفصل عشان آخذ أوراقي وأرجع الأدوات اللي معي؟",
+  "key": "خمسة أيام عمل",
+  "answer": "يُمنح الموظف مهلة خمسة أيام عمل من تاريخ إبلاغه بالقرار لاستلام مستنداته وتسليم ما في حوزته من أدوات العمل [4].",
+  "gold": 4,
+  "cited": [
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 10.8,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "كام عدد المراقبين اللي لازم يكونون موجودين عشان فريق الرقابة يعتبر مكتمل؟",
+  "key": "3",
+  "answer": "يُشترط وجود 3 مراقبين على الأقل حتى يعتبر فريق الرقابة مكتملًا [4].",
+  "gold": 4,
+  "cited": [
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.0,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكام يوم لازم أنهي أوراق مصاريف السفر بعد ما أرجع؟",
+  "key": "خمسة عشر يوم عمل",
+  "answer": "يجب عليك تقديم مطالبات التسوية المالية النهائية خلال 15 يوم عمل من تاريخ العودة من السفر [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": false,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 8.8,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "ما هو الحد الأقصى للمبلغ الذي يمكن للموظف صرفه لإصلاحات غير مخططة دون الحاجة لطلب إذن من مديره؟",
+  "key": "مئتي ريال",
+  "answer": "الحد الأقصى للمبلغ هو 200 ريال [4].",
+  "gold": 4,
+  "cited": [
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": false,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.1,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "كم المدة الزمنية المحددة لإبلاغ قسم التقنية بعد ملاحظة مشكلة في حماية المعطيات؟",
+  "key": "ساعتين",
+  "answer": "المدة الزمنية المحددة هي ساعتين [1]، أو خلال ساعتين من اكتشافه [5].",
+  "gold": 5,
+  "cited": [
+   1,
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 9.6,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "شو لازم أعمل إذا حبيت أشتغل من البيت على الجهاز أثناء إجازتي؟",
+  "key": "الشبكة الافتراضية الخاصة",
+  "answer": "يجب ضمان اتصال آمن عبر الشبكة الافتراضية الخاصة بالجهة [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.9,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكم يوم كحد أقصى يجب إخطار الإدارة العامة بنتائج التقييم النهائي بعد ظهورها رسمياً؟",
+  "key": "15",
+  "answer": "15 يوماً [1]",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 4.7,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "مين اللي مكلف بتنظيم جلسات تعريفية دورية كل نشفة شهور عشان يشرحوا للعاملين تفاصيل القواعد الجديدة؟",
+  "key": "إدارة الموارد البشرية",
+  "answer": "إدارة الموارد البشرية هي المسؤولة عن التوعية باللائحة من خلال ورش عمل دورية كل ستة أشهر [3].",
+  "gold": 3,
+  "cited": [
+   3
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 8.6,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "كم عدد الأيام الحد الأقصى المسموح به للرد على المراسلات الواردة قبل أن يتطلب الأمر موافقة المسؤول؟",
+  "key": "خمسة",
+  "answer": "الحد الأقصى المسموح به للرد على المراسلات الواردة هو سبعة أيام عمل [5]، ولا يجوز تأجيل الرد الرسمي عن خمسة أيام عمل إلا بموافقة الكتاب [3].",
+  "gold": 3,
+  "cited": [
+   3,
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": false,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 12.3,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "إلى متى يتوجب على إدارة الجهة الرد على استفسارات الموظفين بعد نشر الوثيقة؟",
+  "key": "يومين",
+  "answer": "يتوجب على مكتب الأمين العام الإجابة على استفسارات الموظفين خلال يومين [4].",
+  "gold": 4,
+  "cited": [
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.6,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "لو وصلت متأخراً شوي عن الموعد، كم بيقطع من راتبي عن كل دقيقة زيادة؟",
+  "key": "خمسة ريالات",
+  "answer": "يُخصم من الراتب مبلغ خمسة ريالات عن كل دقيقة تأخير إضافية [3].",
+  "gold": 3,
+  "cited": [
+   3
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.0,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "إذا ضاعت هاتفي الشخصي في الفندق اللي نزلت فيه بعقد رسمي بسبب مشكلة في نظام الأمان، هل ينفعني تعويض؟",
+  "key": "الفندق المعتمد",
+  "answer": "نعم، يستحق الموظف التعويض إذا فقد الجهاز الإلكتروني الشخصي في الفندق المعتمد بسبب خلل أمني موثق [1]. يجب تقديم بلاغ رسمي من إدارة الفندق خلال 24 ساعة من اكتشاف الفقدان، وإلا حُرم الموظف من التعويض [1]. يُحسب التعويض بناءً على القيمة السوقية الحالية للممتلكات مع خصم نسبة 10% لاهتراء الاستخدام [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 23.2,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بم يتم احتساب سنوات الخبرة عند إتمام إجراءات التثبيت؟",
+  "key": "تاريخ بدء العمل الفعلي",
+  "answer": "يتم احتساب الأقدمية من تاريخ بدء العمل الفعلي [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.8,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكم نسبة تُحسم من الأجر الشهري إذا أخذت إجازة إضافية بعد تجاوز الحد الأقصى دون إذن؟",
+  "key": "25%",
+  "answer": "تُحسم نسبة 25% من الراتب الشهري عن كل يوم تأخير إضافي [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 8.5,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "كم عدد الأيام اللي لازم أطلب فيها إجازتي مسبقاً من خلال الموقع؟",
+  "key": "15",
+  "answer": "يجب تقديم طلب الإجازة عبر النظام الإلكتروني قبل 15 يوماً كحد أدنى [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 7.5,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "إذا كنت عايز أراجع نتيجة التقييم بعد ما ظهرت، إيه آخر يوم أقدر أعمل فيه ملاحظة قبل ما يغلطو باب التقديم؟",
+  "key": "30 يوماً",
+  "answer": "آخر يوم لتقديم الاعتراض هو خلال 10 أيام من تاريخ الإعلان [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": false,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.9,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "كم عدد الأيام المسموح بها للتعامل مع الاختلافات التي تكتشف أثناء مطابقة الأرصدة؟",
+  "key": "ثلاثة أيام عمل",
+  "answer": "يُسمح بمدة لا تتجاوز ثلاثة أيام عمل من تاريخ اكتشاف الفروقات لمعالجتها [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.3,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "شوف، لو أنا ناسيت وش هي الأرقام اللي ما أقدر أستخدمها ثانية في آخر 3 تغييرات لكلمة السر؟",
+  "key": "3",
+  "answer": "المقاطع المعطاة لا تذكر أي قائمة محددة للأرقام أو الأحرف المحظورة، بل تنص على أنه \"لا يجوز تكرارها [كلمة المرور] في آخر 3 محاولات سابقة\" [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": true,
+  "arabic": true,
+  "seconds": 9.6,
+  "pass": false,
+  "pass_strict": false
+ },
+ {
+  "q": "كم هو الحد الأقصى المسموح به لرفع التكلفة عند إجراء تغييرات على الصفقة مقارنة بأسعار السوق الحالية؟",
+  "key": "8%",
+  "answer": "الحد الأقصى لزيادة التكلفة عند إجراء تعديلات على الصفقة مقارنة بالأسعار السائدة في السوق هو 8% [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 5.8,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "لو عطلتلي المنصة ما قدرت أسجل دخولي، في كم وقت لازم أرفع طلب عشان يتقبل؟",
+  "key": "24 ساعة",
+  "answer": "يعتمد المدة على نوع المنصة والسياسة المطبقة:\n\n1. إذا كان العطل في النظام الإلكتروني الموحّد، يُسجَّل الحضور في دفتر ورقي ويُرفع إلى إدارة تقنية المعلومات خلال يومي عمل [2].\n2. إذا كان العطل في المنصة الإلكترونية الخاصة بالعمل عن بعد أو العمل المرن، يُرفع طلب استثناء إلكتروني خلال 24 ساعة من تاريخ الحدث [4].",
+  "gold": 4,
+  "cited": [
+   2,
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": false,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 18.9,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "بكام يوم بيبقى في حقي أخد راحة طبية في السنة دي؟",
+  "key": "90",
+  "answer": "يحق للموظف الحصول على إجازة مرضية لمدة تصل إلى 90 يوماً في السنة الميلادية الواحدة [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.7,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "كم مدة الجلسة الفردية المخصصة لمناقشة نتائج الأداء؟",
+  "key": "45 دقيقة",
+  "answer": "مدة الجلسة الفردية المخصصة لمناقشة نتائج الأداء هي 45 دقيقة [4].",
+  "gold": 4,
+  "cited": [
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.0,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بعد كم فترة من إعلان التغييرات على الموقع الداخلي تصبح سارية المفعول؟",
+  "key": "شهرين",
+  "answer": "تصبح التعديلات سارية المفعول بعد شهرين من تاريخ نشرها في النشرة الداخلية [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.3,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "وش العقوبة المالية اللي تتطبق على الموظف الجديد إذا تأخر عن إنهاء البرنامج التعليمي الإلزامي خلال المدة المحددة؟",
+  "key": "مئتي ريال",
+  "answer": "يتم خصم مئتي ريال من راتب الموظف الجديد الشهري حتى استكمال المتطلبات التدريبية بنجاح [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.7,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكام يوم بيتم سداد فلوس الإجازة المدفوعة بعد ما تخلص؟",
+  "key": "5 أيام عمل",
+  "answer": "يتم صرف المستحقات المالية عن أيام الإجازة المدفوعة خلال 5 أيام عمل من نهاية الشهر الذي انتهت فيه الإجازة [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 7.3,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكم مبلغ يُسمح لي بالإنفاق على شراء كورسات خارجية بنفسي؟",
+  "key": "5000 ريال",
+  "answer": "يُسمح لك بالإنفاق على الموارد التعليمية الذاتية بمبلغ 5000 ريال سنوياً [2]، بالإضافة إلى ميزانية قدرها 1000 ريال سنوياً مخصصة للتدريب [4].",
+  "gold": 2,
+  "cited": [
+   2,
+   4
+  ],
+  "gold_cited": true,
+  "cites_valid": false,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 10.6,
+  "pass": true,
+  "pass_strict": false
+ },
+ {
+  "q": "بكام المبلغ الأقصى اللي ممكن الاعتماد عليه لتنفيذ فكرة التطبيق العملي اللي أقدمها بعد رجوعي من الدرس؟",
+  "key": "50,000 ريال",
+  "answer": "المبلغ الأقصى الذي يمكن اعتماده لتنفيذ مقترح التطبيق العملي بعد العودة من التدريب هو 50,000 ريال [3].",
+  "gold": 3,
+  "cited": [
+   3
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 8.6,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "بكم يوم يجب إبلاغ مجلس الإدارة بموافقة الخطة السنوية قبل انطلاق السنة المالية؟",
+  "key": "90",
+  "answer": "يجب إبلاغ مجلس الإدارة بموافقة الخطة السنوية قبل 90 يوماً من بداية العام المالي [1].",
+  "gold": 1,
+  "cited": [
+   1
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 6.6,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "شوف، لو صار لي مشكلة في الجهاز اللي وصلني للشغل عن بعد وطلعت اللجنة قولي إنه بسبب إهمالي، كم نسبة الخصم اللي تاخدوها من راتبي؟",
+  "key": "20%",
+  "answer": "نسبة الخصم هي 20% من قيمة الجهاز المستلمة [5].",
+  "gold": 5,
+  "cited": [
+   5
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 4.7,
+  "pass": true,
+  "pass_strict": true
+ },
+ {
+  "q": "لو رجعوا طلبي، كام عندي وقت عشان أعمل اعتراض؟",
+  "key": "10",
+  "answer": "يحق للموظف التظلم من قرار الرفض أمام لجنة شؤون الموظفين خلال 10 أيام من تاريخ الإشعار [3].",
+  "gold": 3,
+  "cited": [
+   3
+  ],
+  "gold_cited": true,
+  "cites_valid": true,
+  "key_in_answer": true,
+  "abstained": false,
+  "arabic": true,
+  "seconds": 3.8,
+  "pass": true,
+  "pass_strict": true
+ }
+]

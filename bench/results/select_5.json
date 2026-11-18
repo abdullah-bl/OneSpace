@@ -1,0 +1,552 @@
+[
+ {
+  "id": 0,
+  "prompt": "ابحث لي عن المستندات المتعلقة بـعقد صيانة الأجهزة",
+  "expected": "search_documents",
+  "called": true,
+  "seconds": 6.91,
+  "completion_tokens": 29,
+  "content": "",
+  "got": "search_documents",
+  "args": {
+   "query": "عقد صيانة الأجهزة"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 1,
+  "prompt": "هل عندنا أي ملف يتكلم عن سياسة العمل عن بعد؟ أبي أشوف وش موجود",
+  "expected": "search_documents",
+  "called": true,
+  "seconds": 11.58,
+  "completion_tokens": 42,
+  "content": "",
+  "got": "search_documents",
+  "args": {
+   "query": "سياسة العمل عن بعد",
+   "limit": 10
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 2,
+  "prompt": "اقرأ المستند رقم DOC-294 وقل لي محتواه",
+  "expected": "read_document",
+  "called": true,
+  "seconds": 7.49,
+  "completion_tokens": 31,
+  "content": "",
+  "got": "read_document",
+  "args": {
+   "doc_id": "DOC-294"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 3,
+  "prompt": "افتح الوثيقة ذات المعرّف DOC-611",
+  "expected": "read_document",
+  "called": true,
+  "seconds": 7.49,
+  "completion_tokens": 31,
+  "content": "",
+  "got": "read_document",
+  "args": {
+   "doc_id": "DOC-611"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 4,
+  "prompt": "أنشئ مهمة لـمنى السبيعي بعنوان مراجعة خطة التدريب السنوية تنتهي في 2026-12-03 بأولوية عالية",
+  "expected": "create_task",
+  "called": true,
+  "seconds": 14.3,
+  "completion_tokens": 80,
+  "content": "",
+  "got": "create_task",
+  "args": {
+   "title": "مراجعة خطة التدريب السنوية",
+   "assignee": "منى السبيعي",
+   "due_date": "2026-12-03",
+   "priority": "high"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 5,
+  "prompt": "كلّف منى السبيعي بإعداد تقرير عن سياسة العمل عن بعد",
+  "expected": "create_task",
+  "called": true,
+  "seconds": 15.73,
+  "completion_tokens": 87,
+  "content": "تم إنشاء المهمة بنجاح.",
+  "got": "create_task",
+  "args": {
+   "title": "إعداد تقرير عن سياسة العمل عن بعد",
+   "assignee": "منى السبيعي",
+   "priority": "medium",
+   "description": "إعداد تقرير شامل عن سياسة العمل عن بعد"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 6,
+  "prompt": "وش المهام المفتوحة عند ماجد المطيري؟",
+  "expected": "list_tasks",
+  "called": true,
+  "seconds": 9.39,
+  "completion_tokens": 41,
+  "content": "",
+  "got": "list_tasks",
+  "args": {
+   "assignee": "ماجد المطيري",
+   "status": "open"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 7,
+  "prompt": "اعرض لي كل المهام المنجزة",
+  "expected": "list_tasks",
+  "called": true,
+  "seconds": 3.64,
+  "completion_tokens": 25,
+  "content": "",
+  "got": "list_tasks",
+  "args": {
+   "status": "done"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 8,
+  "prompt": "أرسل إشعار لـنورة القحطاني إن اجتماع عقد صيانة الأجهزة تأجل",
+  "expected": "send_notification",
+  "called": true,
+  "seconds": 10.95,
+  "completion_tokens": 67,
+  "content": "",
+  "got": "send_notification",
+  "args": {
+   "user": "نورة القحطاني",
+   "message": "نود إعلامكم بأن اجتماع عقد صيانة الأجهزة قد تأجل، وسيتم إبلاغكم بالموعد الجديد لاحقاً."
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 9,
+  "prompt": "بلّغ منى السبيعي أن عليه تسليم ملف خطة التدريب السنوية اليوم",
+  "expected": "send_notification",
+  "called": true,
+  "seconds": 11.25,
+  "completion_tokens": 72,
+  "content": "تم إرسال الإشعار لمنى السبيعي.",
+  "got": "send_notification",
+  "args": {
+   "user": "منى السبيعي",
+   "message": "يرجى تسليم ملف خطة التدريب السنوية اليوم (2026-11-18)."
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 10,
+  "prompt": "احجز اجتماع عن عقد صيانة الأجهزة مع خالد الشهري وسارة العتيبي يوم 2026-12-10 الساعة 13:00",
+  "expected": "schedule_meeting",
+  "called": true,
+  "seconds": 15.08,
+  "completion_tokens": 91,
+  "content": "",
+  "got": "schedule_meeting",
+  "args": {
+   "title": "اجتماع عقد صيانة الأجهزة",
+   "attendees": [
+    "خالد الشهري",
+    "سارة العتيبي"
+   ],
+   "date": "2026-12-10",
+   "time": "13:00"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 11,
+  "prompt": "رتّب اجتماع مع خالد الشهري بتاريخ 2026-12-10 الساعة 13:00 لمناقشة سياسة العمل عن بعد",
+  "expected": "schedule_meeting",
+  "called": true,
+  "seconds": 14.48,
+  "completion_tokens": 86,
+  "content": "",
+  "got": "schedule_meeting",
+  "args": {
+   "title": "مناقشة سياسة العمل عن بعد",
+   "attendees": [
+    "خالد الشهري"
+   ],
+   "date": "2026-12-10",
+   "time": "13:00"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 12,
+  "prompt": "من المدير المباشر لـنورة القحطاني؟",
+  "expected": "get_employee",
+  "called": true,
+  "seconds": 5.12,
+  "completion_tokens": 30,
+  "content": "",
+  "got": "get_employee",
+  "args": {
+   "name": "نورة القحطاني"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 13,
+  "prompt": "أعطني بيانات الموظف نورة القحطاني",
+  "expected": "get_employee",
+  "called": true,
+  "seconds": 5.13,
+  "completion_tokens": 30,
+  "content": "",
+  "got": "get_employee",
+  "args": {
+   "name": "نورة القحطاني"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 14,
+  "prompt": "كم باقي من رصيد الإجازة السنوية لـخالد الشهري؟",
+  "expected": "get_leave_balance",
+  "called": true,
+  "seconds": 8.73,
+  "completion_tokens": 44,
+  "content": "",
+  "got": "get_leave_balance",
+  "args": {
+   "employee_name": "خالد الشهري",
+   "leave_type": "annual"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 15,
+  "prompt": "كم يوم إجازة مرضية متبقي عند نورة القحطاني؟",
+  "expected": "get_leave_balance",
+  "called": true,
+  "seconds": 9.01,
+  "completion_tokens": 47,
+  "content": "",
+  "got": "get_leave_balance",
+  "args": {
+   "employee_name": "نورة القحطاني",
+   "leave_type": "sick"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 16,
+  "prompt": "قدّم طلب إجازة سنوية لـفهد الدوسري من 2026-12-03 إلى 2027-01-20",
+  "expected": "submit_leave_request",
+  "called": true,
+  "seconds": 14.64,
+  "completion_tokens": 88,
+  "content": "",
+  "got": "submit_leave_request",
+  "args": {
+   "employee_name": "فهد الدوسري",
+   "leave_type": "annual",
+   "start_date": "2026-12-03",
+   "end_date": "2027-01-20"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 17,
+  "prompt": "أبي إجازة اضطرارية لـعبدالله الحربي من 2026-12-10 لين 2027-01-20",
+  "expected": "submit_leave_request",
+  "called": true,
+  "seconds": 14.59,
+  "completion_tokens": 88,
+  "content": "",
+  "got": "submit_leave_request",
+  "args": {
+   "employee_name": "عبدالله الحربي",
+   "leave_type": "emergency",
+   "start_date": "2026-12-10",
+   "end_date": "2027-01-20"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 18,
+  "prompt": "احسب نسبة الزيادة من 96000 إلى 110000",
+  "expected": "calculate",
+  "called": true,
+  "seconds": 6.65,
+  "completion_tokens": 48,
+  "content": "",
+  "got": "calculate",
+  "args": {
+   "expression": "(110000-96000)/96000*100"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 19,
+  "prompt": "كم يساوي 125000 مضروب في 174 ثم مقسوم على 12؟",
+  "expected": "calculate",
+  "called": true,
+  "seconds": 5.94,
+  "completion_tokens": 40,
+  "content": "",
+  "got": "calculate",
+  "args": {
+   "expression": "125000 * 174 / 12"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 20,
+  "prompt": "حلل ملف purchases_2026.xlsx وقل لي متوسط الرواتب حسب الإدارة",
+  "expected": "run_analysis",
+  "called": true,
+  "seconds": 9.27,
+  "completion_tokens": 52,
+  "content": "",
+  "got": "run_analysis",
+  "args": {
+   "file_name": "purchases_2026.xlsx",
+   "question": "ما متوسط الرواتب حسب الإدارة؟"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 21,
+  "prompt": "من ملف employees.csv طلع لي أكثر 5 موظفين غياباً",
+  "expected": "run_analysis",
+  "called": true,
+  "seconds": 10.71,
+  "completion_tokens": 68,
+  "content": "",
+  "got": "run_analysis",
+  "args": {
+   "file_name": "employees.csv",
+   "question": "ما هم أكثر 5 موظفين غياباً؟ اذكر اسم كل موظف وعدد أيام غيابه مرتباً من الأعلى إلى الأدنى."
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 22,
+  "prompt": "اكتب مذكرة رسمية بعنوان تعميم بشأن سياسة أمن المعلومات توضح ضرورة الالتزام بها",
+  "expected": "create_document",
+  "called": true,
+  "seconds": 39.35,
+  "completion_tokens": 360,
+  "content": "",
+  "got": "create_document",
+  "args": {
+   "title": "تعميم بشأن سياسة أمن المعلومات",
+   "template": "memo",
+   "content": "بسم الله الرحمن الرحيم\n\nالتاريخ: 18/11/2026\nالموضوع: تعميم بشأن سياسة أمن المعلومات\n\nالسادة جميع الموظفين والموظفات المحترمين،\n\nتحية طيبة وبعد،\n\nنودّ إحاطتكم علماً بأنه تم اعتماد سياسة أمن المعلومات المعتمدة في المؤسسة، والتي تهدف إلى حماية الأصول المعلوماتية وضمان سرية البيانات وسلامتها وتوافرها.\n\nوعليه، نؤكد على ضرورة الالتزام التام بأحكام السياسة، ويتضمن ذلك على وجه الخصوص:\n\n1. حماية بيانات الدخول وكلمات المرور وعدم مشاركتها مع أي شخص.\n2. تأمين الأجهزة والحواسيب الشخصية عند مغادرة مقاعد العمل.\n3. عدم تخزين البيانات الحساسة على أجهزة غير مصرح بها أو وسائط تخزين خارجية دون التشفير.\n4. الإبلاغ الفوري عن أي حادث أمني محتمل أو اختراق للجهة المختصة.\n5. الالتزام بإجراءات النسخ الاحتياطي المحددة.\n6. عدم استخدام البريد الإلكتروني الشخصي في التعامل مع أعمال المؤسسة.\n\nيُعدّ الالتزام بهذه السياسة واجباً وظيفياً على جميع الموظفين، وسيتم محاسبة المخالفين وفقاً للأنظمة واللوائح المعمول بها.\n\nنرجو من الجميع التعاون والتزام الترتيبات أعلاه لضمان بيئة عمل آمنة وموثوقة.\n\nوتفضلوا بقبول فائق الاحترام والتقدير.\n\nوالسلام عليكم ورحمة الله وبركاته."
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 23,
+  "prompt": "أنشئ خطاباً موجهاً لإدارة المالية بخصوص عقد صيانة الأجهزة",
+  "expected": "create_document",
+  "called": true,
+  "seconds": 30.09,
+  "completion_tokens": 259,
+  "content": "",
+  "got": "create_document",
+  "args": {
+   "title": "خطاب إلى إدارة المالية بخصوص عقد صيانة الأجهزة",
+   "template": "letter",
+   "content": "التاريخ: 18/11/2026\n\nإلى: إدارة المالية\nمن: [اسم المرسل / القسم]\nالموضوع: بخصوص عقد صيانة الأجهزة\n\nتحية طيبة وبعد،\n\nنحيطكم علماً بأننا بصدد تجديد/إبرام عقد صيانة الأجهزة الحاسوبية والمكتبية داخل المنشأة، ونرجو منكم التكرم بالآتي:\n\n1. اعتماد المبلغ المالي المطلوب لتغطية تكلفة العقد خلال الفترة القادمة.\n2. توفير بيانات الحساب البنكي والمطلوبات المحاسبية اللازمة لتوقيع العقد.\n3. التنسيق مع القسم المعني لإبرام العقد في أقرب وقت ممكن.\n\nنأمل منكم تزويدنا بالرد في أقرب وقت حتى لا تتأثر أعمال الصيانة الدورية للأجهزة.\n\nوتفضلوا بقبول فائق الاحترام والتقدير،،،\n\n[الاسم]\n[المسمى الوظيفي]\n[القسم]"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 24,
+  "prompt": "ترجم للإنجليزية: نرجو منكم الالتزام بمواعيد الحضور",
+  "expected": "translate_text",
+  "called": true,
+  "seconds": 6.47,
+  "completion_tokens": 48,
+  "content": "",
+  "got": "translate_text",
+  "args": {
+   "text": "نرجو منكم الالتزام بمواعيد الحضور",
+   "target_language": "en"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 25,
+  "prompt": "Translate to Arabic: The meeting has been moved to next week",
+  "expected": "translate_text",
+  "called": true,
+  "seconds": 6.12,
+  "completion_tokens": 45,
+  "content": "",
+  "got": "translate_text",
+  "args": {
+   "text": "The meeting has been moved to next week",
+   "target_language": "ar"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 26,
+  "prompt": "كم ميزانية إدارة المالية لسنة 2027؟",
+  "expected": "get_budget",
+  "called": true,
+  "seconds": 6.3,
+  "completion_tokens": 42,
+  "content": "",
+  "got": "get_budget",
+  "args": {
+   "department": "المالية",
+   "year": 2027
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 27,
+  "prompt": "أبي أعرف ميزانية المشتريات في 2027",
+  "expected": "get_budget",
+  "called": true,
+  "seconds": 7.82,
+  "completion_tokens": 60,
+  "content": "سأستعلم عن ميزانية المشتريات لسنة 2027.",
+  "got": "get_budget",
+  "args": {
+   "department": "المشتريات",
+   "year": 2027
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 28,
+  "prompt": "لخص لي المحادثة رقم CONV-948",
+  "expected": "summarize_conversation",
+  "called": true,
+  "seconds": 5.54,
+  "completion_tokens": 35,
+  "content": "",
+  "got": "summarize_conversation",
+  "args": {
+   "conversation_id": "CONV-948"
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ },
+ {
+  "id": 29,
+  "prompt": "أعطني ملخصاً في 50 كلمة للمحادثة CONV-756",
+  "expected": "summarize_conversation",
+  "called": true,
+  "seconds": 5.52,
+  "completion_tokens": 48,
+  "content": "",
+  "got": "summarize_conversation",
+  "args": {
+   "conversation_id": "CONV-756",
+   "max_words": 50
+  },
+  "problems": [],
+  "valid": true,
+  "tool_ok": true,
+  "args_ok": true
+ }
+]
