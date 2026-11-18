@@ -384,6 +384,7 @@ export default defineSchema({
     // @mentions in the question: files/spaces that narrow this turn's scope (never widen it).
     mentions: v.optional(v.array(v.object({ kind: v.union(v.literal("file"), v.literal("space")), id: v.string() }))),
     scheduleId: v.optional(v.string()), // a scheduled run (schedules.ts)
+    afterProposal: v.optional(v.id("proposals")), // answers the request from a confirmed run's output
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),

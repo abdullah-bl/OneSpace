@@ -46,5 +46,7 @@ export type AppTool<Args = any> = {
   parameters: Record<string, unknown>;
   /** Write tools: the agent proposes, the user presses "نفّذ" before run() is called. */
   requiresConfirmation?: boolean;
+  /** Its output is data for the model, not an answer: after "نفّذ" the agent writes the reply from it. */
+  answerAfterRun?: boolean;
   run(t: ToolContext, args: Args): Promise<ToolResult>;
 };

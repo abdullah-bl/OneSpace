@@ -650,7 +650,17 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           {JSON.stringify(p.args, null, 2)}
         </pre>
       </details>
-      {p.result && <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>}
+      {p.result &&
+        (p.state === "executed" ? (
+          <details className="mt-1 text-xs text-muted">
+            <summary className="cursor-pointer">الناتج</summary>
+            <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
+              {p.result}
+            </pre>
+          </details>
+        ) : (
+          <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
+        ))}
       <div className="mt-2 flex flex-wrap gap-2">
         {p.state === "pending" && (
           <>

@@ -16,6 +16,8 @@ export async function queueTurn(
     agentVersion?: number;
     mentions?: { kind: "file" | "space"; id: string }[];
     scheduleId?: string;
+    /** Answer the last question from this executed proposal's output (no tools, no retrieval). */
+    afterProposal?: Id<"proposals">;
     /** false = re-answer the last question (retry): no new user message. */
     saveUser?: boolean;
     /** Scheduled runs aren't the user typing: no per-user rate limit. */
@@ -36,6 +38,7 @@ export async function queueTurn(
     agentVersion: t.agentVersion,
     mentions: t.mentions,
     scheduleId: t.scheduleId,
+    afterProposal: t.afterProposal,
   });
   await ctx.components.gpu.enqueueAction({ fn: internal.chat.runTurn, args: { turnId }, onComplete: internal.chat.turnDone, context: { turnId } });
   return turnId;

@@ -162,6 +162,7 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
     additionalProperties: false,
   },
   requiresConfirmation: true,
+  answerAfterRun: true,
   async run(t: ToolContext, args: RunAnalysisArgs): Promise<ToolResult> {
     const r = await executeAnalysis(t, args);
     return { content: summarize(r), artifactIds: r.artifactIds, spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])] };

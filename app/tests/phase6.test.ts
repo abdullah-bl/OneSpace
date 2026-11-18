@@ -9,6 +9,10 @@ import { buildFixture, FILE_NAMES, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
 import { addBytes, ask, newThread, waitIngest } from "./rag-helpers";
 import { cfg, chatRequestsWith, offered, proposalsOf, publishedAgent, systemOf } from "./agents-helpers";
+import { sandboxAvailable, startRunner, type Runner } from "./sandbox";
+
+const HAS_SANDBOX = await sandboxAvailable();
+let runner: Runner | undefined;
 
 const TTL_MS = 4000;
 let ai: FakeAI;
@@ -19,6 +23,7 @@ const tok = (a: string) => (f.tokens as any)[a] as string;
 
 beforeAll(async () => {
   ai = startFakeAI();
+  if (HAS_SANDBOX) runner = await startRunner();
   s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: String(TTL_MS) })).start();
   f = await buildFixture(s);
   policyFile = await addBytes(s, tok("mgr"), f.spaces.S_every, "سياسة-العمل-عن-بعد.txt", "سياسة العمل عن بعد POLICYKEY-6610: يجوز العمل عن بعد يومين في الأسبوع بموافقة المدير المباشر.", "text/plain");
@@ -36,6 +41,7 @@ beforeAll(async () => {
 afterAll(async () => {
   await s?.stop();
   ai?.stop();
+  await runner?.stop();
 });
 
 async function dump(threadId: string, token: string) {
@@ -201,6 +207,44 @@ describe("acceptance: an agent without the sandbox tool can't run code, whatever
     expect((await proposalsOf(s, tok("mem"), t))[0].state).toBe("failed");
     expect(must(await s.call("query", "analysis:myRuns", {}, tok("mem"))).length).toBe(before);
   }, 30_000);
+
+  test.skipIf(!HAS_SANDBOX)("after نفّذ on run_analysis the agent answers from the output (no raw dump, no tools, runs once)", async () => {
+    const admin = tok("admin");
+    const analyst = cfg({ name: "محلل ما بعد التشغيل", instructions: code("AFTERRUN-7").replace("FILE", f.files.S_every), allowedTools: ["run_analysis", "read_file"], maxSteps: 2 });
+    const id = must(await s.call("mutation", "agents:create", { config: analyst }, admin));
+    must(await s.call("mutation", "agents:publish", { agentId: id }, admin));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("mem")));
+    await ask(s, tok("mem"), t, "لخّص الملف");
+    const [p] = await proposalsOf(s, tok("mem"), t);
+    expect(p.state).toBe("pending");
+    const runsBefore = must(await s.call("query", "analysis:myRuns", {}, tok("mem"))).length;
+    const before = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).messages.length;
+
+    const r = must(await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem")));
+    expect(r.ok).toBe(true);
+    let m: any;
+    for (const end = Date.now() + 20_000; Date.now() < end; await Bun.sleep(50)) {
+      m = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
+      if (m.turn?.state === "failed") throw new Error("follow-up failed: " + m.turn.error);
+      if (!m.turn && m.messages.length > before) break;
+    }
+    // One new assistant message: the agent's reply, not "✅ نُفّذ" + the raw output.
+    expect(m.messages.length).toBe(before + 1);
+    const last = m.messages.at(-1);
+    expect(last.role).toBe("assistant");
+    expect(last.text).not.toContain("✅ نُفّذ");
+    expect(last.text).not.toContain("المخرج النصي");
+    expect(last.toolRuns.map((x: any) => x.name)).toContain("run_analysis");
+    // The raw output stays on the card.
+    const card = (await proposalsOf(s, tok("mem"), t))[0];
+    expect(card.state).toBe("executed");
+    expect(card.result).toContain("AFTERRUN-7");
+    // The model got the output, with no tools on offer, and nothing ran twice.
+    const follow = chatRequestsWith(ai, "ناتج التشغيل").filter((req) => JSON.stringify(req.body.messages).includes("AFTERRUN-7"));
+    expect(follow.length).toBe(1);
+    expect(offered(follow[0])).toEqual([]);
+    expect(must(await s.call("query", "analysis:myRuns", {}, tok("mem"))).length).toBe(runsBefore + 1);
+  }, 60_000);
 
   test("an admin can't give an agent a tool that isn't in the code registry", async () => {
     const r = await s.call("mutation", "agents:create", { config: cfg({ allowedTools: ["search_documents", "run_shell"] }) }, tok("admin"));
