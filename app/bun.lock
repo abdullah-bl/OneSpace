@@ -10,8 +10,8 @@
         "@pdf-lib/fontkit": "1.1.1",
         "exceljs": "4.4.0",
         "marked": "15.0.12",
-        "onebase": "github:abdullah-bl/onebase#da2693688ba9942c5f3c23cf1bb02e524ff4280d",
-        "onebase-components": "github:abdullah-bl/onebase-components#50b98c2e8dd6f7c5f650fade2a029008fb2fe1f8",
+        "onebase": "github:abdullah-bl/onebase#86728bac05d82dafd0393cc9cae237be48e9e233",
+        "onebase-components": "github:abdullah-bl/onebase-components#469185b3066afd51452a7a555f1324cf60060158",
         "pdf-lib": "1.17.1",
         "react": "19.3.1",
         "react-dom": "19.3.1",
@@ -457,9 +457,9 @@
 
     "once": ["once@1.4.0", "", { "dependencies": { "wrappy": "1" } }, "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w=="],
 
-    "onebase": ["onebase@github:abdullah-bl/onebase#da26936", { "dependencies": { "@libsql/client": "^0.18.0" }, "peerDependencies": { "react": ">=18", "typescript": "^7" }, "optionalPeers": ["react"], "bin": { "onebase": "./src/cli.ts" } }, "abdullah-bl-onebase-da26936", "sha512-PGkTN3HcOPj+vd4O+C13PpZw0ytR73+z2mRXsZ8kvT+AU+iDasdw3+tsEcVAifcCGtM49BvuP7U+7SnQxQCBtw=="],
+    "onebase": ["onebase@github:abdullah-bl/onebase#86728ba", { "dependencies": { "@libsql/client": "^0.18.0" }, "peerDependencies": { "react": ">=18", "typescript": "^7" }, "optionalPeers": ["react"], "bin": { "onebase": "./src/cli.ts" } }, "abdullah-bl-onebase-86728ba", "sha512-0/L4eYXFYyu/PnGTNERdjW9n/7BilfVq8QMuLpa3j+zmMEpqGWGA4Dd/YqJ2vloxZLiasnsvlJYVSD5OhgE5Rw=="],
 
-    "onebase-components": ["onebase-components@github:abdullah-bl/onebase-components#50b98c2", {}, "abdullah-bl-onebase-components-50b98c2", "sha512-LYkgMuAS7oNQ/IX3nKtbfahWJcxGtK45roPynqZTonxiZczrmFXbdrd4sUs+ukP9hxl7x3oNDevqp8LuaUOjDw=="],
+    "onebase-components": ["onebase-components@github:abdullah-bl/onebase-components#469185b", {}, "abdullah-bl-onebase-components-469185b", "sha512-GmueZ/JSE2Oz9M+ITLsBL5ROfc3ix0bRNWaWuFua/d3zdl+ElazKLxeEjmV7Qx1Pmyvxnedlm5IVwA5BQiPglw=="],
 
     "own-keys": ["own-keys@1.0.2", "", { "dependencies": { "call-bound": "^1.0.4", "get-intrinsic": "^1.3.0", "object-keys": "^1.1.1", "safe-push-apply": "^1.0.0" } }, "sha512-19YVAg7T+WTrxggPukVq7DjTv6+PJ867TmhCvBsYwmbFCsZd344rq2Ld1p0wo8f8Qrrhgp82c6FJRqdXWtSEhg=="],
 

@@ -306,6 +306,7 @@ export const draftFromThread = action({
     if (!t.msgs.some((m) => m.role === "assistant")) throw new OneBaseError("لا توجد إجابات في هذه المحادثة بعد");
     const convo = t.msgs.map((m) => `${m.role === "user" ? "الموظف" : "المساعد"}: ${m.text}`).join("\n\n");
     const res = await chat({
+      track: { ctx, purpose: "skill_draft", userId },
       role: "main",
       temperature: 0.2,
       maxTokens: 6000,

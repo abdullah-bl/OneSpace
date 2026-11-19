@@ -26,7 +26,7 @@ const env = (k: string) => {
   return val ? val : undefined;
 };
 
-export type Target = { baseUrl?: string; model: string; apiKey?: string };
+export type Target = { baseUrl?: string; model: string; apiKey?: string; provider?: string };
 export type RoleName = "main" | "fast" | "vision";
 /** The embedding model. `dimensions` is fixed by the rag index (EMBED_DIMENSIONS when it was mounted). */
 export type EmbedTarget = { baseUrl?: string; model: string; apiKey?: string; dimensions: number; queryPrefix: string; docPrefix: string; sendDimensions?: boolean };
@@ -151,7 +151,12 @@ export type ChatOptions = {
   thinking?: boolean;
   /** Called once when the model starts reasoning (streaming only). */
   onThinking?: () => void | Promise<void>;
+  /** Count this call's tokens (usage.ts): who it was for and why. Recording never fails the call. */
+  track?: UsageTrack;
 };
+
+export type UsagePurpose = "answer" | "part" | "route" | "plan" | "rewrite" | "summary" | "title" | "memory" | "skill_draft" | "agent_draft";
+export type UsageTrack = { ctx: { runMutation: any }; purpose: UsagePurpose; userId?: string; turnId?: string };
 
 /** The server couldn't parse the model's tool call (usually cut off by max_tokens mid-JSON). */
 export class ToolCallCutError extends Error {}
@@ -165,6 +170,40 @@ function parseArgs(raw: string): unknown {
 }
 
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
+  if (!opts.track) return chatOnce(opts);
+  const cfg = aiConfig();
+  const target = opts.role === "fast" ? cfg.fast : cfg.main;
+  const started = Date.now();
+  const note = async (usage: ChatResult["usage"], ok: boolean) => {
+    try {
+      await opts.track!.ctx.runMutation(internal.usage.record, {
+        model: target.model,
+        provider: target.provider ?? "إعدادات الخادم",
+        role: opts.role === "fast" ? "fast" : "main",
+        purpose: opts.track!.purpose,
+        ...(opts.track!.userId ? { userId: opts.track!.userId } : {}),
+        ...(opts.track!.turnId ? { turnId: opts.track!.turnId } : {}),
+        prompt: usage?.prompt ?? 0,
+        completion: usage?.completion ?? 0,
+        counted: !!usage,
+        ms: Date.now() - started,
+        ok,
+      });
+    } catch (e) {
+      console.error("usage: not recorded", e instanceof Error ? e.message : e);
+    }
+  };
+  try {
+    const r = await chatOnce(opts);
+    await note(r.usage, true);
+    return r;
+  } catch (e) {
+    await note(null, false);
+    throw e;
+  }
+}
+
+async function chatOnce(opts: ChatOptions): Promise<ChatResult> {
   const cfg = aiConfig();
   const target = opts.role === "fast" ? cfg.fast : cfg.main;
   if (!target.baseUrl) throw new OneBaseError("نموذج المحادثة غير مضبوط (LLM_BASE_URL)");

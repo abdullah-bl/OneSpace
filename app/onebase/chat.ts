@@ -26,7 +26,7 @@ import { actorFor, assertCan, assertTaskCan, canBeAssignee, Denied, requireActiv
 import { agentTools, effectiveScope, groundingOf, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
 import { queueTurn } from "./lib/turns";
-import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi } from "./ai";
+import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
 import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
@@ -1113,7 +1113,7 @@ function hitToSource(h: Hit, n: number): Source {
   return { n, fileId: h.fileId, fileName: h.fileName, page: h.page, section: h.section, quote: h.text, spaceId: h.spaceId };
 }
 
-async function rewriteQuery(question: string, history: { role: string; text: string }[], summary: string | null): Promise<string> {
+async function rewriteQuery(question: string, history: { role: string; text: string }[], summary: string | null, track?: UsageTrack): Promise<string> {
   if (!history.length && !summary) return question;
   const convo =
     (summary ? `ملخص ما سبق: ${summary.slice(0, 1200)}\n` : "") +
@@ -1123,6 +1123,7 @@ async function rewriteQuery(question: string, history: { role: string; text: str
       .join("\n");
   try {
     const r = await chat({
+      ...(track ? { track } : {}),
       role: "fast",
       maxTokens: 120,
       temperature: 0,
@@ -1153,7 +1154,7 @@ export const runTurn = internalAction({
     let wantSplit = false;
     if (pre.route && pre.route.candidates.length > 1) {
       const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: "يختار الوكيل…" });
-      const pick = await pickSkill(pre.route);
+      const pick = await pickSkill(pre.route, { ctx, purpose: "route", turnId });
       routedTo = pick.agentId;
       routerDeep = pick.deep;
       wantSplit = !!pick.split;
@@ -1252,7 +1253,7 @@ export const runTurn = internalAction({
         expiresAt: Date.now() + (c.scheduled ? Math.max(proposalTtl(), SCHEDULED_PROPOSAL_TTL) : proposalTtl()),
       });
       // The answer is saved and shown; now fold the oldest messages into the chat's summary.
-      if (c.compact) await compactThread(ctx, c.turn.threadId, c.compact);
+      if (c.compact) await compactThread(ctx, c.turn.threadId, c.compact, turnId);
     };
 
     const open = agent.grounding === "open";
@@ -1269,6 +1270,7 @@ export const runTurn = internalAction({
         toolRuns.push({ name: run.tool, label: run.label, args: null, ok: true, summary: run.result.slice(0, 200) });
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يكتب الإجابة…" });
         const res = await chat({
+          track: { ctx, purpose: "answer", turnId },
           role: agent.modelRole,
           maxTokens: answerTokens,
           thinking: think,
@@ -1298,7 +1300,7 @@ export const runTurn = internalAction({
       // this agent writes one answer from their results. The level caps how many parts.
       if (wantSplit && pre.route && c.level.subagents >= 2) {
         const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: "يقسّم المهمة…" });
-        const plan = await planParts(pre.route, c.level.subagents);
+        const plan = await planParts(pre.route, c.level.subagents, { ctx, purpose: "plan", turnId });
         await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: true, detail: plan.length ? `${plan.length} أجزاء` : "مهمة واحدة" });
         if (plan.length) {
           await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يعمل على الأجزاء…" });
@@ -1338,7 +1340,7 @@ export const runTurn = internalAction({
       if (retrieve) {
         // 1. Rewrite a follow-up ("وكم مدتها؟") into a standalone search query.
         if (c.history.length || c.summary) await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يفهم السؤال…" });
-        const query = (await rewriteQuery(c.question, c.history, c.summary)).slice(0, MAX_QUERY);
+        const query = (await rewriteQuery(c.question, c.history, c.summary, { ctx, purpose: "rewrite", turnId })).slice(0, MAX_QUERY);
 
         // 2. Retrieval before the first generation: the safety net if the model calls no tool.
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: search.label });
@@ -1400,6 +1402,7 @@ export const runTurn = internalAction({
         let res: Awaited<ReturnType<typeof chat>>;
         try {
           res = await chat({
+            track: { ctx, purpose: "answer", turnId },
             role: agent.modelRole,
             messages,
             tools: last ? undefined : specs,
@@ -1536,7 +1539,7 @@ export const runTurn = internalAction({
       if (!answer && proposals.length) answer = `اقترحتُ ما يلي، ولن يُنفَّذ إلا إذا ضغطت «نفّذ»: ${proposals.map((p) => p.label.replace(/…$/, "")).join("، ")}.`;
       const abstained = !proposals.length && !autoRuns.length && (!answer || (ABSTAIN_RE.test(answer) && !/\[\d+\]/.test(answer)));
       await finish(answer || ABSTAIN_TEXT, abstained);
-      if (c.titlePending) await nameThread(ctx, c.turn.threadId, c.question, answer);
+      if (c.titlePending) await nameThread(ctx, c.turn.threadId, c.question, answer, turnId);
       if (c.memory.on && !c.scheduled) await ctx.scheduler.runAfter(0, internal.memory.suggest, { threadId: c.turn.threadId });
     } catch (err) {
       if (stopper.signal.aborted) {
@@ -1649,7 +1652,7 @@ async function runPart(
     for (let step = 0; ; step++) {
       if (o.signal.aborted) throw new Error("stopped");
       const last = step >= steps - 1 || !specs.length;
-      const res = await chat({ role: agent.modelRole, messages, tools: last ? undefined : specs, maxTokens: 3000 + (o.think ? 4096 : 0), thinking: o.think, signal: o.signal });
+      const res = await chat({ track: { ctx, purpose: "part", turnId: o.turnId }, role: agent.modelRole, messages, tools: last ? undefined : specs, maxTokens: 3000 + (o.think ? 4096 : 0), thinking: o.think, signal: o.signal });
       if (res.usage) {
         usage.prompt += res.usage.prompt;
         usage.completion += res.usage.completion;
@@ -1694,10 +1697,11 @@ async function runPart(
 }
 
 /** Refreshes a long chat's summary with the messages that left the verbatim window. Best effort. */
-async function compactThread(ctx: ActionCtx, threadId: string, job: { from: number; to: number; prev: string; msgs: { role: string; text: string }[] }) {
+async function compactThread(ctx: ActionCtx, threadId: string, job: { from: number; to: number; prev: string; msgs: { role: string; text: string }[] }, turnId?: string) {
   try {
     const convo = job.msgs.map((m) => `${m.role === "user" ? "الموظف" : "المساعد"}: ${m.text.slice(0, 1500)}`).join("\n\n");
     const r = await chat({
+      ...(turnId ? { track: { ctx, purpose: "summary" as const, turnId } } : {}),
       role: "fast",
       maxTokens: 700,
       temperature: 0,
@@ -1727,10 +1731,11 @@ export const saveSummary = internalMutation({
 });
 
 /** Names a new chat with the fast model (a few words). Failures keep the provisional title. */
-async function nameThread(ctx: ActionCtx, threadId: string, question: string, answer: string) {
+async function nameThread(ctx: ActionCtx, threadId: string, question: string, answer: string, turnId?: string) {
   let title = "";
   try {
     const r = await chat({
+      ...(turnId ? { track: { ctx, purpose: "title" as const, turnId } } : {}),
       role: "fast",
       maxTokens: 40,
       temperature: 0,

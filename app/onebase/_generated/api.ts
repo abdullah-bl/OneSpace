@@ -77,6 +77,7 @@ import type * as module69 from "../tools/update_artifact";
 import type * as module70 from "../tools/update_list";
 import type * as module71 from "../tools/use_skill";
 import type * as module72 from "../toolsAdmin";
+import type * as module73 from "../usage";
 
 /** References to public functions, e.g. `api.messages.list`. */
 export const api: {
@@ -157,6 +158,7 @@ export const api: {
     use_skill: ApiFromModule<typeof module71, "public">;
   };
   toolsAdmin: ApiFromModule<typeof module72, "public">;
+  usage: ApiFromModule<typeof module73, "public">;
 } & { components: ComponentsApi<typeof components, "public"> } = anyApi;
 
 /** References to internal functions (callable from other functions only). */
@@ -238,4 +240,5 @@ export const internal: {
     use_skill: ApiFromModule<typeof module71, "internal">;
   };
   toolsAdmin: ApiFromModule<typeof module72, "internal">;
+  usage: ApiFromModule<typeof module73, "internal">;
 } & { components: ComponentsApi<typeof components, "internal"> } = anyApi;

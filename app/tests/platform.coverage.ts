@@ -2,6 +2,7 @@
 // search. Each is checked per actor in platform.test.ts; permissions.test.ts includes this list.
 export const PLATFORM_COVERED = [
   "admin:overview",
+  "usage:summary", // checked in usage.test.ts
   "palette:find",
   "providers:list",
   "providers:save",

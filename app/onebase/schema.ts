@@ -161,6 +161,25 @@ export default defineSchema({
     updatedAt: v.number(),
   }).index("by_list", ["listId", "order"]),
 
+  // Model usage (admin «نظرة عامة»): one row per workspace day × model × purpose × employee,
+  // added to by every chat() call (ai.ts → usage.record). No prompt or answer text is kept.
+  aiUsage: defineTable({
+    day: v.string(), // YYYY-MM-DD in workspace time (ONESPACE_TZ_OFFSET_MIN)
+    model: v.string(),
+    provider: v.string(),
+    role: v.string(), // main | fast
+    purpose: v.string(),
+    userKey: v.string(), // the employee's id, or "-" for calls made for no one in particular
+    calls: v.number(),
+    failed: v.number(),
+    uncounted: v.number(), // calls whose server returned no token counts
+    prompt: v.number(),
+    completion: v.number(),
+    ms: v.number(),
+  })
+    .index("by_key", ["day", "model", "purpose", "userKey"])
+    .index("by_day", ["day"]),
+
   // ---- Phase 5: sandbox runs ----
 
   // Every sandbox execution: what ran, on which inputs (hashes),

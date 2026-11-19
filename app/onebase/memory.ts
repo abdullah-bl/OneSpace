@@ -385,6 +385,7 @@ export const suggest = internalAction({
     let items: { text: string; kind: Kind }[] = [];
     try {
       const r = await chat({
+        track: { ctx, purpose: "memory", ...(input.userId ? { userId: input.userId } : {}) },
         role: "fast",
         maxTokens: 300,
         temperature: 0,

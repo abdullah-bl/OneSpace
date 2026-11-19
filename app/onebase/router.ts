@@ -8,7 +8,7 @@ import { v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type QueryCtx } from "./_generated/server";
 import { agentTools, effectiveScope, narrowByMentions, visibleTo } from "./agents";
-import { chat } from "./ai";
+import { chat, type UsageTrack } from "./ai";
 import { tools as registry } from "./tools";
 
 export type Candidate = { agentId: string; name: string; description: string; tools: string[]; isDefault: boolean };
@@ -148,7 +148,7 @@ export function routerPrompt(r: RouteInput) {
 }
 
 /** Picks a candidate. One candidate: no model call. Unsure, failed or invalid: the default. */
-export async function pickSkill(r: RouteInput): Promise<{ agentId: string | null; confidence: number; via: "only" | "model" | "fallback"; deep?: boolean; split?: boolean }> {
+export async function pickSkill(r: RouteInput, track?: UsageTrack): Promise<{ agentId: string | null; confidence: number; via: "only" | "model" | "fallback"; deep?: boolean; split?: boolean }> {
   const c = r.candidates;
   if (!c.length) return { agentId: null, confidence: 0, via: "fallback" };
   const fallback = (c.find((x) => x.isDefault) ?? c[0]!).agentId;
@@ -156,6 +156,7 @@ export async function pickSkill(r: RouteInput): Promise<{ agentId: string | null
   try {
     const { system, user } = routerPrompt(r);
     const res = await chat({
+      ...(track ? { track } : {}),
       role: routerRole(),
       temperature: 0,
       maxTokens: 90,
@@ -192,12 +193,13 @@ export type Part = { goal: string; agentId: string; agent: string };
  * it. Fewer than two usable parts (or any failure) = don't split. Agents come only from the
  * candidates the router already narrowed to what this user may use.
  */
-export async function planParts(r: RouteInput, max: number): Promise<Part[]> {
+export async function planParts(r: RouteInput, max: number, track?: UsageTrack): Promise<Part[]> {
   const c = r.candidates;
   if (max < 2 || c.length === 0) return [];
   try {
     const list = c.map((x) => `- ${x.name}: ${x.description} [أدواته: ${x.tools.join("، ") || "بلا أدوات"}]`).join("\n");
     const res = await chat({
+      ...(track ? { track } : {}),
       role: "main",
       temperature: 0,
       maxTokens: 500,
