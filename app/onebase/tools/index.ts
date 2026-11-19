@@ -11,6 +11,7 @@ import { query_records } from "./query_records";
 import { my_records } from "./my_records";
 import { fill_template } from "./fill_template";
 import { export_document } from "./export_document";
+import { query_source } from "./query_source";
 
 export const tools: Record<string, AppTool> = {
   // Phase 4: outputs, records, templates
@@ -25,6 +26,8 @@ export const tools: Record<string, AppTool> = {
   // Phase 2 (RAG)
   [searchDocumentsTool.name]: searchDocumentsTool,
   [readFileTool.name]: readFileTool,
+  // plans/08 §C: external data sources (read only)
+  query_source,
 };
 
 export function getTool(name: string): AppTool | undefined {

@@ -16,6 +16,7 @@
 // card in the thread that the owner confirms ("نفّذ") or cancels; confirmProposal checks
 // everything again and runs the tool once.
 
+import { sourcesContext, sourcesFor } from "./dataSources";
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
@@ -25,7 +26,7 @@ import { actorFor, assertCan, assertTaskCan, canBeAssignee, Denied, requireActiv
 import { agentTools, effectiveScope, groundingOf, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
 import { queueTurn } from "./lib/turns";
-import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec } from "./ai";
+import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
 import { tools as registry } from "./tools";
@@ -713,6 +714,11 @@ export const turnContext = internalQuery({
     // (∩ what the question @mentions: narrowing only).
     const { spaceIds, fileIds } = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId, agent.config.dataScope, meta.scope), mentions);
     const context = [...(await turnExtraContext(ctx, turn.userId, meta, spaceIds)), ...(await mentionContext(ctx, mentions, spaceIds, fileIds))];
+    // External data sources this employee may read (only if the agent and level allow the tool).
+    if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
+      const sources = sourcesContext(await sourcesFor(ctx, turn.userId));
+      if (sources) context.push(sources);
+    }
     // What the question explicitly points at (@file / @space / a file chat). The sender could read
     // each of these when sending (checkMentions / thread creation), so naming them back is safe.
     const asked: string[] = [];
@@ -1081,6 +1087,7 @@ async function rewriteQuery(question: string, history: { role: string; text: str
 export const runTurn = internalAction({
   args: { turnId: v.id("turns") },
   handler: async (ctx, { turnId }) => {
+    await primeAi(ctx);
     const pre = await ctx.runQuery(internal.router.candidates, { turnId });
     if (pre.state !== "queued") return null;
     const streamId = await ctx.runMutation(internal.chat.startTurn, { turnId });
@@ -1746,6 +1753,7 @@ export const finishProposal = internalMutation({
 export const confirmProposal = action({
   args: { proposalId: v.string() },
   handler: async (ctx, { proposalId }) => {
+    await primeAi(ctx);
     const userId = await requireUserId(ctx);
     const claim = await ctx.runMutation(internal.chat.claimProposal, { proposalId, userId });
     if ("denied" in claim) throw new Denied();

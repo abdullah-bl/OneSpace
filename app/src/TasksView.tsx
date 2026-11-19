@@ -6,7 +6,7 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { ArtifactDock } from "./ArtifactPanel";
-import { EmptyState } from "./ui";
+import { EmptyState, ask } from "./ui";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
 import { Icon } from "./icons";
 import { Page } from "./ChatView";
@@ -600,7 +600,7 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
               <div className="space-y-2 p-3">
                 <div className="meta">إدارة المهمة</div>
                 <ManageTask task={task} />
-                <button className="btn-ghost w-full justify-center text-negative" disabled={busy} onClick={() => confirm("حذف المهمة وتعليقاتها؟") && run(async () => (await remove({ taskId: task._id }), onClose()))}>
+                <button className="btn-ghost w-full justify-center text-negative" disabled={busy} onClick={() => void ask("حذف المهمة وتعليقاتها؟", { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run(async () => (await remove({ taskId: task._id }), onClose())); })}>
                   حذف المهمة
                 </button>
               </div>

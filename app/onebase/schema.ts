@@ -295,6 +295,8 @@ export default defineSchema({
     model: v.union(v.literal("main"), v.literal("fast")), // fast = the small model only
     deep: v.boolean(), // «تفكير عميق» allowed
     tools: v.optional(v.array(v.string())), // allowed tools (none = all the agent has)
+    sources: v.optional(v.array(v.id("dataSources"))), // allowed data sources (none = all the employee may see)
+    spaceIds: v.optional(v.array(v.id("spaces"))), // team level: members of these shared spaces get it (unless they have their own)
     subagents: v.number(), // max parts a request may be split into (0 = no splitting)
     dailyQuestions: v.number(), // 0 = unlimited
     isDefault: v.boolean(),
@@ -488,4 +490,61 @@ export default defineSchema({
     .index("by_due", ["enabled", "nextRunAt"]),
 
   aiSettings: defineTable({ key: v.string(), value: v.any(), updatedAt: v.number() }).index("by_key", ["key"]),
+
+  // AI model servers an admin added (providers.ts). OpenAI-compatible: /models, /chat/completions.
+  // The API key never leaves the server (queries return only whether one is set). Which provider
+  // and model play the main / fast / vision roles is aiSettings "roles"; unset roles use the env.
+  aiProviders: defineTable({
+    name: v.string(),
+    baseUrl: v.string(),
+    apiKey: v.optional(v.string()),
+    enabled: v.boolean(),
+    models: v.array(v.string()), // from the last successful check
+    lastCheck: v.optional(v.object({ ok: v.boolean(), at: v.number(), error: v.optional(v.string()) })),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
+
+  // Folder sync (folderSync.ts): a folder on the server (e.g. a mounted network share, under
+  // SYNC_ROOT) copied into a shared space on a schedule. New files are added, changed ones get a new
+  // version; nothing is ever deleted from the space. syncedFiles remembers what came from where.
+  folderSyncs: defineTable({
+    spaceId: v.id("spaces"),
+    path: v.string(), // relative to SYNC_ROOT
+    extensions: v.array(v.string()), // lower-case, no dot; empty = the usual document types
+    recursive: v.boolean(),
+    intervalMinutes: v.number(),
+    enabled: v.boolean(),
+    createdBy: v.id("users"), // files are added as this person (must be able to write the space)
+    nextRunAt: v.number(),
+    running: v.optional(v.boolean()),
+    lastRun: v.optional(v.object({ at: v.number(), added: v.number(), updated: v.number(), unchanged: v.number(), skipped: v.number(), error: v.optional(v.string()) })),
+    createdAt: v.number(),
+  }).index("by_due", ["enabled", "nextRunAt"]),
+  syncedFiles: defineTable({ syncId: v.id("folderSyncs"), relPath: v.string(), fileId: v.id("files"), size: v.number(), mtime: v.number(), sha256: v.string() }).index("by_sync_path", ["syncId", "relPath"]),
+
+  // External data sources (dataSources.ts): databases, systems' REST APIs and search engines an
+  // admin connected. Read only; the secret part of `config` never leaves the server. Agents reach
+  // them through the query_source tool, limited by the source's visibility and the employee's level.
+  dataSources: defineTable({
+    name: v.string(),
+    kind: v.union(v.literal("postgres"), v.literal("mysql"), v.literal("sqlite"), v.literal("http"), v.literal("search"), v.literal("mcp")),
+    description: v.string(), // what it holds, for the model and for people
+    config: v.object({
+      url: v.string(), // connection string or base URL (may hold a password: secret)
+      headerName: v.optional(v.string()), // http: e.g. Authorization
+      headerValue: v.optional(v.string()), // secret
+      paths: v.optional(v.array(v.string())), // http: allowed path prefixes (empty = any under the base URL)
+      tools: v.optional(v.array(v.string())), // mcp: the server's tools agents may call (none listed = none)
+    }),
+    schemaHint: v.string(), // tables and columns (databases) or endpoints (http), shown to the model
+    rowLimit: v.number(),
+    visibility: v.object({ kind: v.union(v.literal("workspace"), v.literal("spaces")), spaceIds: v.array(v.id("spaces")) }),
+    enabled: v.boolean(),
+    lastCheck: v.optional(v.object({ ok: v.boolean(), at: v.number(), error: v.optional(v.string()) })),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
 });

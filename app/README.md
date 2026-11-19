@@ -16,6 +16,10 @@ all assets bundled locally (font: Readex Pro from `@fontsource/readex-pro`, no C
 Bun can't install a subdirectory of a git repo, so `@onebase/teams` is imported by its path inside
 the monorepo: `onebase-components/packages/teams/src/index.ts` (see `onebase/components.ts`).
 
+## Deploy
+
+With Docker Compose: see [`deploy/SETUP.md`](../deploy/SETUP.md) (app, sandbox runner, optional local models, HTTPS, folder sync, backups).
+
 ## Run
 
 ```bash

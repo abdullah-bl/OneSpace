@@ -26,12 +26,46 @@ const env = (k: string) => {
   return val ? val : undefined;
 };
 
-export function aiConfig() {
+export type Target = { baseUrl?: string; model: string; apiKey?: string };
+export type RoleName = "main" | "fast" | "vision";
+
+// Roles an admin pointed at a provider (providers.ts), loaded per action by primeAi(). Each
+// action process keeps the last copy for a few seconds; unset roles use the environment.
+let overrides: Partial<Record<RoleName, Target>> = {};
+let primedAt = 0;
+
+export function setAiOverrides(o: Partial<Record<RoleName, Target>>) {
+  overrides = o;
+  primedAt = Date.now();
+}
+
+/** Loads the admin's provider choices; call at the start of an action that talks to a model. */
+export async function primeAi(ctx: { runQuery: any }) {
+  if (Date.now() - primedAt < 5_000) return;
+  try {
+    setAiOverrides(await ctx.runQuery(internal.providers.resolved, {}));
+  } catch {
+    // keep the last known (or the environment)
+  }
+}
+
+/** The models from the environment alone (shown as «إعدادات الخادم» on the providers page). */
+export function envTargets(): Record<RoleName, Target> {
   const main = { baseUrl: env("LLM_BASE_URL"), model: env("LLM_MODEL") ?? "default", apiKey: env("LLM_API_KEY") };
   return {
     main,
     fast: { baseUrl: env("LLM_FAST_BASE_URL") ?? main.baseUrl, model: env("LLM_FAST_BASE_URL") ? (env("LLM_FAST_MODEL") ?? "default") : (env("LLM_FAST_MODEL") ?? main.model), apiKey: env("LLM_API_KEY") },
     vision: { baseUrl: env("VISION_BASE_URL") ?? main.baseUrl, model: env("VISION_MODEL") ?? main.model, apiKey: env("LLM_API_KEY") },
+  };
+}
+
+export function aiConfig() {
+  const base = envTargets();
+  const main = overrides.main ?? base.main;
+  return {
+    main,
+    fast: overrides.fast ?? base.fast,
+    vision: overrides.vision ?? base.vision,
     embed: {
       baseUrl: env("EMBED_BASE_URL"),
       model: env("EMBED_MODEL") ?? "default",
@@ -370,6 +404,7 @@ export const status = action({
   args: {},
   handler: async (ctx): Promise<Health & { rerankEnabled: boolean }> => {
     const userId = await requireUserId(ctx);
+    await primeAi(ctx);
     if (!(await ctx.runQuery(internal.ai.isActive, { userId }))) throw new OneBaseError("حسابك غير مفعّل في مساحة العمل");
     return { ...(await health()), rerankEnabled: rerankEnabled() };
   },

@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
-import { Menu, Popover, PopoverItem } from "./ui";
+import { Menu, Popover, PopoverItem, ask } from "./ui";
 import { openSkillDraft } from "./SkillsView";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
@@ -262,7 +262,7 @@ function ThreadMenu({ threadId, title, onDeleted, go }: { threadId: string; titl
             if (t?.trim()) void rename({ threadId, title: t });
           },
         },
-        { label: "حذف المحادثة", danger: true, onSelect: () => confirm("حذف هذه المحادثة نهائياً؟") && void del({ threadId }).then(onDeleted) },
+        { label: "حذف المحادثة", danger: true, onSelect: () => void ask("حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void del({ threadId }).then(onDeleted); })},
       ]}
     />
   );

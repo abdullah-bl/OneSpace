@@ -11,3 +11,6 @@ app/.backup-test/
 .DS_Store
 app/.demo-users.md
 app/.taste-skill/
+deploy/.env
+deploy/shares/
+deploy/models/

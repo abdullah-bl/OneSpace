@@ -7,7 +7,7 @@ import { useMutation, useQuery } from "onebase/react";
 import { api, errorText, spaceName, type SpaceInfo } from "./lib";
 import { Icon } from "./icons";
 import { relTime } from "./ChatView";
-import { EmptyState, Menu } from "./ui";
+import { EmptyState, Menu, ask } from "./ui";
 
 const DAYS = ["الأحد", "الاثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
 type Rec = { kind: "daily" | "weekly" | "monthly" | "cron"; time?: string; weekday?: number; monthDay?: number; cron?: string };
@@ -134,7 +134,7 @@ export function SchedulesPanel({ spaces }: { spaces: SpaceInfo[] }) {
                         { label: s.enabled ? "إيقاف مؤقت" : "تفعيل", icon: s.enabled ? "pause" : "play", onSelect: () => void act(() => setEnabled({ scheduleId: s._id, enabled: !s.enabled })) },
                         { label: "تعديل", icon: "pencil", onSelect: () => setEditing({ id: s._id, title: s.title, prompt: s.prompt, agentId: s.agentId ?? "", spaceId: s.spaceId ?? "", recurrence: s.recurrence as Rec }) },
                         "divider",
-                        { label: "حذف", icon: "x", danger: true, onSelect: () => confirm(`حذف «${s.title}»؟ تبقى محادثة نتائجها.`) && void act(() => remove({ scheduleId: s._id })) },
+                        { label: "حذف", icon: "x", danger: true, onSelect: () => void ask(`حذف «${s.title}»؟ تبقى محادثة نتائجها.`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void act(() => remove({ scheduleId: s._id })); })},
                       ]}
                     />
                   </div>

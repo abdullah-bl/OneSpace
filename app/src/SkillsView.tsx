@@ -6,7 +6,7 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate } from "./lib";
 import { Icon } from "./icons";
-import { EmptyState, PageHeader } from "./ui";
+import { EmptyState, PageHeader, ask } from "./ui";
 
 export type SkillDraft = { name: string; title: string; description: string; instructions: string; fromThreadId?: string };
 type Skill = SkillDraft & { _id: string; source: string; uses: number; updatedAt: number };
@@ -133,7 +133,7 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
               <button className="btn-ghost" onClick={() => (setEditing({ ...s }), setNote(""))}>
                 تعديل
               </button>
-              <button className="btn-danger" onClick={() => confirm(`حذف /${s.name}؟`) && void remove({ skillId: s._id }).catch((e) => setError(errorText(e)))}>
+              <button className="btn-danger" onClick={() => void ask(`حذف /${s.name}؟`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void remove({ skillId: s._id }).catch((e) => setError(errorText(e))); })}>
                 حذف
               </button>
             </li>

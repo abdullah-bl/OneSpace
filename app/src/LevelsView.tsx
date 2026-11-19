@@ -7,10 +7,10 @@ import { useState } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { api, errorText } from "./lib";
 import { Icon } from "./icons";
-import { EmptyState, PageHeader } from "./ui";
+import { EmptyState, PageHeader, ask } from "./ui";
 
-type Draft = { levelId?: string; name: string; description: string; model: "main" | "fast"; deep: boolean; tools: string[] | null; subagents: number; dailyQuestions: number };
-const NEW: Draft = { name: "", description: "", model: "main", deep: false, tools: null, subagents: 0, dailyQuestions: 100 };
+type Draft = { levelId?: string; name: string; description: string; model: "main" | "fast"; deep: boolean; tools: string[] | null; sources: string[] | null; spaceIds: string[]; subagents: number; dailyQuestions: number };
+const NEW: Draft = { name: "", description: "", model: "main", deep: false, tools: null, sources: null, spaceIds: [], subagents: 0, dailyQuestions: 100 };
 
 export function LevelsView() {
   const data = useQuery(api.levels.list);
@@ -29,6 +29,8 @@ export function LevelsView() {
     [
       l.model === "fast" ? "النموذج السريع فقط" : l.deep ? "النموذج الرئيس + تفكير عميق" : "النموذج الرئيس",
       l.tools ? `${l.tools.length} أدوات` : "كل أدوات الوكيل",
+      ...(l.spaceIds.length ? [`لأعضاء ${l.spaceIds.map((id) => data.spaces.find((x) => x._id === id)?.name ?? "مساحة").join("، ")}`] : []),
+      ...(data.sources.length ? [l.sources ? (l.sources.length ? `${l.sources.length} من مصادر البيانات` : "بلا مصادر بيانات") : "كل مصادر البيانات"] : []),
       l.subagents >= 2 ? `حتى ${l.subagents} وكلاء للطلب` : "وكيل واحد للطلب",
       l.dailyQuestions ? `${l.dailyQuestions} سؤالاً يومياً` : "بلا حد يومي",
     ].join(" · ");
@@ -36,8 +38,8 @@ export function LevelsView() {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="المستويات"
-        subtitle="ما يحصل عليه كل موظف: النموذج، والتفكير العميق، والأدوات، وتقسيم الطلب على عدة وكلاء، وعدد الأسئلة في اليوم. من ليس له مستوى يأخذ المستوى الافتراضي، وبلا مستويات لا قيود على أحد."
+        title="المستويات وحدود الاستخدام"
+        subtitle="ما يحصل عليه كل موظف: النموذج، والتفكير العميق، والأدوات، ومصادر البيانات، وتقسيم الطلب على عدة وكلاء، وعدد الأسئلة في اليوم. من ليس له مستوى يأخذ المستوى الافتراضي، وبلا مستويات لا قيود على أحد."
         actions={
           <button className="btn-primary" onClick={() => setEditing({ ...NEW })}>
             <Icon name="plus" /> مستوى جديد
@@ -107,12 +109,48 @@ export function LevelsView() {
               </div>
             )}
           </fieldset>
+          {data.spaces.length > 0 && (
+            <fieldset className="space-y-2 text-sm">
+              <legend className="mb-1 font-medium">مستوى فريق</legend>
+              <p className="text-xs text-muted">يأخذه أعضاء هذه المساحات تلقائياً، ما لم يكن لأحدهم مستوى خاص. ومن كان في أكثر من فريق يأخذ الأسخى.</p>
+              <div className="flex flex-wrap gap-1.5">
+                {data.spaces.map((sp) => {
+                  const on = editing.spaceIds.includes(sp._id);
+                  return (
+                    <button type="button" key={sp._id} aria-pressed={on} onClick={() => set("spaceIds", on ? editing.spaceIds.filter((x) => x !== sp._id) : [...editing.spaceIds, sp._id])} className={`h-8 rounded-full border px-3 text-xs ${on ? "border-primary bg-primary-soft text-primary" : "border-line hover:border-control"}`}>
+                      {sp.name}
+                    </button>
+                  );
+                })}
+              </div>
+            </fieldset>
+          )}
+          {data.sources.length > 0 && (
+            <fieldset className="space-y-2 text-sm">
+              <legend className="mb-1 font-medium">مصادر البيانات</legend>
+              <label className="flex items-center gap-2">
+                <input type="checkbox" checked={editing.sources === null} onChange={(e) => set("sources", e.target.checked ? null : [])} />
+                كل المصادر المتاحة للموظف
+              </label>
+              {editing.sources !== null && (
+                <div className="grid gap-1 ps-6 sm:grid-cols-2">
+                  {data.sources.map((d) => (
+                    <label key={d._id} className="flex items-center gap-2">
+                      <input type="checkbox" checked={editing.sources!.includes(d._id)} onChange={(e) => set("sources", e.target.checked ? [...editing.sources!, d._id] : editing.sources!.filter((x) => x !== d._id))} />
+                      {d.name}
+                      {!d.enabled && <span className="badge">معطّل</span>}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </fieldset>
+          )}
           <div className="flex gap-2">
             <button
               className="btn-primary"
               disabled={!editing.name.trim()}
               onClick={() =>
-                void save({ ...(editing.levelId ? { levelId: editing.levelId } : {}), name: editing.name, description: editing.description, model: editing.model, deep: editing.deep, tools: editing.tools, subagents: editing.subagents, dailyQuestions: editing.dailyQuestions })
+                void save({ ...(editing.levelId ? { levelId: editing.levelId } : {}), name: editing.name, description: editing.description, model: editing.model, deep: editing.deep, tools: editing.tools, sources: editing.sources, spaceIds: editing.spaceIds, subagents: editing.subagents, dailyQuestions: editing.dailyQuestions })
                   .then(() => (setEditing(null), setError("")))
                   .catch((e) => setError(errorText(e)))
               }
@@ -148,10 +186,10 @@ export function LevelsView() {
                   اجعله الافتراضي
                 </button>
               )}
-              <button className="btn-ghost" onClick={() => setEditing({ levelId: l._id, name: l.name, description: l.description, model: l.model, deep: l.deep, tools: l.tools, subagents: l.subagents, dailyQuestions: l.dailyQuestions })}>
+              <button className="btn-ghost" onClick={() => setEditing({ levelId: l._id, name: l.name, description: l.description, model: l.model, deep: l.deep, tools: l.tools, sources: l.sources, spaceIds: l.spaceIds, subagents: l.subagents, dailyQuestions: l.dailyQuestions })}>
                 تعديل
               </button>
-              <button className="btn-danger" onClick={() => confirm(`حذف مستوى «${l.name}»؟ يعود موظفوه إلى المستوى الافتراضي.`) && run(remove({ levelId: l._id }))}>
+              <button className="btn-danger" onClick={() => void ask(`حذف مستوى «${l.name}»؟ يعود موظفوه إلى المستوى الافتراضي.`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run(remove({ levelId: l._id })); })}>
                 حذف
               </button>
             </li>
@@ -162,12 +200,15 @@ export function LevelsView() {
       {data.levels.length > 0 && (
         <section className="space-y-2">
           <h2 className="font-medium">الموظفون</h2>
+          <p className="text-xs text-muted">مستوى كل موظف واستخدامه اليوم (يتجدد الحد منتصف الليل).</p>
           <ul className="card divide-y divide-rule">
             {data.users.map((u) => (
               <li key={u._id} className="flex items-center gap-3 px-3 py-2 text-sm">
                 <span className="min-w-0 flex-1 truncate">{u.name}</span>
+                {u.effective.via === "team" && !u.levelId && <span className="badge">من فريقه: {u.effective.name}</span>}
+                <Usage used={u.usedToday} limit={u.effective.dailyQuestions} />
                 <select className="input w-56" aria-label={`مستوى ${u.name}`} value={u.levelId ?? ""} onChange={(e) => run(assign({ userId: u._id, levelId: e.target.value || null }))}>
-                  <option value="">{def ? `الافتراضي («${def.name}»)` : "بلا قيود"}</option>
+                  <option value="">{!u.levelId && u.effective.via === "team" ? `تلقائي («${u.effective.name}» من فريقه)` : def ? `الافتراضي («${def.name}»)` : "بلا قيود"}</option>
                   {data.levels.map((l) => (
                     <option key={l._id} value={l._id}>
                       {l.name}
@@ -180,5 +221,20 @@ export function LevelsView() {
         </section>
       )}
     </div>
+  );
+}
+
+function Usage({ used, limit }: { used: number; limit: number }) {
+  if (!limit) return <span className="w-28 text-xs text-muted num">{used} اليوم</span>;
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  return (
+    <span className="flex w-28 items-center gap-2" title={`${used} من ${limit} سؤالاً اليوم`}>
+      <span className="h-1.5 flex-1 overflow-hidden rounded-full bg-sunken">
+        <span className={`block h-full rounded-full ${pct >= 100 ? "bg-negative" : pct >= 80 ? "bg-warning" : "bg-primary"}`} style={{ width: `${pct}%` }} />
+      </span>
+      <span className="text-xs text-muted num">
+        {used}/{limit}
+      </span>
+    </span>
   );
 }

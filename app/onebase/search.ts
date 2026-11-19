@@ -11,7 +11,7 @@ import type { Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalAction, internalQuery, type ActionCtx } from "./_generated/server";
 import { readableSpaceIds } from "./access";
-import { assertIndexMatches, QUERY_MARK, rerank } from "./ai";
+import { assertIndexMatches, QUERY_MARK, rerank, primeAi } from "./ai";
 import { keywordQuery } from "./lib/arabic";
 import { textHash } from "./ingest";
 
@@ -174,6 +174,7 @@ export async function searchDocuments(
 export const debugSearch = internalAction({
   args: { userId: v.id("users"), query: v.string(), spaceIds: v.optional(v.array(v.string())), limit: v.optional(v.number()) },
   handler: async (ctx, { userId, query, spaceIds, limit }) => {
+    await primeAi(ctx);
     const spaces = spaceIds ?? (await ctx.runQuery(internal.search.readable, { userId }));
     const r = await searchDocuments(ctx, { userId, spaceIds: spaces, query, limit: limit ?? 10 });
     const view = (h: Hit) => ({ fileId: h.fileId, fileName: h.fileName, section: h.section ?? null, page: h.page ?? null, text: h.text, fused: h.fused, rerank: h.rerank ?? null });

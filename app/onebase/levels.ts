@@ -8,7 +8,7 @@ import type { Id } from "./_generated/dataModel";
 import { mutation, query } from "./_generated/server";
 import { Denied, requireActive, requireAdmin, statusOf } from "./access";
 import { writeAudit } from "./audit";
-import { asLevel, levelOf, MAX_SUBAGENTS, usedToday } from "./lib/levels";
+import { asLevel, levelOf, levelSource, MAX_SUBAGENTS, usedToday } from "./lib/levels";
 import { tools as registry } from "./tools";
 
 const NAME_MAX = 40;
@@ -21,6 +21,8 @@ const fields = {
   model: v.union(v.literal("main"), v.literal("fast")),
   deep: v.boolean(),
   tools: v.union(v.array(v.string()), v.null()),
+  sources: v.optional(v.union(v.array(v.string()), v.null())),
+  spaceIds: v.optional(v.array(v.string())),
   subagents: v.number(),
   dailyQuestions: v.number(),
 };
@@ -37,13 +39,16 @@ export const list = query({
     for (const u of await ctx.db.query("users").collect()) {
       if (statusOf(u) !== "active") continue;
       if (!(await ctx.components.workspace.role({ teamId: me.workspace.teamId, userId: u._id }))) continue;
-      users.push({ _id: u._id, name: u.name ?? u.email ?? "—", levelId: byUser.get(u._id) ?? null });
+      const eff = await levelOf(ctx, u._id);
+      users.push({ _id: u._id, name: u.name ?? u.email ?? "—", levelId: byUser.get(u._id) ?? null, usedToday: await usedToday(ctx, u._id), effective: { name: eff.name, dailyQuestions: eff.dailyQuestions, via: await levelSource(ctx, u._id) } });
     }
     return {
       levels: levels
         .sort((a, b) => a.createdAt - b.createdAt)
-        .map((l) => ({ ...asLevel(l), _id: l._id, description: l.description, isDefault: l.isDefault, members: assignments.filter((a) => a.levelId === l._id).length })),
+        .map((l) => ({ ...asLevel(l), _id: l._id, description: l.description, isDefault: l.isDefault, members: assignments.filter((a) => a.levelId === l._id).length, spaceIds: (l.spaceIds ?? []) as string[] })),
+      spaces: (await ctx.db.query("spaces").withIndex("by_workspace_kind", (q) => q.eq("workspaceId", me.workspace._id).eq("kind", "shared")).collect()).map((sp) => ({ _id: sp._id, name: sp.name })),
       tools: Object.values(registry).map((t) => ({ name: t.name, label: t.label.replace(/…$/, ""), writes: !!t.requiresConfirmation })),
+      sources: (await ctx.db.query("dataSources").collect()).map((d) => ({ _id: d._id, name: d.name, kind: d.kind, enabled: d.enabled })),
       users: users.sort((a, b) => a.name.localeCompare(b.name, "ar")),
       maxSubagents: MAX_SUBAGENTS,
     };
@@ -58,12 +63,23 @@ export const save = mutation({
     if (!name) throw new OneBaseError("اكتب اسم المستوى");
     const tools = a.tools === null ? undefined : [...new Set(a.tools)];
     if (tools?.some((t) => !Object.hasOwn(registry, t))) throw new OneBaseError("أداة غير معروفة");
+    const sources = a.sources == null ? undefined : [...new Set(a.sources)].map((sid) => ctx.db.normalizeId("dataSources", sid));
+    if (sources?.some((x) => !x)) throw new OneBaseError("مصدر بيانات غير معروف");
+    const spaceIds: Id<"spaces">[] = [];
+    for (const sid of new Set(a.spaceIds ?? [])) {
+      const nid = ctx.db.normalizeId("spaces", sid);
+      const sp = nid ? await ctx.db.get(nid) : null;
+      if (!sp || sp.kind !== "shared" || sp.workspaceId !== me.workspace._id) throw new OneBaseError("مساحة غير صالحة");
+      spaceIds.push(sp._id);
+    }
     const row = {
       name,
       description: a.description.trim().slice(0, 300),
       model: a.model,
       deep: a.model === "main" && a.deep, // the small model doesn't think
       tools,
+      sources: sources as Id<"dataSources">[] | undefined,
+      spaceIds: spaceIds.length ? spaceIds : undefined,
       subagents: Math.min(Math.max(Math.round(a.subagents) || 0, 0), MAX_SUBAGENTS),
       dailyQuestions: Math.min(Math.max(Math.round(a.dailyQuestions) || 0, 0), MAX_DAILY),
       updatedAt: Date.now(),
@@ -79,10 +95,12 @@ export const save = mutation({
     } else {
       const count = (await ctx.db.query("levels").collect()).length;
       if (count >= MAX_LEVELS) throw new OneBaseError(`الحد ${MAX_LEVELS} مستوى`);
-      // The first level becomes the default: until then, everyone has no limits.
-      id = await ctx.db.insert("levels", { ...row, isDefault: count === 0, createdAt: Date.now() });
+      // The first level becomes the default (until then, everyone has no limits), unless it's a
+      // team level: that one is only for its spaces' members.
+      const firstGeneral = !spaceIds.length && !(await ctx.db.query("levels").collect()).some((l) => !l.spaceIds?.length);
+      id = await ctx.db.insert("levels", { ...row, isDefault: firstGeneral, createdAt: Date.now() });
     }
-    await writeAudit(ctx, { userId: me.userId, action: levelId ? "level.update" : "level.create", resourceType: "level", resourceId: id, detail: { name: row.name, model: row.model, deep: row.deep, tools: row.tools ? row.tools.join(",") : null, subagents: row.subagents, dailyQuestions: row.dailyQuestions } });
+    await writeAudit(ctx, { userId: me.userId, action: levelId ? "level.update" : "level.create", resourceType: "level", resourceId: id, detail: { name: row.name, model: row.model, deep: row.deep, tools: row.tools ? row.tools.join(",") : null, sources: row.sources ? row.sources.length : null, teams: spaceIds.length, subagents: row.subagents, dailyQuestions: row.dailyQuestions } });
     return id;
   },
 });

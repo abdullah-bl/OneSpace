@@ -10,7 +10,7 @@ import { api, badge, errorText, formatDate, formatSize, ROLE_LABELS, spaceName, 
 import { Icon } from "./icons";
 import { AuditTable } from "./AuditView";
 import { STATUS, TaskBoard } from "./TasksView";
-import { Menu, type MenuItem } from "./ui";
+import { Menu, type MenuItem, ask } from "./ui";
 import { SpaceInstructions } from "./SpaceInstructions";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
@@ -460,7 +460,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
                 }}
                 onTransfer={() => setTransfer({ fileId: f._id, name: f.name })}
                 onDelete={() => {
-                  if (confirm(`حذف "${f.name}" وكل نسخه؟ لا يمكن التراجع.`)) void run("delete", () => remove({ fileId: f._id as any }));
+                  void ask(`حذف "${f.name}" وكل نسخه؟ لا يمكن التراجع.`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run("delete", () => remove({ fileId: f._id as any })); })
                 }}
               />
             ))}
@@ -664,7 +664,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
                   <option value="member">عضو</option>
                   <option value="reader">قارئ</option>
                 </select>
-                <button className="btn-danger" onClick={() => confirm(`إزالة ${m.name ?? m.email} من المساحة؟ يفقد الوصول فوراً.`) && run(() => remove({ spaceId: space._id as any, userId: m.userId as any }))}>
+                <button className="btn-danger" onClick={() => void ask(`إزالة ${m.name ?? m.email} من المساحة؟ يفقد الوصول فوراً.`, { danger: true, confirmLabel: "إزالة" }).then((ok) => { if (ok) void run(() => remove({ spaceId: space._id as any, userId: m.userId as any })); })}>
                   إزالة
                 </button>
               </>

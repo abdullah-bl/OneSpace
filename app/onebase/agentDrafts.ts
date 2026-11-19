@@ -8,7 +8,7 @@ import { OneBaseError, v } from "onebase/values";
 import { internal } from "./_generated/api";
 import { action, internalQuery } from "./_generated/server";
 import { actorFor, Denied, requireUserId } from "./access";
-import { chat } from "./ai";
+import { chat, primeAi } from "./ai";
 import { MAX_STEPS_LIMIT } from "./agents";
 import { tools as registry } from "./tools";
 
@@ -46,6 +46,7 @@ export const draftWithAI = action({
     current: v.optional(v.object({ name: v.string(), description: v.string(), instructions: v.string(), allowedTools: v.array(v.string()) })),
   },
   handler: async (ctx, { goal, current }): Promise<AgentDraft> => {
+    await primeAi(ctx);
     const userId = await requireUserId(ctx);
     const tools: ToolInfo[] = await ctx.runQuery(internal.agentDrafts.draftContext, { userId });
     const want = goal.trim().slice(0, GOAL_MAX);

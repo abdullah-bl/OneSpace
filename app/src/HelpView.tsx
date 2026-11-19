@@ -1,0 +1,346 @@
+// «مركز المساعدة» (#/help, #/help/<article>): short how-to articles, searchable here and from the
+// global search (Ctrl+K). Plain data so the palette can index the titles and text.
+
+import { useState, type ReactNode } from "react";
+import { Icon, type IconName } from "./icons";
+
+export type Article = { id: string; title: string; topic: string; summary: string; body: string[]; adminOnly?: boolean };
+
+export const TOPICS: { key: string; title: string; icon: IconName }[] = [
+  { key: "start", title: "البداية", icon: "bulb" },
+  { key: "chat", title: "المحادثة", icon: "chat" },
+  { key: "spaces", title: "المساحات والملفات", icon: "folder" },
+  { key: "outputs", title: "المخرجات والتحليل", icon: "table" },
+  { key: "tasks", title: "المهام والجدولة", icon: "tasks" },
+  { key: "safety", title: "الصلاحيات والخصوصية", icon: "lock" },
+  { key: "admin", title: "للمديرين", icon: "gear" },
+];
+
+export const ARTICLES: Article[] = [
+  {
+    id: "what",
+    topic: "start",
+    title: "ما «مساحة»؟",
+    summary: "مساعد ذكي لعمل الإدارة: يقرأ ملفاتك ويحللها ويكتب ويتابع المهام.",
+    body: [
+      "«مساحة» مساعد يعمل داخل جهتك: تسأله بلغتك، فيبحث في الملفات التي تملك قراءتها ويستشهد بها، ويحلل الجداول، ويكتب المستندات، وينشئ المهام.",
+      "لا يرى المساعد إلا ما تراه أنت: يعمل بصلاحياتك، ولا يصل إلى مساحة لست عضواً فيها.",
+      "ابدأ من «محادثة جديدة» في أعلى القائمة الجانبية، أو اضغط Ctrl+K للبحث عن أي شيء.",
+    ],
+  },
+  {
+    id: "first-question",
+    topic: "start",
+    title: "أول سؤال: كيف أكتب طلباً جيداً؟",
+    summary: "اذكر ما تريد، ومن أي ملف، وبأي شكل تريد النتيجة.",
+    body: [
+      "اكتب ما تريد كما تطلبه من زميل: «لخّص سياسة الإجازات في نقاط، مع ذكر المادة لكل نقطة».",
+      "أرفق الملف المقصود بزر + أو اكتب @ ثم اسمه، ليبحث فيه وحده.",
+      "حدد شكل النتيجة إن أردت: جدول، أو مستند Word، أو رسم بياني، أو صفحة قابلة للبحث.",
+      "تابع في المحادثة نفسها: «أضف عمود القسم»، «اختصرها»، «ترجمها للإنجليزية».",
+    ],
+  },
+  {
+    id: "composer",
+    topic: "chat",
+    title: "الإرفاق والإشارة @ والمهارات /",
+    summary: "زر + لإرفاق ملف، و@ للإشارة إلى ملف أو مساحة، و/ لتشغيل مهارة.",
+    body: [
+      "زر + في مربع الكتابة: أرفق ملفاً من جهازك (Ctrl+U)، أو أشر إلى ملف موجود، أو اختر مهارة.",
+      "@: اكتبها ثم ابدأ باسم ملف أو مساحة لتظهر القائمة. ما تشير إليه يظهر شريحة فوق مربع الكتابة، ويحصر البحث فيه.",
+      "/: اكتبها لتختار إحدى مهاراتك، وهي تعليمات محفوظة تعيد استخدامها، مثل «/محضر» لكتابة محضر اجتماع بقالبك.",
+    ],
+  },
+  {
+    id: "thinking",
+    topic: "chat",
+    title: "مستوى التفكير: تلقائي، سريع، عميق",
+    summary: "«عميق» أدق للأسئلة المركّبة، و«سريع» للطلبات البسيطة.",
+    body: [
+      "«تلقائي» يختار المساعد بنفسه: يفكّر بعمق حين يكون السؤال مركّباً.",
+      "«سريع» للطلبات البسيطة: صياغة، ترجمة، سؤال مباشر.",
+      "«عميق» للمقارنات والتحليل والاستنتاج من عدة ملفات. يستغرق وقتاً أطول، وترى خطواته أثناء العمل.",
+      "قد يحدد مستواك ما هو متاح لك؛ يظهر ذلك في القائمة نفسها.",
+    ],
+  },
+  {
+    id: "agents",
+    topic: "chat",
+    title: "الوكلاء: من يجيب عن سؤالي؟",
+    summary: "يختار المساعد الوكيل المناسب تلقائياً، وقد يقسّم الطلب الكبير على عدة وكلاء.",
+    body: [
+      "الوكيل دور له تعليماته: «التحليل» للبيانات، و«السياسات» للأنظمة واللوائح، وغيرها مما تضيفه الإدارة.",
+      "لا تحتاج إلى اختيار وكيل: يقرأ المساعد طلبك ويختار. وإن كان الطلب كبيراً (مثل مقارنة ملفين ثم كتابة تقرير) قد يوزعه على عدة وكلاء ثم يجمع النتيجة.",
+    ],
+  },
+  {
+    id: "spaces",
+    topic: "spaces",
+    title: "المساحات: مساحتي والمساحات المشتركة",
+    summary: "مساحتي خاصة بك، والمساحة المشتركة لفريق.",
+    body: [
+      "«مساحتي» لك وحدك: ملفاتك ومخرجاتك الخاصة. ما يعمله المساعد فيها ينفذ مباشرة، وتستطيع التراجع عنه.",
+      "المساحة المشتركة لفريق أو قسم: ملفات وحوار ومهام مشتركة. ما يكتبه المساعد فيها ينتظر ضغطك على «نفّذ».",
+      "المساحة «للجميع» يقرؤها كل الموظفين، مثل الأنظمة واللوائح. والمساحة «الحسّاسة» لا تخرج مخرجاتها منها إلا بموافقة مديرها.",
+    ],
+  },
+  {
+    id: "files",
+    topic: "spaces",
+    title: "رفع الملفات والبحث فيها",
+    summary: "ارفع PDF وWord وExcel والصور؛ تُقرأ وتُفهرس تلقائياً.",
+    body: [
+      "ارفع الملف في صفحة المساحة أو من زر + في المحادثة. يُقرأ نصه (حتى الصور والملفات الممسوحة) ويُفهرس ليبحث فيه المساعد.",
+      "من قائمة الملفات: «اسأل» يفتح محادثة عن الملف، ومن ⋯ تجد التنزيل ورفع نسخة جديدة والنقل إلى مساحة أخرى والحذف.",
+      "المساعد يستشهد بالمصدر برقم [1] تستطيع الضغط عليه لترى المقطع والصفحة.",
+    ],
+  },
+  {
+    id: "outputs",
+    topic: "outputs",
+    title: "المخرجات: جداول ومستندات وصفحات",
+    summary: "ما يصنعه المساعد يفتح في اللوحة الجانبية ويُحفظ ملفاً.",
+    body: [
+      "المستندات والجداول والرسوم تظهر في اللوحة الجانبية، وتُحفظ ملفات في المساحة.",
+      "كل جدول فيها يأتي بخانة بحث وأعمدة قابلة للفرز تلقائياً.",
+      "نزّلها بصيغة Word أو PDF أو Excel أو CSV أو عرض تقديمي من زر التنزيل، أو اطلب تعديلها في المحادثة.",
+    ],
+  },
+  {
+    id: "analysis",
+    topic: "outputs",
+    title: "تحليل البيانات والرسوم البيانية",
+    summary: "يكتب المساعد كوداً ويشغّله في بيئة معزولة على ملفاتك.",
+    body: [
+      "اطلب «حلّل هذا الملف» أو «ارسم توزيع الموظفين حسب القسم». يكتب المساعد كود Python ويشغله في بيئة معزولة بلا إنترنت، على الملفات التي اخترتها فقط.",
+      "الرسوم تدعم العربية تلقائياً. والنتيجة تُحفظ ملفات في المساحة.",
+      "في المساحات المشتركة يعرض عليك التشغيل أولاً وينتظر «نفّذ».",
+    ],
+  },
+  {
+    id: "sources",
+    topic: "outputs",
+    title: "مصادر البيانات الخارجية",
+    summary: "قد يجيب المساعد من أنظمة الجهة مباشرة، مثل الموارد البشرية.",
+    body: [
+      "إن ربطت الإدارة نظاماً (قاعدة بيانات أو نظاماً داخلياً أو محرك بحث)، يستطيع المساعد القراءة منه مباشرة حين يتعلق سؤالك به، مثل «كم رصيد إجازاتي؟».",
+      "القراءة فقط، ولا تصل إلا إلى ما أتاحته الإدارة لمستواك ومساحاتك. ويُسجَّل كل استعلام.",
+    ],
+  },
+  {
+    id: "tasks",
+    topic: "tasks",
+    title: "المهام",
+    summary: "أنشئ مهمة لنفسك أو لزميل في مساحة مشتركة، وتابعها مع المساعد.",
+    body: [
+      "من صفحة المهام أو من تبويب «المهام» في المساحة: اكتب العنوان، واختر المسؤول والموعد والأولوية.",
+      "لكل مهمة حالة وتعليقات وروابط لملفات. «اعمل عليها مع الوكيل» يفتح محادثة مخصصة لها يعرف فيها المساعد تفاصيل المهمة.",
+    ],
+  },
+  {
+    id: "schedules",
+    topic: "tasks",
+    title: "المهام المجدولة",
+    summary: "سؤال يتكرر تلقائياً: ملخص أسبوعي، أو تقرير شهري.",
+    body: [
+      "من «المهام المجدولة» اختر قالباً أو اكتب سؤالك، وحدد التكرار (يومي، أسبوعي، شهري).",
+      "تصل النتيجة في محادثة خاصة بك. وأي إجراء يكتب في مساحة مشتركة ينتظر «نفّذ» منك.",
+    ],
+  },
+  {
+    id: "confirm",
+    topic: "safety",
+    title: "«نفّذ» والتراجع",
+    summary: "متى ينفذ المساعد مباشرة، ومتى ينتظر موافقتك.",
+    body: [
+      "القراءة والبحث تنفذ مباشرة دائماً.",
+      "ما يكتبه في «مساحتي» ينفذ مباشرة، وتظهر بجانبه «تراجع».",
+      "ما يكتبه في مساحة مشتركة (ملف، مخرج، تشغيل تحليل) يظهر بطاقة تنتظر «نفّذ». تستطيع رفضه.",
+    ],
+  },
+  {
+    id: "levels",
+    topic: "safety",
+    title: "مستواك وحدود الاستخدام",
+    summary: "تحدد الإدارة ما يتاح لك: النماذج والأدوات وعدد الأسئلة يومياً.",
+    body: [
+      "لكل موظف مستوى: يحدد النموذج، وهل «تفكير عميق» متاح، والأدوات ومصادر البيانات، وعدد الأسئلة في اليوم.",
+      "ترى مستواك وما تبقى لك اليوم في قائمة حسابك أسفل الشريط الجانبي. يتجدد الحد منتصف الليل.",
+    ],
+  },
+  {
+    id: "privacy",
+    topic: "safety",
+    title: "الخصوصية: من يرى ماذا؟",
+    summary: "محادثاتك لك، والملفات بحسب عضوية المساحة.",
+    body: [
+      "محادثاتك خاصة بك، حتى المحادثة التي تبدأها داخل مساحة مشتركة.",
+      "الملفات يراها أعضاء مساحتها فقط. حتى مدير المنصة لا يرى ملفات مساحة ليس عضواً فيها.",
+      "كل إجراء مهم يُسجَّل في سجل التدقيق: من فعل ماذا ومتى.",
+    ],
+  },
+  {
+    id: "admin-console",
+    topic: "admin",
+    adminOnly: true,
+    title: "إدارة المنصة",
+    summary: "كل صفحات الإدارة في مكان واحد.",
+    body: [
+      "من قائمة حسابك ← «إدارة المنصة». النظرة العامة تعرض ما ينتظرك: حسابات بانتظار التفعيل، ومسودات وكلاء لم تُنشر، ومصادر لا تتصل.",
+      "الأشخاص: الموظفون (التفعيل والأدوار) والمستويات (حدود الاستخدام). العمل: المساحات. الذكاء الاصطناعي: الوكلاء والمزوّدون ومصادر البيانات. الرقابة: سجل التدقيق.",
+    ],
+  },
+  {
+    id: "admin-agents",
+    topic: "admin",
+    adminOnly: true,
+    title: "إنشاء وكيل ونشره",
+    summary: "اكتب متى يُستخدم وتعليماته، وجرّبه، ثم انشره.",
+    body: [
+      "«وكيل جديد» ← اكتب الاسم و«متى يُستخدم» (يقرؤها المساعد ليختاره) والتعليمات. أو صف ما تريد واضغط «صمّم» ليملأ الحقول.",
+      "التعديلات تُحفظ مسودة لا يراها الموظفون. جرّبها في تبويب «التجربة»، ثم «انشر». كل نسخة محفوظة وتستطيع إعادة نشرها.",
+    ],
+  },
+  {
+    id: "admin-providers",
+    topic: "admin",
+    adminOnly: true,
+    title: "مزوّدو النماذج",
+    summary: "اربط خادم نماذج واختر النموذج لكل دور.",
+    body: [
+      "أضف أي خادم متوافق مع OpenAI (llama.cpp، vLLM، Ollama، أو خدمة مستضافة) بعنوانه ومفتاحه، ثم «افحص» لترى نماذجه.",
+      "اختر لكل دور نموذجاً: الرئيس للمحادثة والأدوات، والسريع للمهام الخفيفة ومستوى «أساسي»، والرؤية لقراءة الصور. ما لا تختاره يبقى على إعدادات الخادم.",
+    ],
+  },
+  {
+    id: "admin-sources",
+    topic: "admin",
+    adminOnly: true,
+    title: "ربط مصدر بيانات",
+    summary: "قاعدة بيانات أو نظام REST أو محرك بحث، للقراءة فقط.",
+    body: [
+      "«مصدر جديد» ← اختر النوع، واكتب ماذا يحوي (يقرؤه المساعد)، ونص الاتصال. استخدم حساباً بصلاحية قراءة فقط.",
+      "«افحص الاتصال» يملأ الجداول والأعمدة تلقائياً؛ احذف منها ما لا يلزم. حدد لمن المصدر (كل الموظفين أو أعضاء مساحات)، ومن صفحة المستويات أي المستويات تصل إليه.",
+    ],
+  },
+  {
+    id: "admin-levels",
+    topic: "admin",
+    adminOnly: true,
+    title: "المستويات وحدود الاستخدام",
+    summary: "مثل خطط الاشتراك: أساسي ومتقدم، لكل موظف.",
+    body: [
+      "أنشئ مستويات مثل «أساسي» (النموذج السريع، 50 سؤالاً يومياً) و«متقدم» (الرئيس مع تفكير عميق ومصادر البيانات).",
+      "أول مستوى يصبح الافتراضي لكل من ليس له مستوى. عيّن مستوى لموظف بعينه من قائمة الموظفين أسفل الصفحة، وترى استخدامه اليوم.",
+    ],
+  },
+];
+
+export function HelpView({ article, isAdmin }: { article: string | null; isAdmin: boolean }) {
+  const [q, setQ] = useState("");
+  const list = ARTICLES.filter((a) => isAdmin || !a.adminOnly);
+  const open = list.find((a) => a.id === article);
+  if (open) {
+    const topic = TOPICS.find((t) => t.key === open.topic)!;
+    const related = list.filter((a) => a.topic === open.topic && a.id !== open.id);
+    return (
+      <div className="mx-auto max-w-[720px]">
+        <a href="#/help" className="btn-ghost mb-3 h-8 px-2 text-sm">
+          <Icon name="next" size={14} /> مركز المساعدة
+        </a>
+        <p className="text-xs text-muted">{topic.title}</p>
+        <h1 className="page-title mt-1">{open.title}</h1>
+        <div className="mt-5 space-y-4 leading-8">
+          {open.body.map((p, i) => (
+            <p key={i}>{p}</p>
+          ))}
+        </div>
+        {related.length > 0 && (
+          <div className="mt-10 border-t border-rule pt-5">
+            <p className="mb-2 text-sm font-medium">في الموضوع نفسه</p>
+            <ArticleList items={related} />
+          </div>
+        )}
+      </div>
+    );
+  }
+  const needle = q.trim();
+  const found = needle ? list.filter((a) => matches(a, needle)) : null;
+  return (
+    <div className="mx-auto max-w-[880px]">
+      <div className="mb-8 text-center">
+        <span className="mx-auto mb-3 grid h-11 w-11 place-items-center rounded-full bg-primary-soft text-primary">
+          <Icon name="help" size={22} />
+        </span>
+        <h1 className="page-title">كيف نساعدك؟</h1>
+        <div className="relative mx-auto mt-4 max-w-md">
+          <Icon name="search" className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-faint" />
+          <input className="input h-11 w-full ps-9" placeholder="ابحث في المساعدة: الإرفاق، المستويات، نفّذ…" value={q} onChange={(e) => setQ(e.target.value)} autoFocus />
+        </div>
+      </div>
+      {found ? (
+        found.length ? (
+          <ArticleList items={found} />
+        ) : (
+          <p className="text-center text-sm text-muted">لا نتائج. جرّب كلمة أخرى، أو اسأل المساعد مباشرة.</p>
+        )
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          {TOPICS.filter((t) => list.some((a) => a.topic === t.key)).map((t) => (
+            <section key={t.key} className="card p-4">
+              <h2 className="mb-2 flex items-center gap-2 font-medium">
+                <Icon name={t.icon} className="text-muted" /> {t.title}
+              </h2>
+              <ul className="space-y-0.5">
+                {list
+                  .filter((a) => a.topic === t.key)
+                  .map((a) => (
+                    <li key={a.id}>
+                      <a href={`#/help/${a.id}`} className="block rounded-md px-2 py-1.5 text-sm hover:bg-active">
+                        {a.title}
+                      </a>
+                    </li>
+                  ))}
+              </ul>
+            </section>
+          ))}
+        </div>
+      )}
+      <p className="mt-8 text-center text-xs text-muted">
+        لم تجد ما تبحث عنه؟ اسأل المساعد نفسه في <a className="text-primary hover:underline" href="#/new">محادثة جديدة</a>، أو اضغط <kbd className="rounded border border-line px-1">Ctrl</kbd>+<kbd className="rounded border border-line px-1">K</kbd> للبحث في كل شيء.
+      </p>
+    </div>
+  );
+}
+
+function ArticleList({ items }: { items: Article[] }): ReactNode {
+  return (
+    <ul className="card divide-y divide-rule">
+      {items.map((a) => (
+        <li key={a.id}>
+          <a href={`#/help/${a.id}`} className="flex items-center gap-3 px-4 py-3 hover:bg-active">
+            <span className="min-w-0 flex-1">
+              <span className="block text-sm font-medium">{a.title}</span>
+              <span className="block truncate text-xs text-muted">{a.summary}</span>
+            </span>
+            <Icon name="chevron" size={14} className="text-faint" />
+          </a>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+const normalize = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[ً-ْـ]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي");
+
+export function matches(a: Article, q: string) {
+  const words = normalize(q).split(/\s+/).filter(Boolean);
+  const text = normalize(`${a.title} ${a.summary} ${a.body.join(" ")}`);
+  return words.every((w) => text.includes(w));
+}

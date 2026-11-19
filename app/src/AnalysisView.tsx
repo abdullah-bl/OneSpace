@@ -1,228 +1,188 @@
-// Run analysis code in the sandbox on files the user picks from their spaces. The server checks
-// every file again (access.ts); this screen only offers what files:list already shows the user.
+// «التحليلات»: the analyses the assistant ran for me (run_analysis in the sandbox), newest first:
+// which files went in, how it went, what came out, and the chat it came from. New analyses are
+// asked for in a chat; the code itself stays out of sight unless opened under «التفاصيل».
+// Runs are private to their owner (analysis:myRuns / analysis:getRun).
 
 import { useState } from "react";
-import { useAction, useMutation, useQuery } from "onebase/react";
+import { useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
-import { api, errorText, formatDate, formatSize, type SpaceInfo } from "./lib";
+import { api, formatDate, type SpaceInfo } from "./lib";
+import { Icon } from "./icons";
+import { startChatWith } from "./ChatView";
+import { EmptyState, PageHeader } from "./ui";
 
-const SAMPLE = `import pandas as pd, matplotlib.pyplot as plt, onespace
+type Run = NonNullable<ReturnType<typeof useQuery<typeof api.analysis.myRuns>>>[number];
+type State = "ok" | "failed" | "running";
 
-# الملفات المختارة في /input ، والمخرجات تُكتب في /output
-for name in onespace.inputs():
-    print(name)
+function stateOf(r: Run): State {
+  if (r.status === "running") return "running";
+  return r.status === "done" && !r.exit?.timedOut && !r.exit?.oomKilled && !r.exit?.error && (r.exit?.code ?? 0) === 0 ? "ok" : "failed";
+}
 
-# مثال:
-# df = pd.read_csv("/input/data.csv")
-# print(df.describe())
-# onespace.arabic_plots()
-# df["الدرجة"].plot.hist(title=onespace.ar("توزيع الدرجات"))
-# plt.savefig("/output/chart.png")
-`;
+function why(r: Run): string {
+  if (r.exit?.timedOut) return "تجاوز الحد الزمني";
+  if (r.exit?.oomKilled) return "تجاوز حد الذاكرة";
+  if (r.exit?.error) return r.exit.error;
+  return "انتهى بخطأ في الكود";
+}
 
-const spaceLabel = (s: SpaceInfo) => (s.kind === "personal" ? "مساحتي" : s.name);
+const SUGGEST = ["حلّل ملف الموظفين وأعطني أهم الأرقام", "ارسم توزيع الموظفين حسب القسم", "قارن بين ملفي المشتريات للعامين"];
 
 export function AnalysisView({ spaces }: { spaces: SpaceInfo[] }) {
-  const runAnalysis = useAction(api.analysis.run);
-  const [browse, setBrowse] = useState(spaces[0]?._id ?? "");
-  const [picked, setPicked] = useState<Record<string, { name: string; spaceId: string }>>({});
-  const [code, setCode] = useState(SAMPLE);
-  const [target, setTarget] = useState("");
-  const [timeout, setTimeoutS] = useState(60);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [result, setResult] = useState<any>(null);
-  const files = useQuery(api.files.list, browse ? { spaceId: browse as any } : "skip");
-  const writable = spaces.filter((s) => s.canWrite);
-  const pickedList = Object.entries(picked);
+  const runs = useQuery(api.analysis.myRuns);
+  const [filter, setFilter] = useState<"all" | "ok" | "failed">("all");
+  const [openArtifact, setOpenArtifact] = useState<string | null>(null);
+  const counts = { all: runs?.length ?? 0, ok: 0, failed: 0 };
+  for (const r of runs ?? []) {
+    const st = stateOf(r);
+    if (st !== "running") counts[st]++;
+  }
+  const shown = (runs ?? []).filter((r) => filter === "all" || stateOf(r) === filter);
 
   return (
-    <div className="mx-auto max-w-5xl space-y-4">
-      <header>
-        <h1 className="page-title">التحليل</h1>
-        <p className="text-sm text-muted">
-          يُشغَّل الكود في حاوية معزولة بلا شبكة، ولا يصل إلا للملفات التي تختارها هنا (للقراءة فقط في ‎/input‎). ما يُكتب في ‎/output‎ يُحفظ ملفاتٍ في المساحة التي تختارها.
-        </p>
-      </header>
-
-      <section className="card space-y-3 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-bold">الملفات</span>
-          <select className="input" value={browse} onChange={(e) => setBrowse(e.target.value)}>
-            {spaces.map((s) => (
-              <option key={s._id} value={s._id}>
-                {spaceLabel(s)}
-              </option>
-            ))}
-          </select>
-        </div>
-        <div className="max-h-48 overflow-y-auto rounded-lg border border-line">
-          {files === undefined && <div className="p-2 text-sm text-faint">جارٍ التحميل…</div>}
-          {files?.length === 0 && <div className="p-2 text-sm text-faint">لا ملفات في هذه المساحة</div>}
-          {files?.map((file: any) => (
-            <label key={file._id} className="flex items-center gap-2 px-3 py-1.5 text-sm hover:bg-sunken">
-              <input
-                type="checkbox"
-                checked={!!picked[file._id]}
-                onChange={(e) =>
-                  setPicked((p) => {
-                    const next = { ...p };
-                    if (e.target.checked) next[file._id] = { name: file.name, spaceId: browse };
-                    else delete next[file._id];
-                    return next;
-                  })
-                }
-              />
-              <span className="truncate">{file.name}</span>
-              <span className="ms-auto text-xs text-faint">{formatSize(file.size)}</span>
-            </label>
-          ))}
-        </div>
-        {pickedList.length > 0 && (
-          <div className="flex flex-wrap gap-1">
-            {pickedList.map(([id, p]) => (
-              <span key={id} className="rounded-full bg-raised px-2 py-0.5 text-xs text-ink">
-                {p.name}
-                <button
-                  className="ms-1 text-faint"
-                  onClick={() =>
-                    setPicked((x) => {
-                      const n = { ...x };
-                      delete n[id];
-                      return n;
-                    })
-                  }
-                >
-                  إزالة
-                </button>
-              </span>
+    <div className="mx-auto max-w-4xl">
+      <PageHeader
+        title="التحليلات"
+        subtitle="ما حلّله المساعد لك: الملفات التي استخدمها، والنتيجة، والمخرجات. يعمل التحليل في بيئة معزولة بلا إنترنت، على الملفات التي تختارها فقط."
+        actions={
+          <button className="btn-primary" onClick={() => startChatWith({ text: "حلّل " })}>
+            <Icon name="plus" /> تحليل جديد
+          </button>
+        }
+      />
+      {runs === undefined ? (
+        <p className="text-sm text-muted">جارٍ التحميل…</p>
+      ) : runs.length === 0 ? (
+        <EmptyState icon="table" title="لا تحليلات بعد">
+          <p>اطلب التحليل في محادثة، وأرفق الملف. مثلاً:</p>
+          <div className="mt-3 flex flex-wrap justify-center gap-1.5">
+            {SUGGEST.map((t) => (
+              <button key={t} className="h-8 rounded-full border border-line px-3 text-xs hover:border-control" onClick={() => startChatWith({ text: t })}>
+                {t}
+              </button>
             ))}
           </div>
-        )}
-      </section>
-
-      <section className="card space-y-3 p-4">
-        <div className="text-sm font-bold">الكود (Python)</div>
-        <textarea className="input h-64 w-full font-mono text-xs" dir="ltr" spellCheck={false} value={code} onChange={(e) => setCode(e.target.value)} />
-        <div className="flex flex-wrap items-center gap-2 text-sm">
-          <span>حفظ المخرجات في</span>
-          <select className="input" value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">تلقائي (مساحة الملفات إن أمكن، وإلا مساحتي؛ ملفات من عدة مساحات: مساحتي)</option>
-            {writable.map((s) => (
-              <option key={s._id} value={s._id}>
-                {spaceLabel(s)}
-              </option>
+        </EmptyState>
+      ) : (
+        <>
+          <div className="mb-3 flex flex-wrap gap-1" role="tablist">
+            {(
+              [
+                ["all", "الكل"],
+                ["ok", "نجح"],
+                ["failed", "تعثّر"],
+              ] as const
+            ).map(([k, label]) => (
+              <button key={k} role="tab" aria-selected={filter === k} className={`h-8 rounded-full border px-3 text-xs ${filter === k ? "border-ink bg-ink text-surface" : "border-line hover:border-control"}`} onClick={() => setFilter(k)}>
+                {label} <span className="num opacity-70">{counts[k]}</span>
+              </button>
             ))}
-          </select>
-          <span>المهلة</span>
-          <input className="input w-20" type="number" min={1} max={60} value={timeout} onChange={(e) => setTimeoutS(Number(e.target.value))} dir="ltr" />
-          <span>ث</span>
-          <button
-            className="btn-primary ms-auto"
-            disabled={busy || !code.trim()}
-            onClick={async () => {
-              setBusy(true);
-              setError("");
-              setResult(null);
-              try {
-                setResult(await runAnalysis({ code, fileIds: Object.keys(picked), targetSpaceId: target || undefined, timeoutSeconds: timeout }));
-              } catch (err) {
-                setError(errorText(err));
-              } finally {
-                setBusy(false);
-              }
-            }}
-          >
-            {busy ? "يعمل…" : "شغّل"}
-          </button>
-        </div>
-        {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
-      </section>
-
-      {result && <RunResult r={result} spaces={spaces} />}
-      <RecentRuns spaces={spaces} />
+          </div>
+          <ul className="space-y-2">
+            {shown.map((r) => (
+              <RunCard key={r._id} r={r} spaces={spaces} onOpenArtifact={setOpenArtifact} />
+            ))}
+          </ul>
+        </>
+      )}
+      {openArtifact && <ArtifactDock key={openArtifact} artifactId={openArtifact} spaces={spaces} onClose={() => setOpenArtifact(null)} mode="overlay" />}
     </div>
   );
 }
 
-function Status({ exit, status }: { exit: any; status?: string }) {
-  if (exit?.timedOut) return <span className="text-warning">تجاوز الحد الزمني</span>;
-  if (exit?.oomKilled) return <span className="text-warning">تجاوز حد الذاكرة</span>;
-  if (status === "running") return <span className="text-muted">يعمل…</span>;
-  if (status === "done" || (exit && exit.code === 0 && !exit.error)) return <span className="text-ink">نجح</span>;
-  return <span className="text-negative">فشل{exit?.error ? `: ${exit.error}` : ""}</span>;
+function RunCard({ r, spaces, onOpenArtifact }: { r: Run; spaces: SpaceInfo[]; onOpenArtifact: (id: string) => void }) {
+  const [details, setDetails] = useState(false);
+  const st = stateOf(r);
+  const space = spaces.find((s) => s._id === r.spaceId);
+  // Output files that also became artifacts are shown once, as artifacts.
+  const files = r.artifactIds.length ? r.outputs.filter((o: any) => !/\.(csv|xlsx|md|html|txt|png|jpe?g|svg)$/i.test(o.name)) : r.outputs;
+  return (
+    <li className="card p-4">
+      <div className="flex flex-wrap items-start gap-3">
+        <span className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${st === "ok" ? "bg-positive" : st === "running" ? "bg-warning" : "bg-negative"}`} />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm">
+            {r.inputs.length ? (
+              <>
+                على <span className="font-medium">{r.inputs.map((i: any) => i.name).join("، ")}</span>
+              </>
+            ) : (
+              <span className="font-medium">بلا ملفات</span>
+            )}
+          </p>
+          <p className="mt-0.5 text-xs text-muted">
+            {formatDate(r.createdAt)}
+            {r.exit ? ` · ${(r.exit.durationMs / 1000).toFixed(1)} ث` : ""}
+            {space ? ` · حُفظت في ${space.kind === "personal" ? "مساحتي" : space.name}` : r.spaceId ? " · في مساحة لم تعد متاحة لك" : ""}
+          </p>
+          {st === "failed" && <p className="mt-1 text-xs text-negative">تعثّر: {why(r)}</p>}
+          {st === "running" && <p className="mt-1 text-xs text-muted">يعمل الآن…</p>}
+        </div>
+        {r.thread && (
+          <a href={`#/chat/${r.thread.id}`} className="btn-ghost h-8 max-w-56 px-2 text-xs" title={r.thread.title}>
+            <Icon name="chat" size={14} /> <span className="truncate">{r.thread.title}</span>
+          </a>
+        )}
+      </div>
+      {(r.artifactIds.length > 0 || files.length > 0) && (
+        <div className="mt-3 flex flex-wrap gap-1.5 ps-5">
+          {r.artifactIds.map((id: string) => (
+            <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
+          ))}
+          {files.map((o: any) => (
+            <FileChip key={o.fileId} fileId={o.fileId} name={o.name} />
+          ))}
+        </div>
+      )}
+      <div className="mt-2 ps-5">
+        <button className="text-xs text-muted hover:text-ink" aria-expanded={details} onClick={() => setDetails(!details)}>
+          {details ? "إخفاء التفاصيل" : "التفاصيل"}
+        </button>
+        {details && <RunDetails runId={r._id} />}
+      </div>
+    </li>
+  );
 }
 
-function OutputLink({ fileId, name }: { fileId: string; name: string }) {
+function FileChip({ fileId, name }: { fileId: string; name: string }) {
   const requestDownload = useMutation(api.files.requestDownload);
   return (
-    <button className="btn-ghost px-1 text-ink" onClick={async () => window.open(await requestDownload({ fileId: fileId as any, inline: true }), "_blank", "noopener")}>
-      {name}
+    <button className="flex h-8 items-center gap-1.5 rounded-lg border border-line px-2.5 text-xs hover:border-control" onClick={async () => window.open(await requestDownload({ fileId: fileId as any, inline: true }), "_blank", "noopener")}>
+      <Icon name="download" size={14} className="text-muted" /> {name}
     </button>
   );
 }
 
-/** An artifact made from a run output; opens in the side panel (sandboxed rendering). */
-function RunResult({ r, spaces }: { r: any; spaces: SpaceInfo[] }) {
-  const space = spaces.find((s) => s._id === r.targetSpaceId);
-  const [openId, setOpenId] = useState<string | null>(null);
+/** What the run printed, its error, and the code the assistant wrote (for whoever wants to check it). */
+function RunDetails({ runId }: { runId: string }) {
+  const run = useQuery(api.analysis.getRun, { runId });
+  if (!run) return <p className="mt-2 text-xs text-muted">جارٍ التحميل…</p>;
   return (
-    <section className="card space-y-2 p-4 text-sm">
-      <div className="flex items-center gap-2 font-bold">
-        النتيجة: <Status exit={{ code: r.exitCode, timedOut: r.timedOut, oomKilled: r.oomKilled, error: r.error }} status={r.ok ? "done" : "failed"} />
-      </div>
-      {r.stdout && <pre className="max-h-80 overflow-auto rounded-lg bg-ink p-3 text-xs text-surface" dir="ltr">{r.stdout}</pre>}
-      {!r.ok && r.stderr && <pre className="max-h-60 overflow-auto rounded-lg bg-negative-soft p-3 text-xs text-negative" dir="ltr">{r.stderr}</pre>}
-      {r.outputs.length > 0 && (
+    <div className="mt-2 space-y-2 text-xs">
+      {run.stdout?.trim() && (
         <div>
-          <div className="text-xs text-muted">المخرجات (حُفظت في {space ? spaceLabel(space) : "المساحة"}):</div>
-          <div className="flex flex-wrap gap-1">
-            {r.outputs.map((o: any) => (
-              <OutputLink key={o.fileId} fileId={o.fileId} name={o.name} />
-            ))}
-          </div>
+          <p className="mb-1 text-muted">ما طبعه التحليل</p>
+          <pre className="max-h-64 overflow-auto rounded-lg bg-sunken p-3" dir="ltr">
+            {run.stdout}
+          </pre>
         </div>
       )}
-      {r.artifactIds?.length > 0 && (
+      {run.status !== "done" && run.stderr?.trim() && (
         <div>
-          <div className="text-xs text-muted">تُعرض في لوحة المخرجات:</div>
-          <div className="flex flex-wrap gap-1">
-            {r.artifactIds.map((id: string) => (
-              <OutputChip key={id} artifactId={id} onOpen={setOpenId} />
-            ))}
-          </div>
+          <p className="mb-1 text-muted">الخطأ</p>
+          <pre className="max-h-48 overflow-auto rounded-lg bg-negative-soft p-3 text-negative" dir="ltr">
+            {run.stderr.split("\n").slice(-20).join("\n")}
+          </pre>
         </div>
       )}
-      {openId && <ArtifactDock key={openId} artifactId={openId} spaces={spaces} onClose={() => setOpenId(null)} mode="overlay" />}
-    </section>
-  );
-}
-
-function RecentRuns({ spaces }: { spaces: SpaceInfo[] }) {
-  const runs = useQuery(api.analysis.myRuns);
-  if (!runs?.length) return null;
-  return (
-    <section className="card overflow-hidden">
-      <div className="border-b border-line px-4 py-2 text-sm font-bold">تشغيلاتي الأخيرة</div>
-      <table className="w-full">
-        <tbody>
-          {runs.map((r: any) => (
-            <tr key={r._id} className="border-t border-rule align-top">
-              <td className="td whitespace-nowrap text-xs text-muted">{formatDate(r.createdAt)}</td>
-              <td className="td">
-                <Status exit={r.exit} status={r.status} />
-              </td>
-              <td className="td text-xs">{r.inputs.map((i: any) => i.name).join("، ") || "—"}</td>
-              <td className="td text-xs">
-                {r.outputs.map((o: any) => (
-                  <OutputLink key={o.fileId} fileId={o.fileId} name={o.name} />
-                ))}
-                {spaces.find((s) => s._id === r.spaceId) ? null : <span className="text-faint">(مساحة لم تعد متاحة)</span>}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </section>
+      {run.code && (
+        <details>
+          <summary className="cursor-pointer text-muted hover:text-ink">الكود الذي كتبه المساعد (Python)</summary>
+          <pre className="mt-1 max-h-80 overflow-auto rounded-lg bg-sunken p-3" dir="ltr">
+            {run.code}
+          </pre>
+        </details>
+      )}
+    </div>
   );
 }

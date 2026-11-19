@@ -10,23 +10,27 @@ import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
 import { SkillsView } from "./SkillsView";
-import { LevelsView } from "./LevelsView";
 import { SpaceView, SpacesPage } from "./SpaceView";
 import { TasksPage } from "./TasksView";
 import { MentionsPage } from "./MentionsView";
 import { NotificationBell } from "./NotificationBell";
-import { AdminView } from "./AdminView";
-import { AuditView } from "./AuditView";
+import { AdminConsole } from "./AdminConsole";
+import { CommandPalette, useCommandPalette } from "./CommandPalette";
+import { HelpView } from "./HelpView";
 import { AnalysisView } from "./AnalysisView";
 import { RankingView } from "./RankingView";
 import { MyRecordsView } from "./MyRecordsView";
-import { AgentsView } from "./AgentsView";
+import { ConfirmHost } from "./ui";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
   if (isLoading) return <Centered>جارٍ التحميل…</Centered>;
-  if (!isAuthenticated) return <Login />;
-  return <Gate />;
+  return (
+    <>
+      {isAuthenticated ? <Gate /> : <Login />}
+      <ConfirmHost />
+    </>
+  );
 }
 
 function Centered({ children }: { children: ReactNode }) {
@@ -142,6 +146,7 @@ function Shell({ me }: { me: Me }) {
   const spaces = useQuery(api.spaces.mine);
   const [route, go] = useRoute();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useCommandPalette();
   const isAdmin = me.workspaceRole === "admin";
   const managesAny = !!spaces?.some((s) => s.kind === "shared" && s.canManage);
 
@@ -184,10 +189,11 @@ function Shell({ me }: { me: Me }) {
     );
   else if (head === "analysis") screen = <Wide><AnalysisView spaces={spaces} /></Wide>;
   else if (head === "ranking") screen = <Wide><RankingView spaces={spaces} /></Wide>;
-  else if (head === "admin" && isAdmin) screen = <Wide><AdminView /></Wide>;
-  else if (head === "agents" && isAdmin) screen = <Wide><AgentsView spaces={spaces} /></Wide>;
-  else if (head === "levels" && isAdmin) screen = <Wide><LevelsView /></Wide>;
-  else if (head === "audit" && (isAdmin || managesAny)) screen = <Wide><AuditView isAdmin={isAdmin} spaces={spaces} /></Wide>;
+  else if (head === "help") screen = <Wide><HelpView article={a ?? null} isAdmin={isAdmin} /></Wide>;
+  else if (head === "admin" && (isAdmin || managesAny)) screen = <AdminConsole page={a ?? (isAdmin ? "overview" : "audit")} isAdmin={isAdmin} spaces={spaces} go={go} />;
+  // Old addresses of the admin pages, before «إدارة المنصة» grouped them.
+  else if ((head === "agents" || head === "levels") && isAdmin) screen = <AdminConsole page={head} isAdmin={isAdmin} spaces={spaces} go={go} />;
+  else if (head === "audit" && (isAdmin || managesAny)) screen = <AdminConsole page="audit" isAdmin={isAdmin} spaces={spaces} go={go} />;
   else screen = <NotAvailable />;
 
   return (
@@ -201,6 +207,9 @@ function Shell({ me }: { me: Me }) {
           <Mark size={22} /> مساحة
         </a>
         <span className="ms-auto" />
+        <button className="btn-ghost w-10 px-0" aria-label="ابحث" onClick={() => setSearchOpen(true)}>
+          <Icon name="search" size={20} />
+        </button>
         <NotificationBell go={go} />
         <button className="btn-ghost w-10 px-0" aria-label="محادثة جديدة" onClick={() => go("/new")}>
           <Icon name="plus" size={20} />
@@ -218,6 +227,7 @@ function Shell({ me }: { me: Me }) {
       <main className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface">
         <ErrorBoundary key={route.join("/")}>{screen}</ErrorBoundary>
       </main>
+      {searchOpen && <CommandPalette onClose={() => setSearchOpen(false)} go={go} isAdmin={isAdmin} />}
     </div>
   );
 }
@@ -284,6 +294,10 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
         <button className="btn-primary h-10 w-full justify-start gap-2 px-3" onClick={() => go("/new")}>
           <Icon name="plus" size={18} /> محادثة جديدة
         </button>
+        <button className="mt-2 flex h-9 w-full items-center gap-2 rounded-md border border-line px-3 text-sm text-muted hover:border-control hover:text-ink" onClick={() => window.dispatchEvent(new Event("onespace:search"))}>
+          <Icon name="search" size={16} /> ابحث
+          <kbd className="ms-auto rounded border border-line px-1.5 text-[11px]">Ctrl K</kbd>
+        </button>
       </div>
       <nav className="mt-3 space-y-0.5 px-3" aria-label="التنقل">
         <NavLink href="#/chats" icon="chat" on={section === "chats"}>
@@ -298,6 +312,11 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
         <NavLink href="#/mentions" icon="at" on={section === "mentions"} count={mentionsUnread}>
           الإشارات
         </NavLink>
+        {props.isAdmin && (
+          <NavLink href="#/admin" icon="gear" on={section === "admin" || section === "agents" || section === "levels" || section === "audit"}>
+            إدارة المنصة
+          </NavLink>
+        )}
       </nav>
       <div className="mt-5 flex min-h-0 flex-1 flex-col">
         <div className="flex items-center px-6 pb-1 text-xs text-muted">
@@ -367,13 +386,12 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
           {item("مهاراتي", "/skills")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
-          {item("التحليل", "/analysis")}
+          {item("التحليلات", "/analysis")}
           {item("المفاضلة", "/ranking")}
+          {item("مركز المساعدة", "/help")}
           {(isAdmin || managesAny) && <div className="my-1 border-t border-rule" />}
-          {isAdmin && item("إدارة مساحة العمل", "/admin")}
-          {isAdmin && item("الوكلاء", "/agents")}
-          {isAdmin && item("المستويات", "/levels")}
-          {(isAdmin || managesAny) && item("سجل التدقيق", "/audit")}
+          {isAdmin && item("إدارة المنصة", "/admin")}
+          {!isAdmin && managesAny && item("سجل التدقيق", "/admin/audit")}
           <div className="my-1 border-t border-rule" />
           <button className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-start text-sm hover:bg-active" onClick={() => void signOut()}>
             <Icon name="logout" size={16} /> تسجيل الخروج

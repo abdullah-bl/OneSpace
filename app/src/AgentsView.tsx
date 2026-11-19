@@ -10,7 +10,7 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
 import { Icon } from "./icons";
-import { Menu, type MenuItem } from "./ui";
+import { Menu, type MenuItem, ask } from "./ui";
 
 type Config = {
   name: string;
@@ -52,13 +52,10 @@ export function AgentsView(_props: { spaces: SpaceInfo[] }) {
   const [selected, setSelected] = useState<string | "new" | null>(null);
   const [error, setError] = useState("");
   const current = agents?.find((a) => a._id === selected) ?? null;
-
-  useEffect(() => {
-    if (selected === null && agents?.length) setSelected(agents[0]!._id);
-  }, [agents, selected]);
+  const open = selected === "new" || !!current;
 
   return (
-    <div className="mx-auto max-w-6xl">
+    <div className="@container">
       <header className="mb-6 flex flex-wrap items-start gap-3">
         <div className="min-w-0 flex-1">
           <h1 className="page-title">الوكلاء</h1>
@@ -70,45 +67,59 @@ export function AgentsView(_props: { spaces: SpaceInfo[] }) {
       </header>
       {error && <p className="alert-negative mb-4">{error}</p>}
 
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <aside className="shrink-0 space-y-2 lg:sticky lg:top-6 lg:w-64">
-          {agents?.map((a) => {
-            const cfg = (a.live ?? a.draft) as Config | null;
-            const on = selected === a._id;
-            return (
-              <button
-                key={a._id}
-                onClick={() => setSelected(a._id)}
-                className={`flex w-full items-start gap-3 rounded-xl border p-3 text-start transition-colors ${on ? "border-primary bg-primary-soft" : "border-line bg-surface hover:border-control"}`}
-              >
-                <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${on ? "bg-primary text-white" : "bg-active text-muted"}`}>
-                  <Icon name="bot" size={18} />
-                </span>
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-1.5">
-                    <span className="truncate font-medium">{cfg?.name}</span>
-                    {a.isDefault && <span className="badge-primary">افتراضي</span>}
-                  </span>
-                  <span className="mt-0.5 line-clamp-2 text-xs leading-5 text-muted">{cfg?.description || "—"}</span>
-                  <span className="mt-1.5 flex flex-wrap gap-1">
-                    {a.version ? <span className="badge">النسخة {a.version}</span> : <span className="badge-warning">لم يُنشر</span>}
-                    {a.draft && a.version > 0 && <span className="badge-warning">مسودة</span>}
-                    {!a.enabled && <span className="badge-negative">معطّل</span>}
-                  </span>
-                </span>
-              </button>
-            );
-          })}
+      <div className="flex flex-col gap-5 @4xl:flex-row @4xl:items-start">
+        {/* The list: always beside the editor on wide screens; on narrow ones, until an agent is opened. */}
+        <aside className={`shrink-0 @4xl:sticky @4xl:top-6 @4xl:block @4xl:w-72 ${open ? "hidden" : ""}`}>
+          <ul className="card divide-y divide-rule overflow-hidden">
+            {agents?.map((a) => {
+              const cfg = (a.live ?? a.draft) as Config | null;
+              const on = selected === a._id;
+              return (
+                <li key={a._id}>
+                  <button onClick={() => setSelected(a._id)} aria-current={on ? "true" : undefined} className={`flex w-full items-start gap-3 px-3 py-3 text-start transition-colors ${on ? "bg-primary-soft" : "hover:bg-active"}`}>
+                    <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${on ? "bg-primary text-white" : "bg-active text-muted"}`}>
+                      <Icon name="bot" size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium">{cfg?.name}</span>
+                        {a.isDefault && <span className="badge-primary">افتراضي</span>}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted">{cfg?.description || "—"}</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {a.version ? <span className="badge">النسخة {a.version}</span> : <span className="badge-warning">لم يُنشر</span>}
+                        {a.draft && a.version > 0 && <span className="badge-warning">مسودة</span>}
+                        {!a.enabled && <span className="badge-negative">معطّل</span>}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
           {agents && !["default", "policies", "grades", "analysis"].every((k) => agents.some((a) => a.key === k)) && (
-            <button className="btn-ghost w-full justify-center text-xs" onClick={() => void seed({}).catch((e) => setError(errorText(e)))}>
+            <button className="btn-ghost mt-2 w-full justify-center text-xs" onClick={() => void seed({}).catch((e) => setError(errorText(e)))}>
               أضف الوكلاء المبدئيين
             </button>
           )}
         </aside>
 
-        <section className="min-w-0 flex-1">
+        <section className={`min-w-0 flex-1 ${open ? "" : "hidden @4xl:block"}`}>
+          {open && (
+            <button className="btn-ghost mb-2 h-8 px-2 text-sm @4xl:hidden" onClick={() => setSelected(null)}>
+              <Icon name="next" size={14} /> كل الوكلاء
+            </button>
+          )}
           {selected === "new" && <Editor key="new" agent={null} onCreated={(id) => setSelected(id)} />}
           {current && <Editor key={current._id} agent={current} onCreated={() => {}} />}
+          {!open && (
+            <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">
+              <div>
+                <Icon name="bot" size={22} className="mx-auto mb-2 text-faint" />
+                اختر وكيلاً لتعديله، أو أنشئ وكيلاً جديداً.
+              </div>
+            </div>
+          )}
         </section>
       </div>
     </div>
@@ -195,7 +206,7 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
   const actions: MenuItem[] = [];
   if (agent) {
     if (!agent.isDefault && agent.live && agent.enabled) actions.push({ label: "اجعله الافتراضي", icon: "check", onSelect: () => void run(() => setDefault({ agentId: agent._id }), "صار الوكيل الافتراضي") });
-    if (agent.draft && agent.live) actions.push({ label: "تجاهل المسودة", icon: "retry", onSelect: () => confirm("تجاهل المسودة والعودة للنسخة المنشورة؟") && void run(() => discard({ agentId: agent._id })) });
+    if (agent.draft && agent.live) actions.push({ label: "تجاهل المسودة", icon: "retry", onSelect: () => void ask("تجاهل المسودة والعودة للنسخة المنشورة؟", { danger: true, confirmLabel: "تجاهل" }).then((ok) => { if (ok) void run(() => discard({ agentId: agent._id })); })});
     if (!agent.isDefault) actions.push({ label: agent.enabled ? "تعطيل الوكيل" : "تفعيل الوكيل", icon: agent.enabled ? "pause" : "play", danger: agent.enabled, onSelect: () => void run(() => setEnabled({ agentId: agent._id, enabled: !agent.enabled })) });
   }
 
@@ -209,6 +220,20 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
               {!agent ? "يُحفظ كمسودة لا يراها الموظفون حتى تنشره." : agent.version ? `يستخدم الموظفون النسخة ${agent.version}${agent.draft ? "، وعندك مسودة لم تُنشر" : ""}.` : "لم يُنشر بعد، فلا يراه الموظفون."}
             </p>
           </div>
+          {agent && agent.draft && (
+            <button
+              className="btn-primary shrink-0"
+              disabled={busy || dirty}
+              title={dirty ? "احفظ المسودة أولاً" : ""}
+              onClick={() =>
+                void ask(agent.version ? "نشر المسودة؟ يستخدمها الموظفون من سؤالهم التالي." : "نشر الوكيل؟ يصبح متاحاً للموظفين من سؤالهم التالي.", { confirmLabel: "انشر" }).then((ok) => {
+                  if (ok) void run(() => publish({ agentId: agent._id }), "نُشرت نسخة جديدة");
+                })
+              }
+            >
+              {agent.version ? "انشر المسودة" : "انشر"}
+            </button>
+          )}
           {actions.length > 0 && <Menu label="خيارات الوكيل" items={actions} />}
         </div>
         {agent && (
@@ -291,11 +316,19 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
                 </button>
                 <button
                   className="btn-primary"
-                  disabled={busy || dirty || !agent.draft}
-                  title={dirty ? "احفظ المسودة أولاً" : !agent.draft ? "لا مسودة لنشرها" : ""}
-                  onClick={() => confirm("نشر المسودة؟ يستخدمها الموظفون من سؤالهم التالي.") && void run(() => publish({ agentId: agent._id }), "نُشرت نسخة جديدة")}
+                  disabled={busy || (!dirty && !agent.draft)}
+                  title={!dirty && !agent.draft ? "لا تغييرات لنشرها" : ""}
+                  onClick={() =>
+                    void ask("حفظ التغييرات ونشرها؟ يستخدمها الموظفون من سؤالهم التالي.", { confirmLabel: "احفظ وانشر" }).then((ok) => {
+                      if (ok)
+                        void run(async () => {
+                          if (dirty) await saveDraft({ agentId: agent._id, config: form as any });
+                          await publish({ agentId: agent._id });
+                        }, "نُشرت نسخة جديدة");
+                    })
+                  }
                 >
-                  انشر
+                  احفظ وانشر
                 </button>
               </>
             )}
@@ -527,7 +560,7 @@ function History({ agentId }: { agentId: string }) {
                   {formatDate(v.publishedAt)} · {v.publishedBy ?? "—"} · {cfg.toolMode === "all" ? "كل الأدوات" : `${cfg.allowedTools.length} أدوات`}
                 </span>
                 {!v.current && (
-                  <button className="btn-ghost ms-auto text-xs" onClick={() => confirm(`نشر محتوى النسخة ${v.version} كنسخة جديدة؟`) && void revert({ agentId, version: v.version }).catch((e) => setError(errorText(e)))}>
+                  <button className="btn-ghost ms-auto text-xs" onClick={() => void ask(`نشر محتوى النسخة ${v.version} كنسخة جديدة؟`).then((ok) => { if (ok) void revert({ agentId, version: v.version }).catch((e) => setError(errorText(e))); })}>
                     استرجع
                   </button>
                 )}

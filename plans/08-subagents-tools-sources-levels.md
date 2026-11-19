@@ -6,7 +6,13 @@ Status: proposal, 2026-11-18. Open decisions are marked **[decide]**.
 - Splitting is automatic: the router's `split` flag, then a planner call, and only if the level allows it.
 - Parts use read tools only.
 - Levels are assigned per person, with a workspace default.
-- Per-team levels, the tools tab (§B) and data sources (§C) are still open.
+- Per-team levels and the tools tab (§B) are still open.
+
+**Built (2026-11-19):** §C data sources, model providers, the admin console, global search, help center.
+- Sources (`onebase/dataSources.ts`, `lib/sourceQuery.ts`, tool `query_source`): PostgreSQL, MySQL/MariaDB, SQLite, a REST system (GET under allowed paths) and a search engine (SearxNG-style JSON). Read only: one SELECT, checked, then run in a read-only transaction with a 15 s timeout and an outer LIMIT (SQLite opens `mode=ro`). Secrets are write-only. A source is for the workspace or members of chosen spaces; `levels.sources` narrows it per level. The model sees the sources it may use (name, description, structure) in the system prompt; every call is audited. MCP servers and synced folders are not built.
+- Providers (`onebase/providers.ts`): OpenAI-compatible servers; the main / fast / vision roles each point at one provider's model or stay on the environment. Loaded per action by `primeAi()`. Embeddings stay in the environment (a change means re-indexing).
+- «إدارة المنصة» (`src/AdminConsole.tsx`, `#/admin/<page>`): overview, employees, levels and usage, spaces, agents, providers, data sources, audit log. Old `#/agents`, `#/levels`, `#/audit` still open the same pages.
+- Confirmations use an in-app dialog (`ask()` in `src/ui.tsx`): embedded browsers cancel `window.confirm()` without showing it, which made «انشر» do nothing.
 
 Already done in this round, so it isn't repeated below:
 - The composer no longer shows an agent picker. The agent is picked per question. A picker shows only on an old chat that is pinned to an agent, so the user can unpin it.

@@ -12,7 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { Denied, requireActive, requireUserId } from "./access";
-import { chat } from "./ai";
+import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 
 export const NAME_RE = /^[\p{L}\p{N}_-]{2,40}$/u;
@@ -139,6 +139,7 @@ const DRAFT_PROMPT = `أنت تكتب «مهارة» لموظف: تعليمات 
 export const draftFromThread = action({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }): Promise<Input> => {
+    await primeAi(ctx);
     const userId = await requireUserId(ctx);
     const t = await ctx.runQuery(internal.skills.threadForDraft, { userId, threadId });
     if (!t.msgs.some((m) => m.role === "assistant")) throw new OneBaseError("لا توجد إجابات في هذه المحادثة بعد");

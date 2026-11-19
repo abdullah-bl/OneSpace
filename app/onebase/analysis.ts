@@ -292,10 +292,17 @@ export const myRuns = query({
   handler: async (ctx) => {
     const me = await requireActive(ctx);
     const rows = await ctx.db.query("runs").withIndex("by_user", (q) => q.eq("userId", me.userId)).order("desc").take(50);
+    const titles = new Map<string, string>();
+    for (const r of rows) {
+      if (!r.threadId || titles.has(r.threadId)) continue;
+      const t = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", r.threadId!)).unique();
+      if (t && t.userId === me.userId && !t.test) titles.set(r.threadId, t.title || "محادثة");
+    }
     return rows
       .filter((r) => r.kind === "sandbox")
       .map((r) => ({
         _id: r._id,
+        thread: r.threadId && titles.has(r.threadId) ? { id: r.threadId, title: titles.get(r.threadId)! } : null,
         status: r.status,
         spaceId: r.spaceId,
         createdAt: r.createdAt,

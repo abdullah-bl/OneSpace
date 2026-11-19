@@ -1,0 +1,84 @@
+# OneSpace on one server with Docker Compose. See deploy/SETUP.md.
+#
+#   cp .env.example .env            # then edit it
+#   docker compose --profile setup build sandbox-image   # the analysis image (once, needs internet)
+#   docker compose up -d --build
+#
+# Services:
+#   app      the web app + API (OneBase), the only published port
+#   sandbox  runs analysis code in throwaway containers; internal only (it controls Docker)
+#   models   optional (profile "models"): llama.cpp servers on this machine's GPU
+
+name: onespace
+
+services:
+  app:
+    build: ../app
+    image: onespace-app:latest
+    restart: unless-stopped
+    env_file: ${ENV_FILE:-.env}
+    environment:
+      ONEBASE_DATA: /data
+      SANDBOX_URL: http://sandbox:8787
+      SYNC_ROOT: /shares
+    ports:
+      - "${APP_PORT:-8090}:8090"
+    volumes:
+      - onespace-data:/data
+      # Folder sync (admin console → مزامنة المجلدات): mount shared folders here, read only.
+      - ${SHARES_DIR:-./shares}:/shares:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway" # model servers running on the host itself
+    depends_on:
+      sandbox:
+        condition: service_started
+
+  sandbox:
+    build: ../sandbox-runner
+    image: onespace-sandbox-runner:latest
+    restart: unless-stopped
+    environment:
+      SANDBOX_SECRET: ${SANDBOX_SECRET:?set SANDBOX_SECRET in .env}
+      SANDBOX_HOST: 0.0.0.0
+      SANDBOX_IMAGE: onespace-sandbox:3
+      # Run inputs are written here and bind-mounted into each run's container by the host's
+      # Docker, so the path must be the same inside this container and on the host.
+      SANDBOX_WORKDIR: /var/lib/onespace-sandbox
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /var/lib/onespace-sandbox:/var/lib/onespace-sandbox
+    # No "ports": reachable only by the app, on the compose network.
+
+  # The image each analysis run starts from. Build it once: docker compose --profile setup build sandbox-image
+  sandbox-image:
+    profiles: ["setup"]
+    build: ../sandbox-runner/image
+    image: onespace-sandbox:3
+    entrypoint: ["true"]
+
+  # Optional local models (docker compose --profile models up -d). Put GGUF files in ${MODELS_DIR}
+  # and point LLM_BASE_URL / LLM_FAST_BASE_URL / EMBED_BASE_URL in .env at these services.
+  llm-main:
+    profiles: ["models"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    restart: unless-stopped
+    command: ["-m", "/models/${MAIN_MODEL_FILE:-main.gguf}", "--host", "0.0.0.0", "--port", "8401", "-c", "32768", "-ngl", "999", "--jinja", "--alias", "main"]
+    volumes: ["${MODELS_DIR:-./models}:/models:ro"]
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: all, capabilities: [gpu] }] } } }
+  llm-fast:
+    profiles: ["models"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    restart: unless-stopped
+    command: ["-m", "/models/${FAST_MODEL_FILE:-fast.gguf}", "--host", "0.0.0.0", "--port", "8402", "-c", "16384", "-ngl", "999", "--jinja", "--alias", "fast"]
+    volumes: ["${MODELS_DIR:-./models}:/models:ro"]
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: all, capabilities: [gpu] }] } } }
+  embed:
+    profiles: ["models"]
+    image: ghcr.io/ggml-org/llama.cpp:server-cuda
+    restart: unless-stopped
+    command: ["-m", "/models/${EMBED_MODEL_FILE:-embed.gguf}", "--host", "0.0.0.0", "--port", "8403", "--embeddings", "-ngl", "999", "--alias", "embed"]
+    volumes: ["${MODELS_DIR:-./models}:/models:ro"]
+    deploy: { resources: { reservations: { devices: [{ driver: nvidia, count: all, capabilities: [gpu] }] } } }
+
+volumes:
+  onespace-data:

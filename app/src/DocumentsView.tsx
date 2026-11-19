@@ -3,6 +3,7 @@
 // requester or a manager issues. The text of a document only ever comes from the template
 // and the record.
 
+import { ask } from "./ui";
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
@@ -69,7 +70,7 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
                   <td className="td whitespace-nowrap">
                     {d.status === "draft" && space.canManage && (
                       <>
-                        <button className="btn-primary" onClick={() => confirm("اعتماد هذا المستند؟ يُسجَّل اسمك كمعتمد.") && run(() => approve({ documentId: d._id as any }))}>
+                        <button className="btn-primary" onClick={() => void ask("اعتماد هذا المستند؟ يُسجَّل اسمك كمعتمد.").then((ok) => { if (ok) void run(() => approve({ documentId: d._id as any })); })}>
                           اعتماد
                         </button>
                         <button className="btn-ghost" onClick={() => run(() => reject({ documentId: d._id as any }))}>

@@ -11,7 +11,7 @@ import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
 import { frameAttributes } from "./sandbox";
 import { Icon, type IconName } from "./icons";
-import { EmptyState, Menu, type MenuItem } from "./ui";
+import { EmptyState, Menu, type MenuItem, ask } from "./ui";
 
 type Kind = "markdown" | "html" | "table";
 type Opened = { _id: string; title: string; kind: Kind; version: number; currentVersion: number; content: string; sha256: string; classification: string };
@@ -216,8 +216,10 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
           throw new Error("هذا المخرج مبني على مساحة حسّاسة: أُرسل طلب النقل لمديرها");
         }
       }, "نُقل المخرج");
-    } else if (confirm(`نقل المخرج إلى "${target?.kind === "personal" ? "مساحتي" : target?.name}"؟ سيراه أعضاؤها.`)) {
-      void run(() => move({ artifactId: artifactId as any, toSpaceId: to as any }), "نُقل المخرج");
+    } else {
+      void ask(`نقل المخرج إلى "${target?.kind === "personal" ? "مساحتي" : target?.name}"؟ سيراه أعضاؤها.`).then((ok) => {
+        if (ok) void run(() => move({ artifactId: artifactId as any, toSpaceId: to as any }), "نُقل المخرج");
+      });
     }
   };
 
@@ -230,7 +232,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
     ...(kind !== "table" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
     ...(writable.length ? (["divider", ...writable.map((s): MenuItem => ({ label: `نقل إلى ${s.kind === "personal" ? "مساحتي" : s.name}`, icon: "folder", onSelect: () => moveTo(s._id) }))] as MenuItem[]) : []),
     ...(canWrite
-      ? (["divider", { label: "حذف المخرج", danger: true, onSelect: () => confirm(`حذف «${meta?.artifact.title}» بكل نسخه؟`) && void run(async () => (await remove({ artifactId: artifactId as any }), onClose())) }] as MenuItem[])
+      ? (["divider", { label: "حذف المخرج", danger: true, onSelect: () => void ask(`حذف «${meta?.artifact.title}» بكل نسخه؟`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run(async () => (await remove({ artifactId: artifactId as any }), onClose())); })}] as MenuItem[])
       : []),
   ];
   const idx = versions.findIndex((v) => v.version === wanted);
@@ -269,7 +271,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
         )}
         {canEdit && (
           <div className="hidden items-center rounded-md bg-raised p-0.5 sm:flex" role="tablist" aria-label="العرض">
-            <button role="tab" aria-selected={draft === null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft === null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => (draft === null || draft === doc?.content || confirm("تجاهل التعديلات غير المحفوظة؟")) && setDraft(null)}>
+            <button role="tab" aria-selected={draft === null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft === null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => void (draft === null || draft === doc?.content ? Promise.resolve(true) : ask("تجاهل التعديلات غير المحفوظة؟", { danger: true, confirmLabel: "تجاهل" })).then((ok) => { if (ok) setDraft(null); })}>
               <Icon name="eye" size={14} /> معاينة
             </button>
             <button role="tab" aria-selected={draft !== null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft !== null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => draft === null && doc && setDraft(doc.content)}>
@@ -318,7 +320,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
           <button className="btn-primary" onClick={() => void save()} disabled={draft === doc?.content}>
             حفظ كنسخة {(current ?? 0) + 1}
           </button>
-          <button className="btn-ghost" onClick={() => (draft === doc?.content || confirm("تجاهل التعديلات غير المحفوظة؟")) && setDraft(null)}>
+          <button className="btn-ghost" onClick={() => void (draft === doc?.content ? Promise.resolve(true) : ask("تجاهل التعديلات غير المحفوظة؟", { danger: true, confirmLabel: "تجاهل" })).then((ok) => { if (ok) setDraft(null); })}>
             إلغاء
           </button>
           <span className="meta ms-auto">{draft === doc?.content ? "لا تغييرات" : "تعديلات غير محفوظة"}</span>
@@ -461,7 +463,7 @@ export function OutputsTab({ space, spaces }: { space: SpaceInfo; spaces: SpaceI
                 </div>
               </button>
               {space.canWrite && (
-                <button className="btn-ghost text-xs" onClick={() => confirm(`حذف «${a.title}» بكل نسخه؟`) && remove({ artifactId: a._id as any }).catch((e) => setError(errorText(e)))}>
+                <button className="btn-ghost text-xs" onClick={() => void ask(`حذف «${a.title}» بكل نسخه؟`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void remove({ artifactId: a._id as any }).catch((e) => setError(errorText(e))); })}>
                   حذف
                 </button>
               )}

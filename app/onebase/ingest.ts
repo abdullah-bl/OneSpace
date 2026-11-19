@@ -15,7 +15,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, requireActive } from "./access";
-import { aiConfig, ensureEmbeddingIndex, ocr } from "./ai";
+import { aiConfig, ensureEmbeddingIndex, ocr, primeAi } from "./ai";
 import { shadowText } from "./lib/arabic";
 import { chunkBlocks } from "./lib/chunk";
 import { extract } from "./lib/extract";
@@ -155,6 +155,7 @@ export const fileForIngest = internalQuery({
 export const extractFile = internalAction({
   args: fileArgs,
   handler: async (ctx, { fileId, version }): Promise<{ ok: boolean; error?: string; done?: string }> => {
+    await primeAi(ctx);
     try {
       const meta = await ctx.runQuery(internal.ingest.fileForIngest, { fileId, version });
       if (!meta) return { ok: true, done: "stale" };
