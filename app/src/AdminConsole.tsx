@@ -4,9 +4,10 @@
 // Space managers who aren't admins see only the audit log of their spaces.
 
 import { useState, type ReactNode } from "react";
-import { useQuery } from "onebase/react";
+import { useMutation, useQuery } from "onebase/react";
 import { api, type SpaceInfo } from "./lib";
 import { Icon, type IconName } from "./icons";
+import { ask } from "./ui";
 import { SpacesAdmin, UsersAdmin } from "./AdminView";
 import { AgentsView } from "./AgentsView";
 import { LevelsView } from "./LevelsView";
@@ -273,6 +274,38 @@ function UsagePanel({ u, days, setDays }: { u: Usage | undefined; days: number; 
   );
 }
 
+/** plans/11 step 3: whether anything may be published for anyone with the link. Off by default. */
+function PublicPolicy() {
+  const policy = useQuery(api.publications.publicPolicy) as { allowed: boolean; live: number } | undefined;
+  const set = useMutation(api.publications.setPublicPolicy);
+  if (!policy) return null;
+  return (
+    <section>
+      <h2 className="section-title mb-3">النشر للعامة</h2>
+      <div className="card flex flex-wrap items-center gap-3 p-4 text-sm">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{policy.allowed ? "مسموح: الموظفون ينشرون صفحات يفتحها أي أحد معه الرابط" : "غير مسموح: الصفحات المنشورة لموظفي الجهة فقط"}</p>
+          <p className="mt-1 text-xs text-muted">
+            {policy.allowed ? `${policy.live} صفحة عامة منشورة الآن. ` : ""}المساحات الحساسة لا تنشر للعامة أبداً، ونشر العضو في مساحة مشتركة يعتمده مديرها. إيقافه يغلق كل الصفحات العامة فوراً.
+          </p>
+        </div>
+        <button
+          className={policy.allowed ? "btn-secondary h-9" : "btn-primary h-9"}
+          onClick={() =>
+            void (policy.allowed ? ask(`إيقاف النشر للعامة؟ تُغلق ${policy.live} صفحة عامة فوراً.`, { danger: true, confirmLabel: "أوقف" }) : ask("السماح بنشر صفحات يفتحها أي أحد معه الرابط، بلا تسجيل دخول؟", { confirmLabel: "اسمح" })).then(
+              (ok) => {
+                if (ok) void set({ allowed: !policy.allowed });
+              },
+            )
+          }
+        >
+          {policy.allowed ? "أوقف النشر للعامة" : "اسمح بالنشر للعامة"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function Overview({ go }: { go: (p: string) => void }) {
   const o = useQuery(api.admin.overview);
   const [days, setDays] = useState(7);
@@ -321,6 +354,7 @@ function Overview({ go }: { go: (p: string) => void }) {
           </p>
         )}
       </section>
+      <PublicPolicy />
       <UsagePanel u={u} days={days} setDays={setDays} />
     </div>
   );

@@ -113,11 +113,17 @@ A form is not generated HTML. Model-written `<form>` + JS is exactly what the sa
    - The form spec and the hashed form script.
    - `/f/<slug>`, with limits.
    - The «ملاحظات» preset.
-3. **Public.**
-   - The admin policy.
-   - Rate limits and form tokens.
-   - `noindex`.
-   - Tier 3 for `publish_output`.
+3. **Public.** Built:
+   - **Admin policy:** set in «نظرة عامة» and off by default. Turning it off closes every public page at once.
+   - **Opening:** a public page opens with no sign-in. The app's host still never serves `/p/`.
+   - **Anonymous replies:**
+     - the form token comes from a per-page secret and the hour;
+     - there is no sender, and the row is added as the publisher;
+     - the score is shown when the quiz says so;
+     - «once per reader» is the browser's cookie (soft).
+   - **Rate limits:** per client address (views 60/min; replies 4/min, burst 3), and replies per page.
+   - **Always `noindex`:** there is no «searchable» option yet.
+   - **`publish_output`:** for the public it is a tier-3 card.
 4. **`publish_output` for the assistant**, plus a skill example («استبيان رضا المتدربين»).
 5. **Later:**
    - multi-file sites on `@onebase/static-hosting` once it has `siteId` and an app-callable publish;

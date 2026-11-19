@@ -417,3 +417,104 @@ describe("a placement test through the publish tool", () => {
     expect(bad.ok).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------- public pages (step 3)
+
+describe("public pages", () => {
+  let art: string;
+  let list: string;
+  let k: Record<string, string>;
+  let slug: string;
+  let pubId: string;
+  const anon = (path: string, ip: string, cookie?: string) => fetch(`${s.url}${path}`, { redirect: "manual", headers: { "X-Forwarded-Host": PUB, "X-Forwarded-For": ip, ...(cookie ? { Cookie: cookie } : {}) } });
+  const anonPost = (body: Record<string, string>, ip: string, cookie?: string) =>
+    fetch(`${s.url}/f/${slug}`, { method: "POST", redirect: "manual", headers: { "X-Forwarded-Host": PUB, "X-Forwarded-For": ip, "Content-Type": "application/x-www-form-urlencoded", ...(cookie ? { Cookie: cookie } : {}) }, body: new URLSearchParams(body).toString() });
+
+  test("the policy: admins only; public publishing is refused while it is off", async () => {
+    for (const a of ACTORS) {
+      expect([a, (await s.call("query", "publications:publicPolicy", {}, tok(a))).ok]).toEqual([a, a === "admin"]);
+      if (a !== "admin") expect([a, (await s.call("mutation", "publications:setPublicPolicy", { allowed: true }, tok(a))).ok]).toEqual([a, false]);
+    }
+    art = must(await s.call("mutation", "artifacts:create", { title: "استبيان عام", kind: "markdown", content: "# استبيان الزوار PUBLIC-1", spaceId: f.spaces.S_every }, tok("mgr"))).artifactId;
+    expect(must(await s.call("query", "publications:forArtifact", { artifactId: art }, tok("mgr"))).audiences).not.toContain("public");
+    expect((await s.call("mutation", "publications:publish", { artifactId: art, audience: "public" }, tok("mgr"))).ok).toBe(false);
+    must(await s.call("mutation", "publications:setPublicPolicy", { allowed: true }, tok("admin")));
+    expect(must(await s.call("query", "publications:forArtifact", { artifactId: art }, tok("mgr"))).audiences).toContain("public");
+  });
+
+  test("sensitive spaces never publish for everyone; a member's public page waits for a manager", async () => {
+    for (const a of ["mgr", "mem"]) expect((await s.call("mutation", "publications:publish", { artifactId: setup.S_sens.art, audience: "public" }, tok(a))).ok).toBe(false);
+    const memArt = must(await s.call("mutation", "artifacts:create", { title: "عضو", kind: "markdown", content: "x", spaceId: f.spaces.S_every }, tok("mem"))).artifactId;
+    expect(must(await s.call("mutation", "publications:publish", { artifactId: memArt, audience: "public" }, tok("mem"))).state).toBe("pending");
+  });
+
+  test("anyone opens it, no sign-in; the app's host still never serves it", async () => {
+    list = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_every, title: "ردود الزوار", columns: [{ name: "الاسم", type: "text" }, { name: "س", type: "select", options: ["أ", "ب"] }] }, tok("mgr")));
+    k = Object.fromEntries(must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).list.columns.map((c: any) => [c.name, c.key]));
+    const r = must(await s.call("mutation", "publications:publish", { artifactId: art, audience: "public" }, tok("mgr")));
+    pubId = r.id;
+    slug = r.url.split("/p/")[1];
+    must(await s.call("mutation", "publications:setForm", { publicationId: pubId, form: { listId: list, fields: [{ key: k["الاسم"], required: true }, { key: k["س"], required: true }], recordSender: true, onePerReader: true, quiz: { answers: [{ key: k["س"], correct: "ب" }], showResult: true } } }, tok("mgr")));
+    const res = await anon(`/p/${slug}`, "10.0.0.1");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-security-policy")).toContain("sandbox allow-scripts allow-forms");
+    expect(res.headers.get("x-robots-tag")).toContain("noindex");
+    expect(await res.text()).toContain("PUBLIC-1");
+    expect((await fetch(`${s.url}/p/${slug}`, { redirect: "manual", headers: { "X-Forwarded-Host": APP } })).status).toBe(404);
+  });
+
+  test("an anonymous reply: a row with no sender, the score shown, once per browser", async () => {
+    const html = await (await anon(`/p/${slug}`, "10.0.0.2")).text();
+    const token = /name="_t" value="([^"]+)"/.exec(html)![1]!;
+    const r = await anonPost({ _t: token, [`f_${k["الاسم"]}`]: "زائر", [`f_${k["س"]}`]: "ب" }, "10.0.0.2");
+    expect(r.headers.get("location")).toBe(`/p/${slug}?sent=1&ps=1&pm=1`);
+    const cookie = r.headers.get("set-cookie")!.split(";")[0]!;
+    expect(await (await anon(`/p/${slug}?sent=1&ps=1&pm=1`, "10.0.0.2", cookie)).text()).toContain("درجتك: <b>1</b> من 1");
+    const g = must(await s.call("query", "lists:get", { listId: list }, tok("mgr")));
+    const row = g.rows.find((x: any) => x.cells[k["الاسم"]] === "زائر");
+    const sender = g.list.columns.find((c: any) => c.name === "المرسل");
+    expect(row.cells[sender.key]).toBeUndefined();
+    // The same browser: the page says it was answered, and another reply is refused.
+    expect(await (await anon(`/p/${slug}`, "10.0.0.2", cookie)).text()).toContain("أرسلت ردك");
+    expect((await anonPost({ _t: token, [`f_${k["الاسم"]}`]: "مرة ثانية", [`f_${k["س"]}`]: "أ" }, "10.0.0.2", cookie)).headers.get("location")).toBe(`/p/${slug}?err=answered`);
+    // A made-up token: refused, and the page reloads with a fresh one.
+    expect((await anonPost({ _t: "x".repeat(64), [`f_${k["الاسم"]}`]: "م", [`f_${k["س"]}`]: "أ" }, "10.0.0.3")).headers.get("location")).toBe(`/p/${slug}?err=stale`);
+  });
+
+  test("replies are rate-limited per address", async () => {
+    const html = await (await anon(`/p/${slug}`, "10.0.0.9")).text();
+    const token = /name="_t" value="([^"]+)"/.exec(html)![1]!;
+    must(await s.call("mutation", "publications:setForm", { publicationId: pubId, form: { listId: list, fields: [{ key: k["الاسم"], required: true }], recordSender: false, onePerReader: false } }, tok("mgr")));
+    const codes = [];
+    for (let i = 0; i < 5; i++) codes.push((await anonPost({ _t: token, [`f_${k["الاسم"]}`]: `ر${i}` }, "10.0.0.9")).headers.get("location"));
+    expect(codes.slice(0, 3).every((c) => c === `/p/${slug}?sent=1`)).toBe(true);
+    expect(codes.at(-1)).toBe(`/p/${slug}?err=busy`);
+  });
+
+  test("turning the policy off closes every public page at once", async () => {
+    must(await s.call("mutation", "publications:setPublicPolicy", { allowed: false }, tok("admin")));
+    expect((await anon(`/p/${slug}`, "10.0.0.4")).status).toBe(302);
+    must(await s.call("mutation", "publications:setPublicPolicy", { allowed: true }, tok("admin")));
+    expect((await anon(`/p/${slug}`, "10.0.0.4")).status).toBe(200);
+    must(await s.call("mutation", "publications:revoke", { publicationId: pubId }, tok("mgr")));
+    expect((await anon(`/p/${slug}`, "10.0.0.4")).status).toBe(302);
+  });
+
+  test("publish_output for the public is a tier-3 card", async () => {
+    const a2 = must(await s.call("mutation", "artifacts:create", { title: "عام 2", kind: "markdown", content: "x", spaceId: f.spaces.S_every }, tok("mgr"))).artifactId;
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: `CALL_TOOL publish_output ${JSON.stringify({ artifactId: a2, audience: "public" })}` }, tok("mgr")));
+    try {
+      const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mgr")));
+      must(await s.call("mutation", "chat:send", { threadId: t, text: "انشرها للعامة PUB-T3" }, tok("mgr")));
+      let prop: any;
+      for (let i = 0; i < 800 && !prop; i++) {
+        prop = must(await s.call("query", "chat:messages", { threadId: t }, tok("mgr"))).messages.flatMap((m: any) => m.proposals ?? []).find((p: any) => p.tool === "publish_output");
+        if (!prop) await Bun.sleep(25);
+      }
+      expect([prop.state, prop.tier]).toEqual(["pending", 3]);
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: "" }, tok("mgr")));
+      must(await s.call("mutation", "publications:setPublicPolicy", { allowed: false }, tok("admin")));
+    }
+  }, 60_000);
+});

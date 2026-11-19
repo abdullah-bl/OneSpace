@@ -13,12 +13,13 @@
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { actorFor, assertCan, Denied, requireActive, roleAllows, spaceRoleOf } from "./access";
+import { actorFor, assertCan, Denied, getWorkspace, requireActive, requireAdmin, roleAllows, spaceRoleOf } from "./access";
 import { writeAudit } from "./audit";
 import { appendFromForm, cleanListCells, ensureColumn, listPeople } from "./lists";
 
 type Ctx = QueryCtx | MutationCtx;
-type Audience = "space" | "workspace";
+type Audience = "space" | "workspace" | "public";
+const audienceV = v.union(v.literal("space"), v.literal("workspace"), v.literal("public"));
 
 const TICKET_TTL_MS = 2 * 60_000;
 const SESSION_TTL_MS = 8 * 3_600_000;
@@ -69,6 +70,11 @@ async function artifactOf(ctx: Ctx, artifactId: string) {
 /** A sensitive space, or an output built on one, stays inside its space. */
 const sensitiveOf = (space: Doc<"spaces">, art: Doc<"artifacts">) => space.sensitive || art.classification === "sensitive";
 
+/** Whether the admin allows pages for anyone with the link (off by default; turning it off closes them all). */
+export async function publicAllowed(ctx: Ctx) {
+  return (await getWorkspace(ctx))?.publicPublishing === true;
+}
+
 /** Who manages a publication: its creator, a manager of its space, or the personal space's owner. */
 async function manages(ctx: Ctx, userId: Id<"users">, p: Doc<"publications">) {
   if (p.createdBy === userId) return true;
@@ -96,7 +102,16 @@ export async function readerMay(ctx: Ctx, userId: Id<"users">, p: Doc<"publicati
   if (!space) return false;
   if (!(await actorFor(ctx, userId))) return false;
   if (p.audience === "workspace" && !sensitiveOf(space, art)) return true;
+  if (p.audience === "public" && !sensitiveOf(space, art) && (await publicAllowed(ctx))) return true;
   return roleAllows(await spaceRoleOf(ctx, userId, space), "read");
+}
+
+/** A public page as anyone sees it: live, the policy on, its output still there and not sensitive. */
+async function publicLive(ctx: Ctx, p: Doc<"publications">) {
+  if (p.state !== "live" || p.audience !== "public" || !(await publicAllowed(ctx))) return false;
+  const art = await ctx.db.get(p.artifactId);
+  const space = await ctx.db.get(p.spaceId);
+  return !!art && !!space && art.spaceId === p.spaceId && !sensitiveOf(space, art);
 }
 
 function shape(p: Doc<"publications">, current: number | null, origin: string | null, personal = false) {
@@ -154,7 +169,7 @@ export const forArtifact = query({
       enabled: !!origin && !!appOrigin(),
       canPublish: roleAllows(role, "write"),
       needsApproval: space.kind === "shared" && role !== "manager",
-      audiences: sensitiveOf(space, art) ? (["space"] as Audience[]) : (["space", "workspace"] as Audience[]),
+      audiences: sensitiveOf(space, art) ? (["space"] as Audience[]) : ((await publicAllowed(ctx)) ? ["space", "workspace", "public"] : ["space", "workspace"]) as Audience[],
       spaceName: space.kind === "personal" ? "مساحتي" : space.name,
       personal: space.kind === "personal",
       publications: out,
@@ -194,7 +209,7 @@ export const mine = query({
 // ---------------------------------------------------------------- mutations
 
 export const publish = mutation({
-  args: { artifactId: v.string(), audience: v.union(v.literal("space"), v.literal("workspace")) },
+  args: { artifactId: v.string(), audience: audienceV },
   handler: async (ctx, { artifactId, audience }) => {
     const me = await requireActive(ctx);
     return publishArtifact(ctx, me.userId, artifactId, audience);
@@ -208,7 +223,8 @@ async function publishArtifact(ctx: MutationCtx, userId: Id<"users">, artifactId
     const art = await artifactOf(ctx, artifactId);
     if (scopeSpaceIds && !scopeSpaceIds.includes(art.spaceId)) throw new Denied();
     const { space, role } = await assertCan(ctx, me.userId, art.spaceId, "write");
-    if (audience === "workspace" && sensitiveOf(space, art)) throw new OneBaseError("مخرجات المساحات الحساسة لا تُنشر خارج مساحتها");
+    if (audience !== "space" && sensitiveOf(space, art)) throw new OneBaseError("مخرجات المساحات الحساسة لا تُنشر خارج مساحتها");
+    if (audience === "public" && !(await publicAllowed(ctx))) throw new OneBaseError("النشر للعامة غير مسموح في مساحة العمل؛ يفعّله مدير المنصة من «نظرة عامة»");
     const existing = (await ctx.db.query("publications").withIndex("by_artifact", (q) => q.eq("artifactId", art._id)).collect()).filter((p) => p.state !== "revoked");
     if (existing.length >= MAX_PER_ARTIFACT) throw new OneBaseError(`الحد ${MAX_PER_ARTIFACT} روابط لكل مخرج`);
     const live = space.kind === "personal" || role === "manager";
@@ -228,6 +244,7 @@ async function publishArtifact(ctx: MutationCtx, userId: Id<"users">, artifactId
       views: 0,
       createdAt: now,
       updatedAt: now,
+      ...(audience === "public" ? { formSecret: newToken() } : {}),
     });
     await writeAudit(ctx, { userId: me.userId, action: live ? "publish.create" : "publish.propose", resourceType: "publication", resourceId: id, spaceId: space._id, detail: { artifactId: art._id, version: art.currentVersion, audience } });
     return { id, state: live ? ("live" as const) : ("pending" as const), url: `${publishOrigin()}/p/${slug}`, spaceId: space._id as string };
@@ -366,10 +383,11 @@ const DEFAULT_THANKS = "وصل ردك. شكراً لك.";
 type FormState = "open" | "closed" | "full" | "answered";
 
 /** Why a form takes no reply now (closed, full, already answered), or "open". */
-async function formState(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">): Promise<FormState> {
+async function formState(ctx: Ctx, p: Doc<"publications">, userId: Id<"users"> | null): Promise<FormState> {
   const f = p.form!;
   if (f.closesAt && f.closesAt < Date.now()) return "closed";
   if (f.maxReplies && f.replies >= f.maxReplies) return "full";
+  if (!userId) return "open"; // an anonymous reader (public page): «once» is the browser's cookie (publicationsHttp.ts)
   if (f.onePerReader && (await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", userId)).first())) return "answered";
   return "open";
 }
@@ -387,7 +405,7 @@ export function seededShuffle<T>(items: T[], seed: string): T[] {
 }
 
 /** What the content origin renders under the page: the fields (from the list's columns), the state, the token. */
-async function formView(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">, token: string) {
+async function formView(ctx: Ctx, p: Doc<"publications">, userId: Id<"users"> | null, token: string) {
   if (!p.form) return null;
   const list = await ctx.db.get(p.form.listId);
   if (!list) return null;
@@ -395,7 +413,7 @@ async function formView(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">, t
     .map((f) => ({ ...list.columns.find((c) => c.key === f.key), required: f.required }))
     .filter((c): c is (typeof list.columns)[number] & { required: boolean } => !!c.key && c.type !== "person" && c.key !== p.form!.quiz?.scoreKey && c.key !== p.form!.quiz?.levelKey);
   let result: { score: number; max: number; level: string | null } | null = null;
-  if (p.form.quiz?.showResult) {
+  if (p.form.quiz?.showResult && userId) {
     const last = await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", userId)).order("desc").first();
     if (last?.score !== undefined) result = { score: last.score, max: last.max ?? 0, level: last.level ?? null };
   }
@@ -556,6 +574,36 @@ export const addFeedbackForm = mutation({
  * the page (bound to the reader's session); access, the form's limits and each cell are checked here.
  * Returns an error code for the page to explain, or null when the row was added.
  */
+/**
+ * A reply's cells from the posted values: required fields, the same checks as the list page (types,
+ * options, masking), and a quiz marked by code. An error code when it can't be taken.
+ */
+async function buildReply(ctx: MutationCtx, p: Doc<"publications">, values: Record<string, string>) {
+  const form = p.form!;
+  const list = await ctx.db.get(form.listId);
+  if (!list) return "expired";
+  const cells: Record<string, unknown> = {};
+  for (const f of form.fields) {
+    const col = list.columns.find((c) => c.key === f.key);
+    if (!col || col.type === "person") continue;
+    const raw = (values[f.key] ?? "").trim();
+    if (f.required && !raw && col.type !== "check") return "required";
+    cells[f.key] = col.type === "check" ? raw === "1" : raw || null;
+  }
+  try {
+    // The reader needs no access to the list's space.
+    cleanListCells(list.columns, cells, await listPeople(ctx, (await ctx.db.get(list.spaceId))!), false);
+  } catch {
+    return "invalid";
+  }
+  const marked = form.quiz ? markQuiz(form.quiz, cells) : null;
+  if (marked && form.quiz) {
+    cells[form.quiz.scoreKey] = marked.score;
+    if (form.quiz.levelKey && marked.level) cells[form.quiz.levelKey] = marked.level;
+  }
+  return { listId: list._id, cells, marked };
+}
+
 export const submitForm = internalMutation({
   args: { slug: v.string(), token: v.string(), values: v.record(v.string(), v.string()), preview: v.optional(v.boolean()) },
   handler: async (ctx, { slug, token, values, preview }): Promise<string | null | { score: number; max: number; level: string | null } | { previewed: true }> => {
@@ -569,28 +617,11 @@ export const submitForm = internalMutation({
     if (state !== "open") return state;
     const recent = await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", s.userId).gt("at", Date.now() - 60_000)).collect();
     if (recent.length >= REPLIES_PER_MINUTE) return "busy";
-    const list = await ctx.db.get(p.form.listId);
-    if (!list) return "expired";
-    const cells: Record<string, unknown> = {};
-    for (const f of p.form.fields) {
-      const col = list.columns.find((c) => c.key === f.key);
-      if (!col || col.type === "person") continue;
-      const raw = (values[f.key] ?? "").trim();
-      if (f.required && !raw && col.type !== "check") return "required";
-      cells[f.key] = col.type === "check" ? raw === "1" : raw || null;
-    }
-    try {
-      // Same checks as the list page (types, options, masking); the reader needs no access to the list's space.
-      cleanListCells(list.columns, cells, await listPeople(ctx, (await ctx.db.get(list.spaceId))!), false);
-    } catch {
-      return "invalid";
-    }
-    const marked = p.form.quiz ? markQuiz(p.form.quiz, cells) : null;
+    const built = await buildReply(ctx, p, values);
+    if (typeof built === "string") return built;
+    const { cells, marked } = built;
     if (previewing) return marked ?? { previewed: true as const };
-    if (marked && p.form.quiz) {
-      cells[p.form.quiz.scoreKey] = marked.score;
-      if (p.form.quiz.levelKey && marked.level) cells[p.form.quiz.levelKey] = marked.level;
-    }
+    const list = { _id: built.listId };
     const rowId = await appendFromForm(ctx, list._id, cells, s.userId, p.form.senderKey);
     await ctx.db.insert("formReplies", { publicationId: p._id, userId: s.userId, rowId, at: Date.now(), ...(marked ? { score: marked.score, max: marked.max, ...(marked.level ? { level: marked.level } : {}) } : {}) });
     await ctx.db.patch(p._id, { form: { ...p.form, replies: p.form.replies + 1 } });
@@ -650,7 +681,7 @@ export const publishFromTool = internalMutation({
     userId: v.id("users"),
     scopeSpaceIds: v.array(v.string()),
     artifactId: v.string(),
-    audience: v.union(v.literal("space"), v.literal("workspace")),
+    audience: audienceV,
     form: v.optional(
       v.object({
         listId: v.string(),
@@ -710,5 +741,73 @@ export const publishFromTool = internalMutation({
       }
       return { url: r.url, state: r.state, spaceId: r.spaceId, note: formNote };
     }
+  },
+});
+
+// ---------------------------------------------------------------- public pages (plans/11 step 3)
+
+/** «نظرة عامة»: the policy and how many public pages are live. */
+export const publicPolicy = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAdmin(ctx);
+    const live = (await ctx.db.query("publications").collect()).filter((p) => p.audience === "public" && p.state === "live").length;
+    return { allowed: await publicAllowed(ctx), live };
+  },
+});
+
+export const setPublicPolicy = mutation({
+  args: { allowed: v.boolean() },
+  handler: async (ctx, { allowed }) => {
+    const me = await requireAdmin(ctx);
+    await ctx.db.patch(me.workspace._id, { publicPublishing: allowed });
+    await writeAudit(ctx, { userId: me.userId, action: "publish.policy", resourceType: "workspace", resourceId: me.workspace._id, detail: { publicPublishing: allowed } });
+  },
+});
+
+const HOUR = 3_600_000;
+/** A public page's form token: from the page's secret and the hour, so it needs no session (valid ~1–2 h). */
+const publicToken = (p: Doc<"publications">, hour = Math.floor(Date.now() / HOUR)) => hashToken(`${p.formSecret ?? p._id}:${hour}`);
+
+/** GET /p/<slug> with no session: a public page for anyone, rate-limited per client address. */
+export const publicPage = internalMutation({
+  args: { slug: v.string(), ip: v.string() },
+  handler: async (ctx, { slug, ip }) => {
+    const p = await ctx.db.query("publications").withIndex("by_slug", (q) => q.eq("slug", slug)).first();
+    if (!p || !(await publicLive(ctx, p))) return null;
+    const { ok } = await ctx.components.limiter.limit({ name: "publicView", key: ip });
+    if (!ok) return { busy: true as const };
+    const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", p.artifactId).eq("version", p.version)).unique();
+    const art = await ctx.db.get(p.artifactId);
+    if (!ver || !art) return null;
+    await ctx.db.patch(p._id, { views: p.views + 1 });
+    const space = await ctx.db.get(p.spaceId);
+    return { title: p.title, kind: art.kind, content: ver.content, spaceName: space?.kind === "personal" ? "" : (space?.name ?? ""), form: await formView(ctx, p, null, publicToken(p)) };
+  },
+});
+
+/**
+ * POST /f/<slug> on a public page: an anonymous reply. Limits per client address and per page;
+ * the row is added as the publisher (nobody signed in), with no sender. `done`: the browser already
+ * sent one (cookie) and the form takes one per reader.
+ */
+export const submitPublicForm = internalMutation({
+  args: { slug: v.string(), token: v.string(), values: v.record(v.string(), v.string()), ip: v.string(), done: v.boolean() },
+  handler: async (ctx, { slug, token, values, ip, done }): Promise<string | null | { score: number; max: number; level: string | null }> => {
+    const p = await ctx.db.query("publications").withIndex("by_slug", (q) => q.eq("slug", slug)).first();
+    if (!p || !p.form || !(await publicLive(ctx, p))) return "gone";
+    const hour = Math.floor(Date.now() / HOUR);
+    if (token !== publicToken(p, hour) && token !== publicToken(p, hour - 1)) return "stale";
+    const state = await formState(ctx, p, null);
+    if (state !== "open") return state;
+    if (done && p.form.onePerReader) return "answered";
+    if (!(await ctx.components.limiter.limit({ name: "publicReply", key: ip })).ok) return "busy";
+    if (!(await ctx.components.limiter.limit({ name: "publicReplyPerPage", key: p._id })).ok) return "busy";
+    const built = await buildReply(ctx, p, values);
+    if (typeof built === "string") return built;
+    const rowId = await appendFromForm(ctx, built.listId, built.cells, p.createdBy);
+    await ctx.db.insert("formReplies", { publicationId: p._id, userId: p.createdBy, anon: true, rowId, at: Date.now(), ...(built.marked ? { score: built.marked.score, max: built.marked.max, ...(built.marked.level ? { level: built.marked.level } : {}) } : {}) });
+    await ctx.db.patch(p._id, { form: { ...p.form, replies: p.form.replies + 1 } });
+    return built.marked && p.form.quiz?.showResult ? built.marked : null;
   },
 });

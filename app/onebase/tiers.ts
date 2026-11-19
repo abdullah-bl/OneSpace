@@ -57,6 +57,9 @@ export const resolve = internalQuery({
           const { space } = await assertCan(ctx, userId, String(a.spaceId ?? ""), "read");
           return space.sensitive ? 3 : 2;
         }
+        case "publish_output":
+          // Public: anyone with the link, no sign-in — marked as such on the card.
+          return a.audience === "public" ? 3 : 2;
         case "create_list": {
           const space = await placeForTier(ctx, userId, threadId, scopeSpaceIds);
           return tierFor(userId, space, false);

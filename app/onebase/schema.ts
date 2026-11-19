@@ -35,6 +35,8 @@ export default defineSchema({
     teamId: v.string(),
     name: v.string(),
     createdAt: v.number(),
+    // plans/11 step 3: whether outputs may be published for anyone with the link (admin; off by default).
+    publicPublishing: v.optional(v.boolean()),
   }).index("by_team", ["teamId"]),
 
   spaces: defineTable({
@@ -188,8 +190,9 @@ export default defineSchema({
     slug: v.string(),
     title: v.string(),
     spaceId: v.id("spaces"),
-    audience: v.union(v.literal("space"), v.literal("workspace")),
+    audience: v.union(v.literal("space"), v.literal("workspace"), v.literal("public")),
     state: v.union(v.literal("live"), v.literal("pending"), v.literal("revoked")),
+    formSecret: v.optional(v.string()), // public pages: the form token is derived from it (no session)
     createdBy: v.id("users"),
     approvedBy: v.optional(v.id("users")),
     views: v.number(),
@@ -247,7 +250,8 @@ export default defineSchema({
     .index("by_expiry", ["expiresAt"]),
   formReplies: defineTable({
     publicationId: v.id("publications"),
-    userId: v.id("users"),
+    userId: v.id("users"), // for an anonymous reply on a public page: the publisher
+    anon: v.optional(v.boolean()),
     rowId: v.string(),
     at: v.number(),
     score: v.optional(v.number()),

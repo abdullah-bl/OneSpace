@@ -16,7 +16,7 @@ type Pub = {
   artifactId: string;
   version: number;
   currentVersion: number | null;
-  audience: "space" | "workspace";
+  audience: "space" | "workspace" | "public";
   state: "live" | "pending" | "revoked";
   views: number;
   createdAt: number;
@@ -236,7 +236,7 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
   );
 }
 
-const AUDIENCE: Record<Pub["audience"], string> = { space: "أعضاء المساحة", workspace: "كل الموظفين" };
+const AUDIENCE: Record<Pub["audience"], string> = { space: "أعضاء المساحة", workspace: "كل الموظفين", public: "أي أحد معه الرابط" };
 const run = (p: Promise<unknown>) => p.catch((e) => void tell(errorText(e)));
 
 function CopyLink({ url }: { url: string }) {
@@ -323,12 +323,12 @@ export function PublishBox({ artifactId, onClose }: { artifactId: string; onClos
           {data.publications.length > 0 && <ul className="divide-y divide-rule">{data.publications.map((p) => <PubRow key={p._id} p={p} />)}</ul>}
           {data.canPublish && (
             <div className="space-y-2 pt-1">
-              <p className="text-xs text-muted">من يفتح الرابط؟ يدخل بحسابه، ولا يرى غير هذه الصفحة.</p>
+              <p className="text-xs text-muted">{audience === "public" ? "يفتحه أي أحد معه الرابط بلا تسجيل دخول، حتى من خارج الجهة. لا تنشر للعامة بيانات أشخاص أو بيانات داخلية." : "من يفتح الرابط؟ يدخل بحسابه، ولا يرى غير هذه الصفحة."}</p>
               <div className="flex flex-wrap gap-2">
                 {data.audiences.map((a) => (
                   <label key={a} className={`flex cursor-pointer items-center gap-2 rounded-md border px-3 py-1.5 text-xs ${audience === a ? "border-primary bg-primary-soft" : "border-line"}`}>
                     <input type="radio" name="audience" className="accent-[var(--color-primary)]" checked={audience === a} onChange={() => setAudience(a)} />
-                    {a === "space" ? (data.personal ? "أنا فقط" : `أعضاء «${data.spaceName}»`) : "كل الموظفين"}
+                    {a === "space" ? (data.personal ? "أنا فقط" : `أعضاء «${data.spaceName}»`) : a === "public" ? "أي أحد معه الرابط" : "كل الموظفين"}
                   </label>
                 ))}
               </div>
@@ -336,9 +336,13 @@ export function PublishBox({ artifactId, onClose }: { artifactId: string; onClos
               <button
                 className="btn-primary h-8"
                 onClick={() =>
-                  void publish({ artifactId, audience })
+                  void (audience === "public" ? ask("نشر للعامة: يفتحه أي أحد معه الرابط بلا تسجيل دخول. هل الصفحة خالية من البيانات الشخصية والداخلية؟", { confirmLabel: "انشر للعامة" }) : Promise.resolve(true))
+                    .then((ok) => {
+                      if (!ok) throw new Error("");
+                      return publish({ artifactId, audience });
+                    })
                     .then((r) => setMsg(r.state === "pending" ? "أُرسل لمدير المساحة ليعتمده، ويعمل الرابط بعد اعتماده." : "نُشر. انسخ الرابط وأرسله."))
-                    .catch((e) => setMsg(errorText(e)))
+                    .catch((e) => e instanceof Error && !e.message ? undefined : setMsg(errorText(e)))
                 }
               >
                 {data.needsApproval ? "اطلب النشر" : "انشر"}

@@ -8,7 +8,7 @@ import type { AppTool, ToolContext, ToolResult } from "./types";
 
 type Args = {
   artifactId: string;
-  audience?: "space" | "workspace";
+  audience?: "space" | "workspace" | "public";
   form?: { listId: string; questions?: string[]; required?: boolean; onePerReader?: boolean; thanks?: string; quiz?: { answers: Record<string, string>; points?: number; levels?: { min: number; label: string }[]; showResult?: boolean } };
 };
 
@@ -17,7 +17,8 @@ export const publish_output: AppTool<Args> = {
   label: "ينشر برابط…",
   requiresConfirmation: true,
   description:
-    "Publishes an output (from create_artifact) at a fixed link people open with their account: audience \"space\" (the output's space) or \"workspace\" (every employee). " +
+    "Publishes an output (from create_artifact) at a fixed link: audience \"space\" (the output's space) or \"workspace\" (every employee), who open it with their account; " +
+    "or \"public\" (anyone with the link, no sign-in) only when the user asks for people outside the organisation and the admin allows it — never for personal or sensitive data. " +
     "Published pages never run scripts, so interactive buttons written in HTML do nothing: anything people ANSWER (a survey, registration, feedback, a quiz or placement test) is done with a form: " +
     "1) create_list with one column per question (select with the options for multiple choice, text for open answers), 2) create_artifact with the intro/instructions page (no questions or inputs in it), " +
     "3) publish_output with form.listId = that list. Each reply becomes a row of the list, so the user sees every answer and the assistant can read them later (read_list). " +
@@ -31,7 +32,7 @@ export const publish_output: AppTool<Args> = {
     required: ["artifactId"],
     properties: {
       artifactId: { type: "string" },
-      audience: { type: "string", enum: ["space", "workspace"] },
+      audience: { type: "string", enum: ["space", "workspace", "public"] },
       form: {
         type: "object",
         additionalProperties: false,
@@ -65,7 +66,7 @@ export const publish_output: AppTool<Args> = {
       userId: t.userId,
       scopeSpaceIds: t.scopeSpaceIds as string[],
       artifactId: String(a?.artifactId ?? ""),
-      audience: a?.audience === "workspace" ? "workspace" : "space",
+      audience: a?.audience === "workspace" || a?.audience === "public" ? a.audience : "space",
       ...(f && f.listId
         ? {
             form: {

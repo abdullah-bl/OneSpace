@@ -34,6 +34,14 @@ function cookieOf(request: Request, name: string) {
   return null;
 }
 
+/** The client's address (a proxy in front sets X-Forwarded-For), for public pages' rate limits. */
+function clientIp(request: Request) {
+  return (request.headers.get("x-forwarded-for")?.split(",")[0] ?? request.headers.get("x-real-ip") ?? "direct").trim().slice(0, 64) || "direct";
+}
+
+const busy = () => new Response("طلبات كثيرة؛ حاول بعد دقيقة.", { status: 429, headers: { "Content-Type": "text/plain; charset=utf-8", "Retry-After": "60", "Cache-Control": "no-store" } });
+const doneCookie = (slug: string) => `os_d_${slug.replace(/[^A-Za-z0-9]/g, "")}`;
+
 const notFound = () => new Response("Not found", { status: 404, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
 
 /** The in-app frame's CSP, plus: forms may post to this origin's /f/ (no script needed), never framed. */
@@ -55,6 +63,7 @@ const NOTES: Record<string, string> = {
   required: "أكمل الحقول المطلوبة ثم أرسل.",
   invalid: "في القيم ما لا يقبله النموذج؛ راجعها ثم أرسل.",
   busy: "أرسلت ردوداً كثيرة الآن؛ حاول بعد دقيقة.",
+  stale: "انتهت صلاحية الصفحة المفتوحة؛ أعد تحميلها ثم أرسل.",
   closed: "أُغلق هذا النموذج.",
   full: "اكتمل عدد الردود المطلوب لهذا النموذج.",
   answered: "أرسلت ردك على هذا النموذج من قبل. شكراً لك.",
@@ -86,7 +95,8 @@ function formHtml(slug: string, form: FormView, note: string | null, previewed: 
     const msg = note && NOTES[note] ? `<p class="os-note os-bad">${NOTES[note]}</p>` : "";
     return `<form class="os-form" method="post" action="/f/${esc(slug)}?preview=1">${head}${banner}${got}${msg}<input type="hidden" name="_t" value="${esc(form.token)}">${form.fields.map(fieldHtml).join("")}<button class="os-send" type="submit">أرسل (تجربة)</button></form>`;
   }
-  const result = form.result ? `<p class="os-score">درجتك: <b>${form.result.score}</b> من ${form.result.max}${form.result.level ? ` · المستوى: <b>${esc(form.result.level)}</b>` : ""}</p>` : "";
+  const r = form.result ?? (previewed && previewed !== "none" && !form.preview ? previewed : null);
+  const result = r ? `<p class="os-score">درجتك: <b>${r.score}</b> من ${r.max}${r.level ? ` · المستوى: <b>${esc(r.level)}</b>` : ""}</p>` : "";
   if (note === "sent") return `<section class="os-form">${head}<p class="os-note os-ok">${esc(form.thanks)}</p>${result}</section>`;
   if (form.state !== "open") return `<section class="os-form">${head}<p class="os-note os-bad">${NOTES[form.state]}</p>${form.state === "answered" ? result : ""}</section>`;
   const msg = note && NOTES[note] ? `<p class="os-note os-bad">${NOTES[note]}</p>` : "";
@@ -128,7 +138,19 @@ export function registerPublicationRoutes(http: HttpRouter) {
         });
       }
       const session = cookieOf(request, COOKIE);
-      const page = session ? await ctx.runMutation(internal.publications.pageForSession, { slug, session: session.slice(0, 200), preview }) : null;
+      let page = session ? await ctx.runMutation(internal.publications.pageForSession, { slug, session: session.slice(0, 200), preview }) : null;
+      let isPublic = false;
+      if (!page && !preview) {
+        // No session: a public page opens for anyone (plans/11 step 3); anything else goes through the app.
+        const pub = await ctx.runMutation(internal.publications.publicPage, { slug, ip: clientIp(request) });
+        if (pub && "busy" in pub) return busy();
+        if (pub) {
+          page = pub;
+          isPublic = true;
+          // «One reply per reader» for someone not signed in: this browser already sent one.
+          if (pub.form && pub.form.state === "open" && cookieOf(request, doneCookie(slug)) && url.searchParams.get("sent") === null) page = { ...pub, form: { ...pub.form, state: "answered" } };
+        }
+      }
       if (!page) return toApp();
       const note = url.searchParams.get("sent") ? "sent" : url.searchParams.get("err");
       // A preview's result comes back in the URL: it is the previewer's own, and nothing was saved.
@@ -140,7 +162,7 @@ export function registerPublicationRoutes(http: HttpRouter) {
           "Content-Security-Policy": pageCsp(origin),
           "X-Content-Type-Options": "nosniff",
           "Referrer-Policy": "no-referrer",
-          "Cache-Control": "private, no-store",
+          "Cache-Control": isPublic ? "no-cache" : "private, no-store",
           "X-Robots-Tag": "noindex, nofollow",
           "Cross-Origin-Opener-Policy": "same-origin",
         },
@@ -170,6 +192,19 @@ export function registerPublicationRoutes(http: HttpRouter) {
       const preview = new URL(request.url).searchParams.get("preview") === "1";
       const r = await ctx.runMutation(internal.publications.submitForm, { slug, token: String(data.get("_t") ?? "").slice(0, 200), values, preview });
       let to: string;
+      let setCookie: string | null = null;
+      if (r === "expired" && !preview) {
+        // Not a signed-in session's token: maybe an anonymous reply on a public page.
+        const pr = await ctx.runMutation(internal.publications.submitPublicForm, { slug, token: String(data.get("_t") ?? "").slice(0, 200), values, ip: clientIp(request), done: !!cookieOf(request, doneCookie(slug)) });
+        if (pr !== "gone") {
+          if (typeof pr === "string") to = `/p/${slug}?err=${pr}`;
+          else {
+            to = `/p/${slug}?sent=1${pr ? `&ps=${pr.score}&pm=${pr.max}${pr.level ? `&pl=${encodeURIComponent(pr.level)}` : ""}` : ""}`;
+            setCookie = `${doneCookie(slug)}=1; Path=/; Max-Age=31536000; SameSite=Lax${origin.startsWith("https:") ? "; Secure" : ""}`;
+          }
+          return new Response(null, { status: 303, headers: { Location: to, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", ...(setCookie ? { "Set-Cookie": setCookie } : {}) } });
+        }
+      }
       if (r === "expired") to = `${app}/#/open/${slug}`;
       else if (typeof r === "string") to = `/p/${slug}?${preview ? "preview=1&" : ""}err=${r}`;
       else if (r && "previewed" in r) to = `/p/${slug}?preview=1&ps=none`;

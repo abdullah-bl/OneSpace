@@ -969,7 +969,7 @@ function proposalSummary(p: Proposal): string[] {
   if (a.kind) out.push(`النوع: ${a.kind}`);
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
   if (p.tool === "publish_output") {
-    out.push(`لمن: ${a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
+    out.push(`لمن: ${a.audience === "public" ? "أي أحد معه الرابط (بلا تسجيل دخول)" : a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
     if (a.form?.quiz) out.push(`اختبار يُصحَّح آلياً: ${Object.keys(a.form.quiz.answers ?? {}).length} سؤالاً`);
     else if (a.form) out.push("نموذج تُحفظ ردوده في قائمة");
     return out;
