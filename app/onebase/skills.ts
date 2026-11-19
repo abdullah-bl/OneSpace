@@ -10,7 +10,7 @@
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { action, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { Denied, requireActive, requireUserId } from "./access";
 import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
@@ -18,7 +18,7 @@ import { writeAudit } from "./audit";
 export const NAME_RE = /^[\p{L}\p{N}_-]{2,40}$/u;
 const TITLE_MAX = 80;
 const DESCRIPTION_MAX = 300;
-const INSTRUCTIONS_MAX = 8000;
+const INSTRUCTIONS_MAX = 16000;
 const MAX_SKILLS = 100;
 
 type Input = { name: string; title: string; description: string; instructions: string };
@@ -65,25 +65,54 @@ export const list = query({
   },
 });
 
+async function insertSkill(ctx: MutationCtx, userId: Id<"users">, a: Input & { fromThreadId?: string }) {
+  const c = clean(a);
+  if (await nameTaken(ctx, userId, c.name)) throw new OneBaseError(`لديك مهارة باسم /${c.name}`);
+  const count = (await ctx.db.query("skills").withIndex("by_owner", (q) => q.eq("ownerId", userId)).collect()).length;
+  if (count >= MAX_SKILLS) throw new OneBaseError(`الحد ${MAX_SKILLS} مهارة`);
+  let fromThreadId: string | undefined;
+  if (a.fromThreadId) {
+    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", a.fromThreadId!)).unique();
+    if (meta?.userId === userId) fromThreadId = a.fromThreadId;
+  }
+  const now = Date.now();
+  const id = await ctx.db.insert("skills", { ownerId: userId, ...c, source: fromThreadId ? "chat" : "manual", fromThreadId, uses: 0, createdAt: now, updatedAt: now });
+  await writeAudit(ctx, { userId, action: "skill.create", resourceType: "skill", resourceId: id, detail: { name: c.name, source: fromThreadId ? "chat" : "manual" } });
+  return { id, name: c.name };
+}
+
 export const create = mutation({
   args: { name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), fromThreadId: v.optional(v.string()) },
   handler: async (ctx, a) => {
     const me = await requireActive(ctx);
-    const c = clean(a);
-    if (await nameTaken(ctx, me.userId, c.name)) throw new OneBaseError(`لديك مهارة باسم /${c.name}`);
-    const count = (await ctx.db.query("skills").withIndex("by_owner", (q) => q.eq("ownerId", me.userId)).collect()).length;
-    if (count >= MAX_SKILLS) throw new OneBaseError(`الحد ${MAX_SKILLS} مهارة`);
-    let fromThreadId: string | undefined;
-    if (a.fromThreadId) {
-      const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", a.fromThreadId!)).unique();
-      if (meta?.userId === me.userId) fromThreadId = a.fromThreadId;
-    }
-    const now = Date.now();
-    const id = await ctx.db.insert("skills", { ownerId: me.userId, ...c, source: fromThreadId ? "chat" : "manual", fromThreadId, uses: 0, createdAt: now, updatedAt: now });
-    await writeAudit(ctx, { userId: me.userId, action: "skill.create", resourceType: "skill", resourceId: id, detail: { name: c.name, source: fromThreadId ? "chat" : "manual" } });
-    return id;
+    return (await insertSkill(ctx, me.userId, a)).id;
   },
 });
+
+/** The create_skill tool: same checks, as the turn's user; errors come back for the model to fix. */
+export const createFromTool = internalMutation({
+  args: { userId: v.id("users"), name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), threadId: v.optional(v.string()) },
+  handler: async (ctx, { userId, threadId, ...a }) => {
+    try {
+      const r = await insertSkill(ctx, userId, { ...a, fromThreadId: threadId });
+      return { ok: true as const, id: r.id as string, name: r.name };
+    } catch (e) {
+      return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
+    }
+  },
+});
+
+/** «تراجع» for a skill the assistant saved: removes it if it is still mine. */
+export async function undoSkills(ctx: MutationCtx, userId: Id<"users">, ids: string[]) {
+  for (const raw of ids) {
+    const id = ctx.db.normalizeId("skills", raw);
+    const s = id ? await ctx.db.get(id) : null;
+    if (s && s.ownerId === userId) {
+      await ctx.db.delete(s._id);
+      await writeAudit(ctx, { userId, action: "skill.delete", resourceType: "skill", resourceId: s._id, detail: { name: s.name, via: "undo" } });
+    }
+  }
+}
 
 export const update = mutation({
   args: { skillId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string() },

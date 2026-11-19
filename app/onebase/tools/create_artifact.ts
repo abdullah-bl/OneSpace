@@ -48,6 +48,7 @@ export const create_artifact: AppTool<Args> = {
   },
   async run(t, args) {
     const content = args.kind === "table" ? (args.table ?? args.content) : args.content;
+    if (typeof content === "string" ? !content.trim() : !content) throw new Error("المخرج فارغ: اكتب محتواه كاملاً");
     const sources = Array.isArray(args.sources) ? args.sources.map((s) => ({ type: s.type, id: String(s.id) })) : undefined;
     const r = await t.ctx.runMutation(internal.artifacts.createForUser, {
       userId: t.userId,

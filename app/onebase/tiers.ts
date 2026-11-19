@@ -47,6 +47,8 @@ export const resolve = internalQuery({
     const a = (args ?? {}) as Record<string, any>;
     try {
       switch (tool) {
+        case "create_skill":
+          return 1; // my own «مهاراتي» (chat.ts asks anyway unless I asked for a skill)
         case "remember": {
           // My own memory: tier 1 (chat.ts asks anyway unless I asked for it). A space's memory is shared.
           if (a.scope !== "space") return 1;

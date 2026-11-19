@@ -18,7 +18,7 @@ import { actorFor, assertCan, Denied, readableSpaceIds, requireActive, requireAd
 import { writeAudit } from "./audit";
 import { agentConfig } from "./agentsSchema";
 import { queueTurn } from "./lib/turns";
-import { MEMORY_TOOLS, tools as registry } from "./tools";
+import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
 
 type Ctx = QueryCtx | MutationCtx;
 export type AgentConfig = Infer<typeof agentConfig>;
@@ -152,7 +152,7 @@ export async function seedStarters(ctx: MutationCtx, by?: Id<"users">): Promise<
 /** "open" unless the agent was explicitly made document-only (or predates the setting). */
 /** The tools an agent may use: the whole registry for "all", else its own list (registry order). */
 export function agentTools(cfg: AgentConfig): string[] {
-  const all = Object.keys(registry).filter((t) => !MEMORY_TOOLS.includes(t));
+  const all = Object.keys(registry).filter((t) => !MEMORY_TOOLS.includes(t) && !PERSONAL_TOOLS.includes(t));
   return cfg.toolMode === "all" ? all : all.filter((t) => cfg.allowedTools.includes(t));
 }
 

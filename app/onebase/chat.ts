@@ -29,7 +29,8 @@ import { queueTurn } from "./lib/turns";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
-import { MEMORY_TOOLS, tools as registry } from "./tools";
+import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
+import { maskSecrets } from "./lib/secrets";
 import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, undoMemories } from "./memory";
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
@@ -37,7 +38,7 @@ import type { AppTool, Citation, ToolContext } from "./tools/types";
 import { autoRunEnabled, type Tier } from "./tiers";
 import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
-import { ownSkill } from "./skills";
+import { ownSkill, undoSkills } from "./skills";
 
 /** A positive number from the environment, or the default. */
 const envNum = (k: string, d: number) => {
@@ -793,7 +794,7 @@ export const turnContext = internalQuery({
         draft: agent.draft,
         name: agent.config.name,
         instructions: agent.config.instructions,
-        allowedTools: [...levelTools(level, agentTools(agent.config)), ...(memory ? MEMORY_TOOLS : [])],
+        allowedTools: [...levelTools(level, agentTools(agent.config)), ...(memory ? MEMORY_TOOLS : []), ...PERSONAL_TOOLS],
         modelRole: level.model === "fast" ? ("fast" as const) : agent.config.modelRole,
         maxSteps: agent.config.maxSteps,
         grounding: groundingOf(agent.config),
@@ -1215,9 +1216,10 @@ export const runTurn = internalAction({
 
     const finish = async (raw: string, abstained: boolean) => {
       await writer.flush();
-      const text = scrubIds(raw, [...sources.map((s) => s.fileId), ...(c.fileIds ?? [])]);
+      // A key or password the model read (or was handed) is never shown back in full.
+      const text = maskSecrets(scrubIds(raw, [...sources.map((s) => s.fileId), ...(c.fileIds ?? [])]));
       const used = new Set([...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
-      const citations = abstained ? [] : sources.filter((s) => used.has(s.n)).map((s) => ({ n: s.n, fileId: s.fileId, fileName: s.fileName, page: s.page, section: s.section, quote: s.quote.slice(0, 600) }));
+      const citations = abstained ? [] : sources.filter((s) => used.has(s.n)).map((s) => ({ n: s.n, fileId: s.fileId, fileName: s.fileName, page: s.page, section: s.section, quote: maskSecrets(s.quote.slice(0, 600)) }));
       await ctx.runMutation(internal.chat.finishTurn, {
         turnId,
         text,
@@ -1311,12 +1313,15 @@ export const runTurn = internalAction({
       const search = registry.search_documents!;
       // Document-only agents always search first (and abstain on nothing). Open agents look only
       // when there is something in scope to look in, and the model may also search by itself.
-      const retrieve = !parts.length && allowed.has(search.name) && (!open || c.spaceIds.length > 0);
+      // A long pasted text is the material itself, not a search: open agents don't pre-search with
+      // it (a whole pasted document matches unrelated files); the model can still search by itself.
+      const pasted = c.question.length > LONG_PASTE;
+      const retrieve = !parts.length && allowed.has(search.name) && (!open || (c.spaceIds.length > 0 && !pasted));
       let shown = 0;
       if (retrieve) {
         // 1. Rewrite a follow-up ("وكم مدتها؟") into a standalone search query.
         if (c.history.length || c.summary) await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يفهم السؤال…" });
-        const query = await rewriteQuery(c.question, c.history, c.summary);
+        const query = (await rewriteQuery(c.question, c.history, c.summary)).slice(0, MAX_QUERY);
 
         // 2. Retrieval before the first generation: the safety net if the model calls no tool.
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: search.label });
@@ -1427,7 +1432,7 @@ export const runTurn = internalAction({
             // A page that builds itself with its own script would show up empty (outputs run only our
             // table tools): turned back at once with the fix, so the model retries in this answer.
             plans.push({ tc, tool, kind: "refused", content: pageScriptProblem(tool.name, tc.args)! });
-            toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "صفحة بسكربت: أُعيدت للتعديل" });
+            toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "أُعيد للتعديل" });
           } else if (tool.requiresConfirmation) {
             const size = JSON.stringify(tc.args ?? null).length;
             if ((tc.args as any)?.__invalid !== undefined || size > MAX_PROPOSAL_ARGS || proposals.length + autoRuns.length >= MAX_PROPOSALS_PER_TURN) {
@@ -1439,6 +1444,8 @@ export const runTurn = internalAction({
             // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
             // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
             if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
+            // Same for a skill: saved at once only when the person's own message asks for one.
+            if (tool.name === "create_skill" && tier === 1 && !asksForSkill(c.question)) tier = 2;
             plans.push({ tc, tool, kind: tier === 1 && autoRunEnabled() ? "auto" : "proposal", tier });
           } else plans.push({ tc, tool, kind: "read" });
         }
@@ -1533,12 +1540,25 @@ export const runTurn = internalAction({
  * table search, sort and a row count). A page whose content comes from its own script would be empty,
  * so such a call is sent back with what to do instead. Null when the call is fine.
  */
+/** A long message is pasted material (a document, a skill), not a question to search with. */
+const LONG_PASTE = 1500;
+const MAX_QUERY = 600;
+
+/** The person's own message asks for a skill ("اكتبها كمهارة", "save as a skill", a SKILL.md). */
+export function asksForSkill(question: string) {
+  return /(مهار[ةه]|مهاراتي|\bskill\b|SKILL\.md)/i.test(question);
+}
+
 export function pageScriptProblem(tool: string, args: unknown): string | null {
   const a = (args ?? {}) as Record<string, unknown>;
   const fix =
     "لم يُقترح هذا: صفحات المخرجات لا تشغّل سكربتاتها، فالجدول الذي يبنيه سكربت يظهر فارغاً. " +
     "اكتب البيانات نفسها جدولاً في الصفحة (في Python: df.to_html(index=False) داخل الصفحة)، دون <script>. " +
     "البحث والترتيب وعدّاد الصفوف تُضاف لكل جدول تلقائياً. أعد الاستدعاء بهذا الشكل.";
+  if (tool === "create_artifact") {
+    const empty = a.kind === "table" ? !(a.table as any)?.rows?.length && !String(a.content ?? "").trim() : !String(a.content ?? "").trim();
+    if (empty) return "لم يُقترح هذا: المخرج فارغ. اكتب محتواه كاملاً في الاستدعاء نفسه (content، أو table للجدول)، ولا تنشئ مخرجاً لتكمله لاحقاً.";
+  }
   if (tool === "run_analysis" && typeof a.code === "string" && /<script/i.test(a.code) && /\.html?\b/i.test(a.code)) return fix;
   if ((tool === "create_artifact" || tool === "update_artifact") && typeof a.content === "string" && /<script/i.test(a.content)) return fix;
   return null;
@@ -1741,7 +1761,7 @@ export const claimProposal = internalMutation({
     if ("error" in agent) return await fail(agent.error);
     if ((agent.agentId ?? undefined) !== (p.agentId ?? undefined)) return await fail("تغيّر وكيل المحادثة منذ الاقتراح");
     const tool = Object.hasOwn(registry, p.tool) ? registry[p.tool] : undefined;
-    const memoryTool = MEMORY_TOOLS.includes(p.tool) && (await memoryOn(ctx, userId, meta));
+    const memoryTool = PERSONAL_TOOLS.includes(p.tool) || (MEMORY_TOOLS.includes(p.tool) && (await memoryOn(ctx, userId, meta)));
     if (!tool || !tool.requiresConfirmation || !(memoryTool || agentTools(agent.config).includes(p.tool))) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
     const scope = await effectiveScope(ctx, userId, agent.config.dataScope, meta.scope);
     await ctx.db.patch(p._id, { state: "running", decidedAt: now });
@@ -1844,8 +1864,9 @@ export const undo = mutation({
     if (!p || p.userId !== me.userId) throw new Denied();
     await ownThread(ctx, me.userId, p.threadId);
     if (!p.auto || p.state !== "executed") throw new OneBaseError("لا يمكن التراجع عن هذا الإجراء");
-    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; deleteMemories?: string[]; restore?: { artifactId: string; version: number } };
+    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; deleteMemories?: string[]; deleteSkills?: string[]; restore?: { artifactId: string; version: number } };
     if (u.deleteMemories?.length) await undoMemories(ctx, me.userId, u.deleteMemories);
+    if (u.deleteSkills?.length) await undoSkills(ctx, me.userId, u.deleteSkills);
     const mine = async (spaceId: Id<"spaces">) => {
       const space = await ctx.db.get(spaceId);
       if (!space || space.kind !== "personal" || space.ownerId !== me.userId) return false;

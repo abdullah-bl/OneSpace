@@ -807,9 +807,7 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
             ))}
           </div>
         ) : null}
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7" dir="auto">
-          {m.text}
-        </div>
+        <UserText text={m.text ?? ""} />
       </div>
     );
 
@@ -1112,6 +1110,28 @@ export function Page({ title, sub, actions, children }: { title: string; sub?: R
       </div>
       {sub && <p className="mt-1 text-muted">{sub}</p>}
       <div className="mt-6">{children}</div>
+    </div>
+  );
+}
+
+/** A question bubble. A long paste (a document, a skill) is folded to its first lines, with «عرض الكل». */
+const FOLD_CHARS = 900;
+const FOLD_LINES = 14;
+function UserText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const long = text.length > FOLD_CHARS * 1.4 || lines.length > FOLD_LINES * 1.5;
+  const [open, setOpen] = useState(false);
+  const shown = !long || open ? text : lines.slice(0, FOLD_LINES).join("\n").slice(0, FOLD_CHARS);
+  return (
+    <div className="max-w-[85%] rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7">
+      <div className={`whitespace-pre-wrap [overflow-wrap:anywhere] ${long && !open ? "max-h-[22rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}`} dir="auto">
+        {shown}
+      </div>
+      {long && (
+        <button className="mt-1 text-xs font-medium text-primary hover:underline" onClick={() => setOpen(!open)}>
+          {open ? "اطوِ النص" : `عرض الكل (${text.length} حرف)`}
+        </button>
+      )}
     </div>
   );
 }
