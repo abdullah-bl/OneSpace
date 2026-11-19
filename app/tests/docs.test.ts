@@ -173,6 +173,8 @@ describe.skipIf(!HAS_SANDBOX)("export_document tool (agent, after نفّذ)", ()
     expect(await files()).toEqual([]);
     expect(await arts()).toEqual([]);
     expect((await proposalsOf(s, tok("mem"), t))[0].state).toBe("undone");
+    // The removed output gets no chip any more (opening it would fail and break the chat page).
+    expect((await proposalsOf(s, tok("mem"), t))[0].artifactIds).toEqual([]);
     expect((await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mem"))).ok).toBe(false);
     // The ids reach the model on the next question (hidden note), never the visible answer.
     const msgs = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).messages;

@@ -115,7 +115,17 @@ function shape(p: Doc<"publications">, current: number | null, origin: string | 
     updatedAt: p.updatedAt,
     url: origin ? `${origin}/p/${p.slug}` : null,
     form: p.form
-      ? { listId: p.form.listId, fields: p.form.fields, replies: p.form.replies, thanks: p.form.thanks ?? "", closesAt: p.form.closesAt ?? null, maxReplies: p.form.maxReplies ?? null, onePerReader: p.form.onePerReader, recordSender: !!p.form.senderKey }
+      ? {
+          listId: p.form.listId,
+          fields: p.form.fields,
+          replies: p.form.replies,
+          thanks: p.form.thanks ?? "",
+          closesAt: p.form.closesAt ?? null,
+          maxReplies: p.form.maxReplies ?? null,
+          onePerReader: p.form.onePerReader,
+          recordSender: !!p.form.senderKey,
+          quiz: p.form.quiz ? { answers: p.form.quiz.answers, bands: p.form.quiz.bands, showResult: p.form.quiz.showResult, max: p.form.quiz.answers.reduce((n, a) => n + a.points, 0) } : null,
+        }
       : null,
   };
 }
@@ -187,8 +197,16 @@ export const publish = mutation({
   args: { artifactId: v.string(), audience: v.union(v.literal("space"), v.literal("workspace")) },
   handler: async (ctx, { artifactId, audience }) => {
     const me = await requireActive(ctx);
+    return publishArtifact(ctx, me.userId, artifactId, audience);
+  },
+});
+
+async function publishArtifact(ctx: MutationCtx, userId: Id<"users">, artifactId: string, audience: Audience, scopeSpaceIds?: string[]) {
+  {
+    const me = { userId };
     if (!publishOrigin() || !appOrigin()) throw new OneBaseError(OFF);
     const art = await artifactOf(ctx, artifactId);
+    if (scopeSpaceIds && !scopeSpaceIds.includes(art.spaceId)) throw new Denied();
     const { space, role } = await assertCan(ctx, me.userId, art.spaceId, "write");
     if (audience === "workspace" && sensitiveOf(space, art)) throw new OneBaseError("مخرجات المساحات الحساسة لا تُنشر خارج مساحتها");
     const existing = (await ctx.db.query("publications").withIndex("by_artifact", (q) => q.eq("artifactId", art._id)).collect()).filter((p) => p.state !== "revoked");
@@ -212,9 +230,9 @@ export const publish = mutation({
       updatedAt: now,
     });
     await writeAudit(ctx, { userId: me.userId, action: live ? "publish.create" : "publish.propose", resourceType: "publication", resourceId: id, spaceId: space._id, detail: { artifactId: art._id, version: art.currentVersion, audience } });
-    return { id, state: live ? ("live" as const) : ("pending" as const), url: `${publishOrigin()}/p/${slug}` };
-  },
-});
+    return { id, state: live ? ("live" as const) : ("pending" as const), url: `${publishOrigin()}/p/${slug}`, spaceId: space._id as string };
+  }
+}
 
 /** «حدّث المنشور»: show the output's current version. A member's update in a shared space waits for a manager again. */
 export const update = mutation({
@@ -306,8 +324,8 @@ export const redeemTicket = internalMutation({
 
 /** The page for a session cookie: access is checked again on every load; counts a view. */
 export const pageForSession = internalMutation({
-  args: { slug: v.string(), session: v.string() },
-  handler: async (ctx, { slug, session }) => {
+  args: { slug: v.string(), session: v.string(), preview: v.optional(v.boolean()) },
+  handler: async (ctx, { slug, session, preview }) => {
     const s = await ctx.db.query("publicationSessions").withIndex("by_hash", (q) => q.eq("tokenHash", hashToken(session))).unique();
     if (!s || s.expiresAt < Date.now()) return null;
     const p = await ctx.db.get(s.publicationId);
@@ -315,9 +333,18 @@ export const pageForSession = internalMutation({
     const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", p.artifactId).eq("version", p.version)).unique();
     const art = await ctx.db.get(p.artifactId);
     if (!ver || !art) return null;
-    await ctx.db.patch(p._id, { views: p.views + 1 });
+    // «جرّب»: whoever manages the page sees the form open, and a reply saves nothing (submitForm).
+    const previewing = !!preview && (await manages(ctx, s.userId, p));
+    if (!previewing) await ctx.db.patch(p._id, { views: p.views + 1 });
     const space = await ctx.db.get(p.spaceId);
-    return { title: p.title, kind: art.kind, content: ver.content, spaceName: space?.kind === "personal" ? "" : (space?.name ?? ""), form: await formView(ctx, p, s.userId, formTokenOf(session)) };
+    const form = await formView(ctx, p, s.userId, formTokenOf(session));
+    return {
+      title: p.title,
+      kind: art.kind,
+      content: ver.content,
+      spaceName: space?.kind === "personal" ? "" : (space?.name ?? ""),
+      form: form && previewing ? { ...form, state: "open", result: null, preview: true } : form,
+    };
   },
 });
 
@@ -347,6 +374,18 @@ async function formState(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">):
   return "open";
 }
 
+/** A stable shuffle: the same seed always gives the same order. */
+export function seededShuffle<T>(items: T[], seed: string): T[] {
+  const out = [...items];
+  let h = parseInt(hashToken(seed).slice(0, 8), 16);
+  for (let i = out.length - 1; i > 0; i--) {
+    h = (Math.imul(h, 1664525) + 1013904223) >>> 0;
+    const j = h % (i + 1);
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 /** What the content origin renders under the page: the fields (from the list's columns), the state, the token. */
 async function formView(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">, token: string) {
   if (!p.form) return null;
@@ -354,8 +393,16 @@ async function formView(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">, t
   if (!list) return null;
   const fields = p.form.fields
     .map((f) => ({ ...list.columns.find((c) => c.key === f.key), required: f.required }))
-    .filter((c): c is (typeof list.columns)[number] & { required: boolean } => !!c.key && c.type !== "person");
-  return { fields, state: await formState(ctx, p, userId), token, thanks: p.form.thanks || DEFAULT_THANKS };
+    .filter((c): c is (typeof list.columns)[number] & { required: boolean } => !!c.key && c.type !== "person" && c.key !== p.form!.quiz?.scoreKey && c.key !== p.form!.quiz?.levelKey);
+  let result: { score: number; max: number; level: string | null } | null = null;
+  if (p.form.quiz?.showResult) {
+    const last = await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", userId)).order("desc").first();
+    if (last?.score !== undefined) result = { score: last.score, max: last.max ?? 0, level: last.level ?? null };
+  }
+  // A quiz's choices in an order fixed per page and question (the model tends to write the right one
+  // first): every taker sees the same order, and it isn't the answer key's.
+  const shown = p.form.quiz ? fields.map((f) => (f.options && p.form!.quiz!.answers.some((x) => x.key === f.key) ? { ...f, options: seededShuffle(f.options, `${p.slug}:${f.key}`) } : f)) : fields;
+  return { fields: shown, state: await formState(ctx, p, userId), token, thanks: p.form.thanks || DEFAULT_THANKS, result };
 }
 
 /** The lists a publication's form may write to: those of its own space. */
@@ -366,7 +413,7 @@ export const formOptions = query({
     const p = await pubOf(ctx, publicationId);
     if (!(await manages(ctx, me.userId, p))) throw new Denied();
     const lists = await ctx.db.query("lists").withIndex("by_space", (q) => q.eq("spaceId", p.spaceId)).order("desc").collect();
-    return lists.map((l) => ({ _id: l._id, title: l.title, columns: l.columns.filter((c) => c.type !== "person").map((c) => ({ key: c.key, name: c.name, type: c.type })) }));
+    return lists.map((l) => ({ _id: l._id, title: l.title, columns: l.columns.filter((c) => c.type !== "person").map((c) => ({ key: c.key, name: c.name, type: c.type, options: c.options ?? [] })) }));
   },
 });
 
@@ -378,6 +425,13 @@ const formInput = v.object({
   closesAt: v.optional(v.number()),
   maxReplies: v.optional(v.number()),
   onePerReader: v.boolean(),
+  quiz: v.optional(
+    v.object({
+      answers: v.array(v.object({ key: v.string(), correct: v.string(), points: v.optional(v.number()) })),
+      bands: v.optional(v.array(v.object({ min: v.number(), label: v.string() }))),
+      showResult: v.boolean(),
+    }),
+  ),
 });
 
 /** Attach, change or remove (form: null) a publication's form. The list must be in its space, and writable by me. */
@@ -397,7 +451,8 @@ export const setForm = mutation({
   },
 });
 
-type FormInput = { listId: string; fields: { key: string; required: boolean }[]; recordSender: boolean; thanks?: string; closesAt?: number; maxReplies?: number; onePerReader: boolean };
+type QuizInput = { answers: { key: string; correct: string; points?: number }[]; bands?: { min: number; label: string }[]; showResult: boolean };
+type FormInput = { listId: string; fields: { key: string; required: boolean }[]; recordSender: boolean; thanks?: string; closesAt?: number; maxReplies?: number; onePerReader: boolean; quiz?: QuizInput };
 
 async function cleanForm(ctx: MutationCtx, userId: Id<"users">, p: Doc<"publications">, form: FormInput) {
   const lid = ctx.db.normalizeId("lists", form.listId);
@@ -413,7 +468,9 @@ async function cleanForm(ctx: MutationCtx, userId: Id<"users">, p: Doc<"publicat
   });
   if (!fields.length) throw new OneBaseError("اختر حقلاً واحداً على الأقل");
   const senderKey = form.recordSender ? await ensureColumn(ctx, list, "المرسل", "person") : undefined;
+  const quiz = form.quiz ? await cleanQuiz(ctx, list._id, fields, form.quiz) : undefined;
   return {
+    ...(quiz ? { quiz } : {}),
     listId: list._id,
     fields,
     ...(senderKey ? { senderKey } : {}),
@@ -423,6 +480,40 @@ async function cleanForm(ctx: MutationCtx, userId: Id<"users">, p: Doc<"publicat
     onePerReader: form.onePerReader,
     replies: p.form?.listId === list._id ? p.form.replies : 0,
   };
+}
+
+/**
+ * A quiz's key: each answer on a select/status field of the form, its correct option one of the
+ * column's options; the score (number) and level (text) columns are made if missing. Bands: the
+ * level is the label of the highest band whose minimum the score reaches.
+ */
+async function cleanQuiz(ctx: MutationCtx, listId: Id<"lists">, fields: { key: string; required: boolean }[], q: QuizInput) {
+  let list = (await ctx.db.get(listId))!;
+  const answers = [];
+  for (const a of q.answers) {
+    const col = list.columns.find((c) => c.key === a.key);
+    if (!col || !fields.some((f) => f.key === a.key)) continue;
+    if ((col.type !== "select" && col.type !== "status") || !col.options?.includes(a.correct)) throw new OneBaseError(`إجابة «${col.name}» الصحيحة يجب أن تكون من خياراته`);
+    answers.push({ key: a.key, correct: a.correct, points: Math.max(0, Math.min(100, Number(a.points ?? 1) || 0)) });
+  }
+  if (!answers.length) throw new OneBaseError("حدّد الإجابة الصحيحة لسؤال واحد على الأقل");
+  const bands = (q.bands ?? [])
+    .map((b) => ({ min: Number(b.min) || 0, label: String(b.label ?? "").trim().slice(0, 60) }))
+    .filter((b) => b.label)
+    .slice(0, 10)
+    .sort((a, b) => b.min - a.min);
+  const scoreKey = await ensureColumn(ctx, list, "الدرجة", "number");
+  list = (await ctx.db.get(listId))!;
+  const levelKey = bands.length ? await ensureColumn(ctx, list, "المستوى", "text") : undefined;
+  return { answers, scoreKey, ...(levelKey ? { levelKey } : {}), bands, showResult: q.showResult };
+}
+
+/** Marks a reply: the score from the key, the level from the bands. Code, not the model. */
+export function markQuiz(quiz: { answers: { key: string; correct: string; points: number }[]; bands: { min: number; label: string }[] }, cells: Record<string, unknown>) {
+  const max = quiz.answers.reduce((n, a) => n + a.points, 0);
+  const score = quiz.answers.reduce((n, a) => n + (cells[a.key] === a.correct ? a.points : 0), 0);
+  const level = [...quiz.bands].sort((a, b) => b.min - a.min).find((b) => score >= b.min)?.label ?? null;
+  return { score, max, level };
 }
 
 /** «نموذج ملاحظات»: a new list (التقييم 1–5, التعليق, المرسل) in the page's space, attached as its form. */
@@ -466,13 +557,15 @@ export const addFeedbackForm = mutation({
  * Returns an error code for the page to explain, or null when the row was added.
  */
 export const submitForm = internalMutation({
-  args: { slug: v.string(), token: v.string(), values: v.record(v.string(), v.string()) },
-  handler: async (ctx, { slug, token, values }): Promise<string | null> => {
+  args: { slug: v.string(), token: v.string(), values: v.record(v.string(), v.string()), preview: v.optional(v.boolean()) },
+  handler: async (ctx, { slug, token, values, preview }): Promise<string | null | { score: number; max: number; level: string | null } | { previewed: true }> => {
     const s = await ctx.db.query("publicationSessions").withIndex("by_form_hash", (q) => q.eq("formTokenHash", hashToken(token))).unique();
     if (!s || s.expiresAt < Date.now()) return "expired";
     const p = await ctx.db.get(s.publicationId);
     if (!p || p.slug !== slug || !p.form || !(await readerMay(ctx, s.userId, p))) return "expired";
-    const state = await formState(ctx, p, s.userId);
+    // A preview by whoever manages the page: checked and marked like a reply, saved nowhere.
+    const previewing = !!preview && (await manages(ctx, s.userId, p));
+    const state = previewing ? "open" : await formState(ctx, p, s.userId);
     if (state !== "open") return state;
     const recent = await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", s.userId).gt("at", Date.now() - 60_000)).collect();
     if (recent.length >= REPLIES_PER_MINUTE) return "busy";
@@ -492,9 +585,130 @@ export const submitForm = internalMutation({
     } catch {
       return "invalid";
     }
+    const marked = p.form.quiz ? markQuiz(p.form.quiz, cells) : null;
+    if (previewing) return marked ?? { previewed: true as const };
+    if (marked && p.form.quiz) {
+      cells[p.form.quiz.scoreKey] = marked.score;
+      if (p.form.quiz.levelKey && marked.level) cells[p.form.quiz.levelKey] = marked.level;
+    }
     const rowId = await appendFromForm(ctx, list._id, cells, s.userId, p.form.senderKey);
-    await ctx.db.insert("formReplies", { publicationId: p._id, userId: s.userId, rowId, at: Date.now() });
+    await ctx.db.insert("formReplies", { publicationId: p._id, userId: s.userId, rowId, at: Date.now(), ...(marked ? { score: marked.score, max: marked.max, ...(marked.level ? { level: marked.level } : {}) } : {}) });
     await ctx.db.patch(p._id, { form: { ...p.form, replies: p.form.replies + 1 } });
     return null;
+  },
+});
+
+// ---------------------------------------------------------------- the assistant (tools/publish_output.ts)
+
+/** «1) I ___ a student.» ≈ «I ___ a student» ≈ «i ___ a student:». */
+const normName = (s: string) =>
+  s
+    .trim()
+    .replace(/^\s*(?:س|q)?\s*\d+\s*[).:\-–]\s*/i, "")
+    .replace(/[\s.:؟?!،,]+$/u, "")
+    .replace(/\s+/g, " ")
+    .toLowerCase();
+
+/** A column by its name as the model wrote it: exact, by key, then ignoring numbering and punctuation, then a unique partial match. */
+export function findColumn<C extends { key: string; name: string }>(columns: C[], name: string): C | undefined {
+  const n = name.trim();
+  const exact = columns.find((c) => c.name === n) ?? columns.find((c) => c.key === n);
+  if (exact) return exact;
+  const want = normName(n);
+  if (!want) return undefined;
+  const same = columns.filter((c) => normName(c.name) === want);
+  if (same.length === 1) return same[0];
+  const part = columns.filter((c) => normName(c.name).includes(want) || want.includes(normName(c.name)));
+  return part.length === 1 ? part[0] : undefined;
+}
+
+/**
+ * A quiz whose intro page shows its key leaks the answers. Counts the questions whose text and correct
+ * option sit on the same line of the page; refuses when two or more (or the only one) do.
+ */
+async function answersShown(ctx: MutationCtx, artifactId: string, columns: { key: string; name: string }[], answers: { key: string; correct: string }[]) {
+  const art = await artifactOf(ctx, artifactId);
+  const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id).eq("version", art.currentVersion)).unique();
+  if (!ver) return 0;
+  const lines = ver.content.replace(/<\/(?:tr|p|li|div|h\d)>|<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, " ").toLowerCase().split("\n");
+  let n = 0;
+  for (const a of answers) {
+    const q = normName(columns.find((c) => c.key === a.key)?.name ?? "");
+    const ans = a.correct.trim().toLowerCase();
+    if (q.length >= 2 && ans && lines.some((l) => l.includes(q) && l.includes(ans))) n++;
+  }
+  return n >= Math.min(2, answers.length) ? n : 0;
+}
+
+/**
+ * publish_output: publish an output of this turn's scope, optionally with a form (or a quiz) bound to
+ * a list of the same space. Columns are named by their names; the quiz key by option text. Always a
+ * card first (tiers.ts default).
+ */
+export const publishFromTool = internalMutation({
+  args: {
+    userId: v.id("users"),
+    scopeSpaceIds: v.array(v.string()),
+    artifactId: v.string(),
+    audience: v.union(v.literal("space"), v.literal("workspace")),
+    form: v.optional(
+      v.object({
+        listId: v.string(),
+        questions: v.optional(v.array(v.string())),
+        required: v.optional(v.boolean()),
+        onePerReader: v.optional(v.boolean()),
+        thanks: v.optional(v.string()),
+        quiz: v.optional(
+          v.object({
+            answers: v.record(v.string(), v.string()),
+            points: v.optional(v.number()),
+            levels: v.optional(v.array(v.object({ min: v.number(), label: v.string() }))),
+            showResult: v.optional(v.boolean()),
+          }),
+        ),
+      }),
+    ),
+  },
+  // Errors are thrown, not returned: the whole publish (with its form) rolls back.
+  handler: async (ctx, a) => {
+    {
+      const r = await publishArtifact(ctx, a.userId, a.artifactId, a.audience, a.scopeSpaceIds);
+      let formNote = "";
+      if (a.form) {
+        const lid = ctx.db.normalizeId("lists", a.form.listId);
+        const list = lid ? await ctx.db.get(lid) : null;
+        if (!list) throw new OneBaseError("لا توجد قائمة بهذا المعرّف");
+        const byName = (n: string) => findColumn(list.columns, n);
+        const asked = (a.form.questions?.length ? a.form.questions.map(byName) : list.columns).filter((c): c is (typeof list.columns)[number] => !!c && c.type !== "person" && c.name !== "الدرجة" && c.name !== "المستوى");
+        if (!asked.length) throw new OneBaseError("لم أجد أعمدة النموذج في القائمة");
+        const quiz = a.form.quiz
+          ? {
+              answers: Object.entries(a.form.quiz.answers).map(([name, correct]) => {
+                const col = byName(name);
+                if (!col) throw new OneBaseError(`لا يوجد عمود «${name}» في القائمة. أسماء أعمدتها: ${list.columns.map((c) => `«${c.name}»`).join("، ")}`);
+                return { key: col.key, correct: String(correct).trim(), points: a.form!.quiz!.points ?? 1 };
+              }),
+              ...(a.form.quiz.levels?.length ? { bands: a.form.quiz.levels } : {}),
+              showResult: a.form.quiz.showResult ?? true,
+            }
+          : undefined;
+        if (quiz) {
+          const leaked = await answersShown(ctx, a.artifactId, list.columns, quiz.answers);
+          if (leaked) throw new OneBaseError(`صفحة التعريف تعرض الإجابات الصحيحة (${leaked} منها)، فيراها الطلاب. أزل مفتاح الإجابات منها (update_artifact) ثم انشرها.`);
+        }
+        const p = (await ctx.db.get(r.id))!;
+        const form = await cleanForm(ctx, a.userId, p, {
+          listId: list._id,
+          fields: asked.map((c) => ({ key: c.key, required: a.form!.required ?? true })),
+          recordSender: true,
+          onePerReader: a.form.onePerReader ?? true,
+          ...(a.form.thanks ? { thanks: a.form.thanks } : {}),
+          ...(quiz ? { quiz } : {}),
+        });
+        await ctx.db.patch(r.id, { form });
+        formNote = quiz ? ` مع اختبار من ${form.quiz!.answers.length} سؤالاً يُصحَّح آلياً، والدرجات تُحفظ في «${list.title}».` : ` مع نموذج تُحفظ ردوده في «${list.title}».`;
+      }
+      return { url: r.url, state: r.state, spaceId: r.spaceId, note: formNote };
+    }
   },
 });

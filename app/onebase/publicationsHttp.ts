@@ -46,9 +46,10 @@ const PAGE_STYLE = `body{max-width:860px;margin:0 auto;padding:24px 16px 48px}
 .os-field input:not([type=checkbox]),.os-field select,.os-field textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;background:#fff}
 .os-field textarea{min-height:72px}.os-req{color:#dc2626}.os-check{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
 .os-send{padding:9px 20px;border:0;border-radius:8px;background:#1d4ed8;color:#fff;font:inherit;font-weight:600;cursor:pointer}
-.os-note{padding:12px 14px;border-radius:8px;margin:0 0 14px;font-size:14px}.os-ok{background:#dcfce7;color:#166534}.os-bad{background:#fef3c7;color:#92400e}`;
+.os-score{font-size:18px;margin:0}.os-note{padding:12px 14px;border-radius:8px;margin:0 0 14px;font-size:14px}.os-ok{background:#dcfce7;color:#166534}.os-bad{background:#fef3c7;color:#92400e}`;
 
-type FormView = { fields: { key: string; name: string; type: string; options?: string[]; required: boolean }[]; state: string; token: string; thanks: string } | null;
+type FormView = { fields: { key: string; name: string; type: string; options?: string[]; required: boolean }[]; state: string; token: string; thanks: string; result?: { score: number; max: number; level: string | null } | null; preview?: boolean } | null;
+type PreviewResult = { score: number; max: number; level: string | null } | "none" | null;
 
 const NOTES: Record<string, string> = {
   required: "أكمل الحقول المطلوبة ثم أرسل.",
@@ -72,18 +73,29 @@ function fieldHtml(f: NonNullable<FormView>["fields"][number]) {
   return `<label class="os-field"><span>${label}</span>${input}</label>`;
 }
 
-function formHtml(slug: string, form: FormView, note: string | null) {
+function formHtml(slug: string, form: FormView, note: string | null, previewed: PreviewResult = null) {
   if (!form) return "";
   const head = `<h2>شاركنا رأيك</h2>`;
-  if (note === "sent") return `<section class="os-form">${head}<p class="os-note os-ok">${esc(form.thanks)}</p></section>`;
-  if (form.state !== "open") return `<section class="os-form">${head}<p class="os-note os-bad">${NOTES[form.state]}</p></section>`;
+  if (form.preview) {
+    const banner = `<p class="os-note os-bad">معاينة: هذه صفحتك كما يراها غيرك. ما ترسله هنا لا يُحفظ ولا يُحسب رداً.</p>`;
+    const got = previewed
+      ? previewed === "none"
+        ? `<p class="os-note os-ok">وصل الرد (للتجربة، ولم يُحفظ).</p>`
+        : `<p class="os-note os-ok">نتيجة التجربة (لم تُحفظ): <b>${previewed.score}</b> من ${previewed.max}${previewed.level ? ` · المستوى: <b>${esc(previewed.level)}</b>` : ""}</p>`
+      : "";
+    const msg = note && NOTES[note] ? `<p class="os-note os-bad">${NOTES[note]}</p>` : "";
+    return `<form class="os-form" method="post" action="/f/${esc(slug)}?preview=1">${head}${banner}${got}${msg}<input type="hidden" name="_t" value="${esc(form.token)}">${form.fields.map(fieldHtml).join("")}<button class="os-send" type="submit">أرسل (تجربة)</button></form>`;
+  }
+  const result = form.result ? `<p class="os-score">درجتك: <b>${form.result.score}</b> من ${form.result.max}${form.result.level ? ` · المستوى: <b>${esc(form.result.level)}</b>` : ""}</p>` : "";
+  if (note === "sent") return `<section class="os-form">${head}<p class="os-note os-ok">${esc(form.thanks)}</p>${result}</section>`;
+  if (form.state !== "open") return `<section class="os-form">${head}<p class="os-note os-bad">${NOTES[form.state]}</p>${form.state === "answered" ? result : ""}</section>`;
   const msg = note && NOTES[note] ? `<p class="os-note os-bad">${NOTES[note]}</p>` : "";
   return `<form class="os-form" method="post" action="/f/${esc(slug)}">${head}${msg}<input type="hidden" name="_t" value="${esc(form.token)}">${form.fields.map(fieldHtml).join("")}<button class="os-send" type="submit">أرسل</button></form>`;
 }
 
-export function pageHtml(p: { title: string; kind: string; content: string; spaceName: string; form?: FormView }, slug = "", note: string | null = null) {
+export function pageHtml(p: { title: string; kind: string; content: string; spaceName: string; form?: FormView }, slug = "", note: string | null = null, previewed: PreviewResult = null) {
   const body = p.kind === "html" ? stripMeta(p.content) : renderAnswer(p.kind === "table" ? tableToMarkdown(p.content) : p.content, new Set());
-  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${esc(p.title)}</title><style>${BASE_STYLE}${PAGE_STYLE}</style></head><body>${body}${formHtml(slug, p.form ?? null, note)}<p class="os-pub-foot">نُشر من مساحة${p.spaceName ? ` · ${esc(p.spaceName)}` : ""}</p><script>${TABLE_TOOLS}</script></body></html>`;
+  return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${esc(p.title)}</title><style>${BASE_STYLE}${PAGE_STYLE}</style></head><body>${body}${formHtml(slug, p.form ?? null, note, previewed)}<p class="os-pub-foot">نُشر من مساحة${p.spaceName ? ` · ${esc(p.spaceName)}` : ""}</p><script>${TABLE_TOOLS}</script></body></html>`;
 }
 
 export function registerPublicationRoutes(http: HttpRouter) {
@@ -97,7 +109,8 @@ export function registerPublicationRoutes(http: HttpRouter) {
       const url = new URL(request.url);
       const slug = url.pathname.slice(3).replace(/\/+$/, "");
       if (!SLUG.test(slug)) return notFound();
-      const toApp = () => new Response(null, { status: 302, headers: { Location: `${app}/#/open/${slug}`, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
+      const preview = url.searchParams.get("preview") === "1";
+      const toApp = () => new Response(null, { status: 302, headers: { Location: `${app}/#/open/${slug}${preview ? "/preview" : ""}`, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
 
       const ticket = url.searchParams.get("t");
       if (ticket) {
@@ -107,7 +120,7 @@ export function registerPublicationRoutes(http: HttpRouter) {
         return new Response(null, {
           status: 303,
           headers: {
-            Location: `/p/${slug}`,
+            Location: `/p/${slug}${preview ? "?preview=1" : ""}`,
             "Set-Cookie": `${COOKIE}=${r.session}; Path=/p/${slug}; Max-Age=${r.maxAge}; HttpOnly; SameSite=Lax${secure}`,
             "Cache-Control": "no-store",
             "Referrer-Policy": "no-referrer",
@@ -115,10 +128,13 @@ export function registerPublicationRoutes(http: HttpRouter) {
         });
       }
       const session = cookieOf(request, COOKIE);
-      const page = session ? await ctx.runMutation(internal.publications.pageForSession, { slug, session: session.slice(0, 200) }) : null;
+      const page = session ? await ctx.runMutation(internal.publications.pageForSession, { slug, session: session.slice(0, 200), preview }) : null;
       if (!page) return toApp();
       const note = url.searchParams.get("sent") ? "sent" : url.searchParams.get("err");
-      return new Response(pageHtml(page, slug, note && /^[a-z]{3,12}$/.test(note) ? note : null), {
+      // A preview's result comes back in the URL: it is the previewer's own, and nothing was saved.
+      const ps = url.searchParams.get("ps");
+      const previewed: PreviewResult = ps === "none" ? "none" : ps && /^\d+(\.\d+)?$/.test(ps) ? { score: Number(ps), max: Number(url.searchParams.get("pm") ?? 0), level: (url.searchParams.get("pl") ?? "").slice(0, 60) || null } : null;
+      return new Response(pageHtml(page, slug, note && /^[a-z]{3,12}$/.test(note) ? note : null, previewed), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Content-Security-Policy": pageCsp(origin),
@@ -151,8 +167,14 @@ export function registerPublicationRoutes(http: HttpRouter) {
       }
       const values: Record<string, string> = {};
       for (const [k, val] of data.entries()) if (k.startsWith("f_") && typeof val === "string") values[k.slice(2, 40)] = val.slice(0, 2000);
-      const err = await ctx.runMutation(internal.publications.submitForm, { slug, token: String(data.get("_t") ?? "").slice(0, 200), values });
-      const to = err === "expired" ? `${app}/#/open/${slug}` : `/p/${slug}?${err ? `err=${err}` : "sent=1"}`;
+      const preview = new URL(request.url).searchParams.get("preview") === "1";
+      const r = await ctx.runMutation(internal.publications.submitForm, { slug, token: String(data.get("_t") ?? "").slice(0, 200), values, preview });
+      let to: string;
+      if (r === "expired") to = `${app}/#/open/${slug}`;
+      else if (typeof r === "string") to = `/p/${slug}?${preview ? "preview=1&" : ""}err=${r}`;
+      else if (r && "previewed" in r) to = `/p/${slug}?preview=1&ps=none`;
+      else if (r) to = `/p/${slug}?preview=1&ps=${r.score}&pm=${r.max}${r.level ? `&pl=${encodeURIComponent(r.level)}` : ""}`;
+      else to = `/p/${slug}?sent=1`;
       return new Response(null, { status: 303, headers: { Location: to, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
     }),
   });

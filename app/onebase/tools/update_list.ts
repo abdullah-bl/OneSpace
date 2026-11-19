@@ -3,6 +3,7 @@
 // space runs at once with «تراجع»; a shared space waits for «نفّذ».
 
 import { internal } from "../_generated/api";
+import { toolErrorText } from "./errors";
 import type { AppTool, ToolContext, ToolResult } from "./types";
 
 type Args = { listId: string; add?: Record<string, unknown>[]; update?: { rowId: string; cells: Record<string, unknown> }[]; remove?: string[] };
@@ -30,15 +31,20 @@ export const update_list: AppTool<Args> = {
     },
   },
   async run(t: ToolContext, a: Args): Promise<ToolResult> {
-    const r = await t.ctx.runMutation(internal.lists.updateFromTool, {
-      userId: t.userId,
-      scopeSpaceIds: t.scopeSpaceIds as string[],
-      listId: String(a?.listId ?? ""),
-      ...(Array.isArray(a?.add) ? { add: a.add.filter((x) => x && typeof x === "object") } : {}),
-      ...(Array.isArray(a?.update) ? { update: a.update.filter((x) => x && typeof x === "object").map((u) => ({ rowId: String(u.rowId), cells: u.cells && typeof u.cells === "object" ? u.cells : {} })) } : {}),
-      ...(Array.isArray(a?.remove) ? { remove: a.remove.map(String) } : {}),
-    });
-    if (!r.ok) return { content: `لم تُحدَّث القائمة: ${r.error}`, display: `لم تُحدَّث القائمة: ${r.error}` };
+    let r;
+    try {
+      r = await t.ctx.runMutation(internal.lists.updateFromTool, {
+        userId: t.userId,
+        scopeSpaceIds: t.scopeSpaceIds as string[],
+        listId: String(a?.listId ?? ""),
+        ...(Array.isArray(a?.add) ? { add: a.add.filter((x) => x && typeof x === "object") } : {}),
+        ...(Array.isArray(a?.update) ? { update: a.update.filter((x) => x && typeof x === "object").map((u) => ({ rowId: String(u.rowId), cells: u.cells && typeof u.cells === "object" ? u.cells : {} })) } : {}),
+        ...(Array.isArray(a?.remove) ? { remove: a.remove.map(String) } : {}),
+      });
+    } catch (e) {
+      const error = toolErrorText(e, "القائمة غير موجودة أو لا تملك تعديلها");
+      return { content: `لم تُحدَّث القائمة: ${error}`, display: `لم تُحدَّث القائمة: ${error}` };
+    }
     const parts = [r.added.length ? `أُضيف ${r.added.length}` : "", r.changed ? `عُدّل أو حُذف ${r.changed}` : ""].filter(Boolean).join("، ");
     const msg = `حُدّثت «${r.title}»${parts ? `: ${parts}` : ""}.`;
     return {

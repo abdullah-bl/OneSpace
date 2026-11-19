@@ -23,13 +23,18 @@ import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { onCompleteArgs } from "onebase/components/work-queue";
 import { actorFor, assertCan, assertTaskCan, canBeAssignee, Denied, requireActive, requireUserId, taskRoleAllows } from "./access";
-import { agentTools, effectiveScope, groundingOf, narrowByMentions, resolveAgent } from "./agents";
+import { agentTools, effectiveScope, groundingOf, MAX_STEPS_LIMIT, MIN_STEPS, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
 import { queueTurn } from "./lib/turns";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
 import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
+
+/** Platform tools: a round that uses only these doesn't count against the agent's tool rounds. */
+const PLATFORM_STEP_FREE = new Set([...PERSONAL_TOOLS, ...MEMORY_TOOLS]);
+/** Every tool round of one answer, whatever counts. */
+const HARD_STEPS = 24;
 import { maskSecrets } from "./lib/secrets";
 import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId, undoMemories } from "./memory";
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
@@ -59,6 +64,9 @@ const turnMaxCompletion = () => Number(process.env.TURN_MAX_COMPLETION_TOKENS ??
 const MAX_SANDBOX_RUNS = 3;
 const STOP_NOTE = "\n\n*(أُوقفت الإجابة)*";
 const STOPPED_BEFORE_START = "أوقفتَ الإجابة قبل أن تبدأ";
+/** Said with the last-round nudge, so a cut-short answer says what is left instead of inventing a reason. */
+const UNFINISHED_NOTE =
+  "إن بقي من طلب المستخدم شيء لم تنفّذه بأداة (نشر، إنشاء، تعديل)، فقل ذلك صراحةً في جملة: ما الذي بقي، واطلب منه أن يكتب «أكمل» لتتمّه. لا تخترع سبباً ولا تقل إنه يحتاج خطوة يدوية منه.";
 const BUDGET_NOTE = "انتهى الوقت المتاح لهذه الإجابة: اذكر باختصار ما أنجزته وما بقي.";
 /** What a proposal keeps of its tool's output (shown on its card, and read by the follow-up answer). */
 const MAX_RUN_RESULT = envNum("CHAT_MAX_RUN_RESULT_CHARS", 24_000);
@@ -432,7 +440,21 @@ export const messages = query({
     const proposals = new Map<string, ReturnType<typeof shapeProposal>[]>();
     for (const p of await ctx.db.query("proposals").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) {
       if (!proposals.has(p.messageId)) proposals.set(p.messageId, []);
-      proposals.get(p.messageId)!.push(shapeProposal(p, now));
+      const shaped = shapeProposal(p, now);
+      // An output removed since («تراجع», deleted, moved away) gets no chip: opening it would fail.
+      const live: string[] = [];
+      for (const aid of shaped.artifactIds) {
+        const nid = ctx.db.normalizeId("artifacts", aid);
+        const art = nid ? await ctx.db.get(nid) : null;
+        if (!art) continue;
+        try {
+          await assertCan(ctx, me.userId, art.spaceId, "read");
+          live.push(aid);
+        } catch {
+          // moved to a space this reader can't open
+        }
+      }
+      proposals.get(p.messageId)!.push({ ...shaped, artifactIds: live });
     }
     // The skill (agent) behind each answer, by name, for its chip.
     const agentNames = new Map<string, string>();
@@ -1335,7 +1357,11 @@ export const runTurn = internalAction({
       // A long pasted text is the material itself, not a search: open agents don't pre-search with
       // it (a whole pasted document matches unrelated files); the model can still search by itself.
       const pasted = c.question.length > LONG_PASTE;
-      const retrieve = !parts.length && allowed.has(search.name) && (!open || (c.spaceIds.length > 0 && !pasted));
+      // A request to make something new («سوّ لي اختباراً…») that doesn't point at the files isn't a
+      // question about them: open agents don't pre-search (it only brings unrelated passages); the
+      // model can still search if the task needs the files.
+      const making = !c.focused && makingRequest(c.question);
+      const retrieve = !parts.length && allowed.has(search.name) && (!open || (c.spaceIds.length > 0 && !pasted && !making));
       let shown = 0;
       if (retrieve) {
         // 1. Rewrite a follow-up ("وكم مدتها؟") into a standalone search query.
@@ -1384,7 +1410,10 @@ export const runTurn = internalAction({
         ...c.history.map((m): ChatMsg => (m.role === "user" ? { role: "user", content: m.text } : { role: "assistant", content: m.text })),
         { role: "user", content: prompt },
       ];
-      const maxSteps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, 1), 8);
+      // Tool rounds: the agent's own (at least MIN_STEPS), and rounds that only use the platform's own
+      // tools (lists, publishing, skills, memory) don't count against it. HARD_STEPS bounds the turn.
+      const maxSteps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, MIN_STEPS), MAX_STEPS_LIMIT);
+      let agentSteps = 0;
       let answer = "";
       let forceFinal = false;
       let overBudget = false;
@@ -1397,8 +1426,8 @@ export const runTurn = internalAction({
           forceFinal = true;
           overBudget = true;
         }
-        const last = step >= maxSteps - 1 || forceFinal || specs.length === 0;
-        if (last && step > 0) messages.push({ role: "user", content: (open ? FINAL_NUDGE_OPEN : FINAL_NUDGE) + (overBudget ? " " + BUDGET_NOTE : "") });
+        const last = agentSteps >= maxSteps - 1 || step >= HARD_STEPS - 1 || forceFinal || specs.length === 0;
+        if (last && step > 0) messages.push({ role: "user", content: (open ? FINAL_NUDGE_OPEN : FINAL_NUDGE) + " " + (overBudget ? BUDGET_NOTE : UNFINISHED_NOTE) });
         let res: Awaited<ReturnType<typeof chat>>;
         try {
           res = await chat({
@@ -1433,6 +1462,7 @@ export const runTurn = internalAction({
           continue;
         }
         if (!res.toolCalls.length || last) break;
+        if (!res.toolCalls.every((tc) => PLATFORM_STEP_FREE.has(tc.name))) agentSteps++;
         if (await stopped(true)) throw new Error("stopped");
         messages.push({ role: "assistant", content: res.text || null, tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.rawArgs || "{}" } })) });
         // Each call is classified first: refused, a card waiting for «نفّذ» (tier 2–3), run now
@@ -1562,6 +1592,13 @@ export const runTurn = internalAction({
  */
 /** A long message is pasted material (a document, a skill), not a question to search with. */
 const LONG_PASTE = 1500;
+
+const MAKE_RE = /^\s*(?:(?:لو سمحت|ممكن|أبي|ابي|ابغى|أبغى|اريد|أريد|ودي|تقدر)\s+)?(?:ت?سو(?:ي|ّ|ّي)?|ت?نشئ|أنشئ|انشئ|ت?كتب|اكتب|ت?صمم|صمّم|جهز|جهّز|تجهز|حضر|حضّر|اعمل|ابن|ارسم|ترجم|صغ|ألّف|الف|اصنع|سوو)(?=\s|$)/;
+const FILE_RE = /ملف|ملفات|مستند|المرفق|لائحة|اللائحة|سياسة|السياسة|نظام|النظام|@/;
+/** «سوّ لي…/اكتب…/أنشئ…» without pointing at files, policies or an @mention. */
+export function makingRequest(q: string) {
+  return MAKE_RE.test(q) && !FILE_RE.test(q);
+}
 const MAX_QUERY = 600;
 
 /** The person's own message asks for a skill ("اكتبها كمهارة", "save as a skill", a SKILL.md). */
@@ -1587,7 +1624,7 @@ export function pageScriptProblem(tool: string, args: unknown): string | null {
 // ---------------------------------------------------------------- sub-agents (plans/08 §A)
 
 type PartOut = { agent: string; goal: string; text: string; ok: boolean; ms: number; usage: { prompt: number; completion: number } };
-const PART_STEPS = 4;
+const PART_STEPS = 8;
 const PART_NOTE =
   "\n\n---\nأنت تنجز جزءاً واحداً من طلب أكبر، وسيجمع وكيل آخر نتائج الأجزاء في إجابة واحدة للموظف. اكتب نتيجة جزئك فقط: الحقائق والأرقام وما وجدته، مختصرة ومنظّمة، واستشهد بأرقام المصادر كما هي [n]. لا مقدمة ولا خاتمة، ولا تطلب تأكيداً، ولا تنشئ ملفات.";
 
@@ -1648,7 +1685,7 @@ async function runPart(
       { role: "system", content: buildSystemPrompt(agent, pc.context, agent.grounding) + PART_NOTE },
       { role: "user", content: `الطلب الكامل (للسياق فقط): ${o.question}\n\nجزؤك: ${o.part.goal}` + (found.length ? `\n\nمقاطع قد تتعلق بجزئك:\n\n${renderSources(found)}` : "") },
     ];
-    const steps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, 1), PART_STEPS);
+    const steps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, MIN_STEPS), PART_STEPS);
     for (let step = 0; ; step++) {
       if (o.signal.aborted) throw new Error("stopped");
       const last = step >= steps - 1 || !specs.length;

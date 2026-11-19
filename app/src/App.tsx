@@ -183,7 +183,7 @@ function Shell({ me }: { me: Me }) {
   else if (head === "memory") screen = <Wide><MemoryView /></Wide>;
   else if (head === "lists") screen = <ListsPage spaces={spaces} go={go} />;
   else if (head === "published") screen = <PublishedPage />;
-  else if (head === "open" && a) screen = <OpenPublication key={a} slug={a} />;
+  else if (head === "open" && a) screen = <OpenPublication key={a + (b ?? "")} slug={a} preview={b === "preview"} />;
   else if (head === "list" && a) screen = <ListPage key={a} listId={a} go={go} />;
   else if (head === "skills")
     screen = (

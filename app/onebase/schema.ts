@@ -207,6 +207,16 @@ export default defineSchema({
         maxReplies: v.optional(v.number()),
         onePerReader: v.boolean(),
         replies: v.number(),
+        // A quiz: code marks each reply against the key and writes the score (and level) columns.
+        quiz: v.optional(
+          v.object({
+            answers: v.array(v.object({ key: v.string(), correct: v.string(), points: v.number() })),
+            scoreKey: v.string(),
+            levelKey: v.optional(v.string()),
+            bands: v.array(v.object({ min: v.number(), label: v.string() })),
+            showResult: v.boolean(),
+          }),
+        ),
       }),
     ),
   })
@@ -240,6 +250,9 @@ export default defineSchema({
     userId: v.id("users"),
     rowId: v.string(),
     at: v.number(),
+    score: v.optional(v.number()),
+    max: v.optional(v.number()),
+    level: v.optional(v.string()),
   }).index("by_pub_user", ["publicationId", "userId", "at"]),
 
   // ---- Phase 5: sandbox runs ----

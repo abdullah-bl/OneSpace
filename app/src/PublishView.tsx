@@ -25,11 +25,30 @@ type Pub = {
   personal?: boolean;
   spaceName?: string;
   by?: string;
-  form: { listId: string; fields: { key: string; required: boolean }[]; replies: number; thanks: string; closesAt: number | null; maxReplies: number | null; onePerReader: boolean; recordSender: boolean } | null;
+  form: {
+    listId: string;
+    fields: { key: string; required: boolean }[];
+    replies: number;
+    thanks: string;
+    closesAt: number | null;
+    maxReplies: number | null;
+    onePerReader: boolean;
+    recordSender: boolean;
+    quiz: { answers: { key: string; correct: string; points: number }[]; bands: { min: number; label: string }[]; showResult: boolean; max: number } | null;
+  } | null;
   listTitle?: string | null;
 };
 
-type ListOption = { _id: string; title: string; columns: { key: string; name: string; type: string }[] };
+type ListOption = { _id: string; title: string; columns: { key: string; name: string; type: string; options: string[] }[] };
+
+/** «16 متقدم، 10 متوسط، 0 مبتدئ» ⇄ bands. */
+const bandsText = (b: { min: number; label: string }[]) => b.map((x) => `${x.min} ${x.label}`).join("، ");
+const parseBands = (t: string) =>
+  t
+    .split(/[،,\n]/)
+    .map((x) => /^\s*(\d+(?:\.\d+)?)\s+(.+?)\s*$/.exec(x))
+    .filter((m): m is RegExpExecArray => !!m)
+    .map((m) => ({ min: Number(m[1]), label: m[2]! }));
 
 /** Under a publication: the form that sends replies into a list of the same space (plans/11 step 2). */
 function FormSettings({ p }: { p: Pub }) {
@@ -58,6 +77,7 @@ function FormSettings({ p }: { p: Pub }) {
           «{p.listTitle ?? "قائمة"}»
         </a>{" "}
         · <span className="num">{p.form.replies}</span> رد{p.form.maxReplies ? ` من ${p.form.maxReplies}` : ""}
+        {p.form.quiz ? ` · اختبار يُصحَّح آلياً (${p.form.quiz.answers.length} سؤالاً، من ${p.form.quiz.max})` : ""}
         {p.form.closesAt ? ` · يُغلق ${formatDate(p.form.closesAt)}` : ""}
       </span>
       <button className="btn-ghost h-7 px-2 text-xs" onClick={() => setEditing(true)}>
@@ -81,6 +101,10 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
   const [maxReplies, setMax] = useState(p.form?.maxReplies ? String(p.form.maxReplies) : "");
   const [closes, setCloses] = useState(p.form?.closesAt ? new Date(p.form.closesAt).toISOString().slice(0, 10) : "");
   const [error, setError] = useState("");
+  const [quizOn, setQuizOn] = useState(!!p.form?.quiz);
+  const [key, setKey] = useState<Record<string, string>>(() => Object.fromEntries((p.form?.quiz?.answers ?? []).map((a) => [a.key, a.correct])));
+  const [bands, setBands] = useState(bandsText(p.form?.quiz?.bands ?? []));
+  const [showResult, setShowResult] = useState(p.form?.quiz?.showResult ?? true);
   const list = lists?.find((l) => l._id === listId);
   useEffect(() => {
     // A newly picked list: every column on, none required.
@@ -100,6 +124,15 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
           ...(thanks.trim() ? { thanks } : {}),
           ...(Number(maxReplies) > 0 ? { maxReplies: Number(maxReplies) } : {}),
           ...(closes ? { closesAt: new Date(`${closes}T23:59:59`).getTime() } : {}),
+          ...(quizOn
+            ? {
+                quiz: {
+                  answers: (list?.columns ?? []).filter((c) => fields[c.key]?.on && key[c.key]).map((c) => ({ key: c.key, correct: key[c.key]!, points: 1 })),
+                  bands: parseBands(bands),
+                  showResult,
+                },
+              }
+            : {}),
         },
       });
       onDone();
@@ -139,6 +172,39 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
                 </li>
               ))}
             </ul>
+          )}
+          {list && (
+            <div className="space-y-1.5 rounded-md bg-sunken/60 p-2">
+              <label className="flex items-center gap-1.5 font-medium">
+                <input type="checkbox" checked={quizOn} onChange={(e) => setQuizOn(e.target.checked)} /> اختبار يُصحَّح آلياً
+              </label>
+              {quizOn && (
+                <>
+                  <p className="text-faint">لكل سؤال اختيار: الإجابة الصحيحة (درجة لكل إجابة). تُحسب الدرجة بالكود وتُحفظ في عمود «الدرجة».</p>
+                  <ul className="space-y-1">
+                    {list.columns
+                      .filter((c) => fields[c.key]?.on && (c.type === "select" || c.type === "status"))
+                      .map((c) => (
+                        <li key={c.key} className="flex items-center gap-2">
+                          <span className="min-w-0 flex-1 truncate">{c.name}</span>
+                          <select className="input h-7 w-auto text-xs" value={key[c.key] ?? ""} onChange={(e) => setKey((k) => ({ ...k, [c.key]: e.target.value }))} aria-label={`الإجابة الصحيحة: ${c.name}`}>
+                            <option value="">بلا تصحيح</option>
+                            {c.options.map((o) => (
+                              <option key={o} value={o}>
+                                {o}
+                              </option>
+                            ))}
+                          </select>
+                        </li>
+                      ))}
+                  </ul>
+                  <input className="input h-8 w-full text-xs" value={bands} onChange={(e) => setBands(e.target.value)} placeholder="المستويات (اختياري): 16 متقدم، 10 متوسط، 0 مبتدئ" />
+                  <label className="flex items-center gap-1.5">
+                    <input type="checkbox" checked={showResult} onChange={(e) => setShowResult(e.target.checked)} /> أظهر للمختبَر درجته بعد الإرسال
+                  </label>
+                </>
+              )}
+            </div>
           )}
           <input className="input h-8 w-full text-xs" value={thanks} maxLength={500} onChange={(e) => setThanks(e.target.value)} placeholder="رسالة بعد الإرسال (اختياري)" />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -202,6 +268,14 @@ function PubRow({ p, showTitle }: { p: Pub; showTitle?: boolean }) {
             {p.url}
           </code>
           <CopyLink url={p.url} />
+          <a className="btn-ghost h-8 text-xs" href={p.url} target="_blank" rel="noopener noreferrer">
+            افتح
+          </a>
+          {(p.mine ?? true) && p.form && (
+            <a className="btn-ghost h-8 text-xs" href={`${p.url}?preview=1`} target="_blank" rel="noopener noreferrer" title="ما ترسله في المعاينة لا يُحفظ">
+              جرّبها
+            </a>
+          )}
         </div>
       )}
       {(p.mine ?? true) && <FormSettings p={p} />}
@@ -330,12 +404,12 @@ export function PublishedPage() {
 }
 
 /** #/open/<slug>: check the reader, then go to the page on the content origin with a one-time ticket. */
-export function OpenPublication({ slug }: { slug: string }) {
+export function OpenPublication({ slug, preview = false }: { slug: string; preview?: boolean }) {
   const openTicket = useMutation(api.publications.openTicket);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
     openTicket({ slug })
-      .then((url: string) => window.location.replace(url))
+      .then((url: string) => window.location.replace(preview ? `${url}&preview=1` : url))
       .catch(() => setFailed(true));
   }, [slug]);
   return (

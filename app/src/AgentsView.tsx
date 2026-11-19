@@ -33,7 +33,7 @@ const EMPTY: Config = {
   allowedTools: [],
   dataScope: "all",
   modelRole: "main",
-  maxSteps: 4,
+  maxSteps: 10,
   visibility: { kind: "workspace", spaceIds: [] },
   grounding: "open",
 };
@@ -451,7 +451,7 @@ function Advanced({ form, set }: { form: Config; set: <K extends keyof Config>(k
           </label>
           <label className="text-sm">
             <span className="label">أقصى جولات الأدوات للإجابة</span>
-            <input className="input num w-full" type="number" min={1} max={8} value={form.maxSteps} onChange={(e) => set("maxSteps", Number(e.target.value))} />
+            <input className="input num w-full" type="number" min={1} max={20} value={form.maxSteps} onChange={(e) => set("maxSteps", Number(e.target.value))} />
           </label>
         </div>
         <div className="space-y-2 text-sm">

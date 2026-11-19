@@ -24,7 +24,9 @@ type Ctx = QueryCtx | MutationCtx;
 export type AgentConfig = Infer<typeof agentConfig>;
 export type DataScope = AgentConfig["dataScope"];
 
-export const MAX_STEPS_LIMIT = 8;
+export const MAX_STEPS_LIMIT = 20;
+/** No agent gets fewer tool rounds than this: making a list, a page and publishing it is already 3–4. */
+export const MIN_STEPS = 10;
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 500;
 const INSTRUCTIONS_MAX = 8000;
@@ -54,7 +56,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       toolMode: "all",
       dataScope: "all",
       modelRole: "main",
-      maxSteps: 4,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "open",
     },
@@ -70,7 +72,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       allowedTools: ["search_documents", "read_file"],
       dataScope: "everyone",
       modelRole: "main",
-      maxSteps: 4,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "documents",
     },
@@ -87,7 +89,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       allowedTools: ["query_records", "fill_template", "create_artifact"],
       dataScope: "member",
       modelRole: "main",
-      maxSteps: 5,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "documents",
     },
@@ -105,7 +107,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       toolMode: "all",
       dataScope: "all",
       modelRole: "main",
-      maxSteps: 5,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "open",
     },

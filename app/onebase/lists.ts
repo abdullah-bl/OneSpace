@@ -483,12 +483,12 @@ export const createFromTool = internalMutation({
     columns: v.array(v.object({ name: v.string(), type: v.string(), options: v.optional(v.array(v.string())) })),
     rows: v.array(v.record(v.string(), v.any())),
   },
-  handler: async (ctx, a) =>
-    tryTool(async () => {
-      const target = await placeFor(ctx, a.userId, a.threadId, a.scopeSpaceIds);
-      const r = await insertList(ctx, a.userId, target._id, { ...a, sourceThreadId: a.threadId, grow: true });
-      return { id: r.id as string, spaceId: target._id as string, spaceName: target.kind === "personal" ? "مساحتي" : target.name, rows: r.rowIds.length };
-    }),
+  // Throws on any refusal (tools/errors.ts), so a half-made list is never kept.
+  handler: async (ctx, a) => {
+    const target = await placeFor(ctx, a.userId, a.threadId, a.scopeSpaceIds);
+    const r = await insertList(ctx, a.userId, target._id, { ...a, sourceThreadId: a.threadId, grow: true });
+    return { id: r.id as string, spaceId: target._id as string, spaceName: target.kind === "personal" ? "مساحتي" : target.name, rows: r.rowIds.length };
+  },
 });
 
 export const updateFromTool = internalMutation({
@@ -500,12 +500,12 @@ export const updateFromTool = internalMutation({
     update: v.optional(v.array(v.object({ rowId: v.string(), cells: v.record(v.string(), v.any()) }))),
     remove: v.optional(v.array(v.string())),
   },
-  handler: async (ctx, a) =>
-    tryTool(async () => {
-      const { list, space } = await toolList(ctx, a.userId, a.listId, a.scopeSpaceIds, true);
-      const r = await applyChanges(ctx, a.userId, list, space, a, true);
-      return { id: list._id as string, title: list.title, spaceId: list.spaceId as string, added: r.added, restore: r.restore, changed: (a.update?.length ?? 0) + (a.remove?.length ?? 0) };
-    }),
+  // Throws on any refusal: all the changes apply, or none.
+  handler: async (ctx, a) => {
+    const { list, space } = await toolList(ctx, a.userId, a.listId, a.scopeSpaceIds, true);
+    const r = await applyChanges(ctx, a.userId, list, space, a, true);
+    return { id: list._id as string, title: list.title, spaceId: list.spaceId as string, added: r.added, restore: r.restore, changed: (a.update?.length ?? 0) + (a.remove?.length ?? 0) };
+  },
 });
 
 /** read_list: the rows as text the model can act on (row ids included), by id or by title. */

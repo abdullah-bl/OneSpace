@@ -968,12 +968,42 @@ function proposalSummary(p: Proposal): string[] {
   if (a.title) out.push(`العنوان: ${a.title}`);
   if (a.kind) out.push(`النوع: ${a.kind}`);
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
+  if (p.tool === "publish_output") {
+    out.push(`لمن: ${a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
+    if (a.form?.quiz) out.push(`اختبار يُصحَّح آلياً: ${Object.keys(a.form.quiz.answers ?? {}).length} سؤالاً`);
+    else if (a.form) out.push("نموذج تُحفظ ردوده في قائمة");
+    return out;
+  }
   if (a.skill) out.push(`سكربت المهارة: /${a.skill}${a.script ? ` (${a.script})` : ""}`);
   if (Array.isArray(a.fileIds)) out.push(`الملفات: ${a.fileIds.length}`);
   if (a.templateId) out.push(`القالب: ${a.templateId}`);
   if (a.recordId) out.push(`السجل: ${a.recordId}`);
   if (a.artifactId) out.push(`المخرج: ${a.artifactId}`);
   return out;
+}
+
+/** Under a publish card: open the page, try it (nothing saved), copy the link, see the replies. */
+function PublishedLinks({ url, listId }: { url: string; listId?: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!url) return null;
+  return (
+    <>
+      <a className="btn-secondary h-8" href={url} target="_blank" rel="noopener noreferrer">
+        <Icon name="globe" size={14} /> افتح الصفحة
+      </a>
+      <a className="btn-secondary h-8" href={`${url}?preview=1`} target="_blank" rel="noopener noreferrer" title="تفتح الصفحة والنموذج، وما ترسله لا يُحفظ">
+        <Icon name="eye" size={14} /> جرّبها
+      </a>
+      <button className="btn-secondary h-8" onClick={() => void navigator.clipboard?.writeText(url).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))}>
+        <Icon name={copied ? "check" : "copy"} size={14} /> {copied ? "نُسخ" : "انسخ الرابط"}
+      </button>
+      {listId && (
+        <a className="btn-secondary h-8" href={`#/list/${listId}`}>
+          <Icon name="table" size={14} /> الردود
+        </a>
+      )}
+    </>
+  );
 }
 
 function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id: string) => void }) {
@@ -1018,7 +1048,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         </pre>
       </details>
       {p.state === "executed" && p.display ? (
-        <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "")}</p>
+        <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
       ) : p.result &&
         (p.state === "executed" ? (
           <details className="mt-1 text-xs text-muted">
@@ -1049,6 +1079,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         {p.artifactIds.map((id) => (
           <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
         ))}
+        {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
         {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
           <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
             <Icon name="table" size={14} /> افتح القائمة
