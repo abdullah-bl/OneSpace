@@ -968,6 +968,7 @@ function proposalSummary(p: Proposal): string[] {
   if (a.title) out.push(`العنوان: ${a.title}`);
   if (a.kind) out.push(`النوع: ${a.kind}`);
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
+  if (a.skill) out.push(`سكربت المهارة: /${a.skill}${a.script ? ` (${a.script})` : ""}`);
   if (Array.isArray(a.fileIds)) out.push(`الملفات: ${a.fileIds.length}`);
   if (a.templateId) out.push(`القالب: ${a.templateId}`);
   if (a.recordId) out.push(`السجل: ${a.recordId}`);

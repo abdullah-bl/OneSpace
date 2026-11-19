@@ -1,6 +1,6 @@
 // The shell (UX redesign, app/UX.md): a Claude-like sidebar — "محادثة جديدة", then المحادثات,
 // المساحات, المهام and الإشارات, the recent chats — and a user menu at the bottom holding what is
-// rarely used (بياناتي, التحليل, المفاضلة, and for admins/managers الإدارة, الوكلاء, سجل التدقيق).
+// rarely used (بياناتي, التحليل, and for admins/managers الإدارة, الوكلاء, سجل التدقيق).
 // Routes live in the URL hash so back/forward and links work: #/new, #/chat/<id>, #/chats,
 // #/spaces, #/space/<id>[/<tab>|/new], #/tasks[/<taskId>], #/schedules, #/mentions, #/me, …
 
@@ -19,7 +19,6 @@ import { AdminConsole } from "./AdminConsole";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { HelpView } from "./HelpView";
 import { WorksView } from "./WorksView";
-import { RankingView } from "./RankingView";
 import { MyRecordsView } from "./MyRecordsView";
 import { ConfirmHost, tell } from "./ui";
 
@@ -190,7 +189,6 @@ function Shell({ me }: { me: Me }) {
       />
     );
   else if (head === "works" || head === "analysis") screen = <Wide><WorksView spaces={spaces} /></Wide>;
-  else if (head === "ranking") screen = <Wide><RankingView spaces={spaces} /></Wide>;
   else if (head === "help") screen = <Wide><HelpView article={a ?? null} isAdmin={isAdmin} /></Wide>;
   else if (head === "admin" && (isAdmin || managesAny)) screen = <AdminConsole page={a ?? (isAdmin ? "overview" : "audit")} isAdmin={isAdmin} spaces={spaces} go={go} />;
   // Old addresses of the admin pages, before «إدارة المنصة» grouped them.
@@ -420,7 +418,6 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
           {item("مهاراتي", "/skills")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
-          {item("المفاضلة", "/ranking")}
           {item("مركز المساعدة", "/help")}
           {(isAdmin || managesAny) && <div className="my-1 border-t border-rule" />}
           {isAdmin && item("إدارة المنصة", "/admin")}

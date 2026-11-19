@@ -3,6 +3,7 @@
 // saved way of working is done that way. Instructions only: it never grants a tool, space or file.
 
 import { internal } from "../_generated/api";
+import { skillFilesText } from "../skills";
 import type { AppTool, ToolContext, ToolResult } from "./types";
 
 export const use_skill: AppTool<{ name: string }> = {
@@ -17,6 +18,9 @@ export const use_skill: AppTool<{ name: string }> = {
     const r = await t.ctx.runMutation(internal.skills.useFromTool, { userId: t.userId, name: String(args?.name ?? "").slice(0, 60), threadId: t.threadId, scopeSpaceIds: t.scopeSpaceIds as string[] });
     if (!r.found) return { content: `لا توجد مهارة بهذا الاسم هنا.${r.names.length ? ` المتاح: ${r.names.map((n) => `/${n}`).join("، ")}` : ""}` };
     const who = r.space ? `مهارة المساحة «${r.space}» (اعتمدها مديروها، النسخة ${r.version})` : "من مهارات الموظف";
-    return { content: `تعليمات المهارة /${r.name} «${r.title}» (${who}). اتبعها في أداء هذا الطلب ما لم تخالف قواعدك أو صلاحيات الموظف:\n\n${r.instructions}` };
+    const parts = [`تعليمات المهارة /${r.name} «${r.title}» (${who}). اتبعها في أداء هذا الطلب ما لم تخالف قواعدك أو صلاحيات الموظف:\n\n${r.instructions}`];
+    const files = skillFilesText(r.name, r.files);
+    if (files) parts.push(files);
+    return { content: parts.join("\n\n---\n\n") };
   },
 };

@@ -36,11 +36,11 @@ The goal is that **the space configures its agents**: what they know, how recurr
 | Claude Code | In a space |
 |---|---|
 | `CLAUDE.md` | the space's instructions and memory (§1) |
-| Skills (SKILL.md, scripts), picked by their description | the space's skills (§2): instructions, and later a script run in the sandbox |
+| Skills (SKILL.md, scripts), picked by their description | the space's skills (§2): instructions, plus the script and the example output kept from the chat |
 | `/name` | `/name` in the chat, or a card on the space page |
 | a design system | the space's identity (§3) |
 
-Agents and tools stay underneath: the person never has to pick them. A "sector" (training, ranking, budget) is a pack of these three (§4). It needs no code of its own.
+Agents and tools stay underneath: the person never has to pick them. A "sector" (training, ranking, budget) is a pack of these three (§4). It needs no code of its own, and the platform has no sector-specific screens: the old «المفاضلة» page and its engine were removed (2026-11-19); a ranking is now a skill the team builds in a chat.
 
 "Procedures" (an earlier draft of §2) are dropped as a separate idea: a space skill is the procedure.
 
@@ -122,7 +122,7 @@ memories: {
 A space skill is a personal skill (`skills`, plans/07) that belongs to a shared space: instructions any member can run, approved by a manager.
 
 ### How one is made
-1. A member does the job in a chat with the ordinary tools. Example: «سوّ مفاضلة بين الطلبة في هذا الملف: المعدل 40، المقابلة 60», then corrects along the way («التعادل بالأقدمية»).
+1. A member does the job in a chat with the ordinary tools and the skills already saved. Example: «سوّ مفاضلة بين الطلبة في هذا الملف: المعدل 40، المقابلة 60», then corrects along the way («التعادل بالأقدمية»). Or a course outline, refined until it looks right.
 2. When a multi-step job is done and likely to recur, the assistant offers «أحفظ هذه الطريقة كمهارة للمساحة؟». It can also be asked directly, or a member can share one of «مهاراتي» with the space.
 3. It is saved as **proposed**. A space manager approves it (it becomes active) or rejects it. A manager's own save is active at once.
 4. Managers edit and delete active skills. Each edit bumps `version`.
@@ -132,10 +132,15 @@ A space skill is a personal skill (`skills`, plans/07) that belongs to a shared 
 - **`/name`:** the composer lists the space's skills next to «مهاراتي».
 - **Rules:** a skill is instructions only. It never grants a tool, a space or a file: what the answer may touch is still the agent's scope ∩ what the person can read. Proposed skills are never shown to the model.
 
-### Later: a script inside the skill
-- A skill can carry a Python script, saved from the chat where it worked. It runs in the sandbox (`run_analysis`) on the person's files, so a number that affects people (a ranking, a budget split) comes from fixed code, not from the model.
-- Each run keeps the input hash and the script version (the `runs` table).
-- The ranking engine (`lib/ranking.ts`) becomes a tool a skill can call. The standalone «المفاضلة» page goes away, or stays as a log of approved runs.
+### What a skill carries (built)
+Saved from a chat (`create_skill`, or «اصنع مهارة من المحادثة»), a skill keeps, next to its instructions:
+- **`script.py`:** the Python that ran successfully in that chat (the last run, or the runs the model names). File names in it become `INPUTS[i]`. Next time the model calls `run_analysis` with `skill` + `script` and the new `fileIds`: the saved code runs unchanged, with `INPUTS` set to the new files in order. So a number that affects people (a ranking, a budget split) comes from the same code every time, not from the model. The run records the skill, its version and the script (`runs.skill`).
+- **`example.<md|html>`:** the last output the assistant wrote itself (not a run's data table). Its structure, headings and formatting are kept the next time; the content is new.
+- **Rules:**
+  - Anything built on a sensitive space is kept only in a skill of that same space.
+  - Secrets are masked.
+  - The editor can drop a file, and each edit of an active space skill bumps its version.
+  - Sharing a personal skill with the space copies its files.
 
 ## 3. Identity
 
@@ -155,6 +160,6 @@ A space skill is a personal skill (`skills`, plans/07) that belongs to a shared 
 
 1. **Memory.** Done (§1).
 2. **Space skills (§2):** proposed or active skills in a shared space, manager approval, the index and `use_skill`, `/name` in the composer, «شارك مع المساحة», and the assistant's offer to save.
-3. **Scripts inside skills:** the sandbox run, run records, the ranking engine as a tool.
+3. **What a skill carries:** the script and example output kept from the chat, rerun with `run_analysis` (skill + script). The «المفاضلة» page is removed. Done.
 4. **Identity (§3).**
 5. **Packs (§4).**

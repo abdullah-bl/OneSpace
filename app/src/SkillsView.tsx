@@ -3,13 +3,14 @@
 // المحادثة» in the chat menu), and the draft opens here to review before saving.
 
 import { useEffect, useState } from "react";
+import { SkillFiles, useFileEdits, type SkillFile } from "./SkillFiles";
 import { useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate } from "./lib";
 import { Icon } from "./icons";
 import { EmptyState, PageHeader, ask } from "./ui";
 
 export type SkillDraft = { name: string; title: string; description: string; instructions: string; fromThreadId?: string };
-type Skill = SkillDraft & { _id: string; source: string; uses: number; updatedAt: number };
+type Skill = SkillDraft & { _id: string; source: string; uses: number; updatedAt: number; files: SkillFile[] };
 
 /** A draft handed over from the chat («اصنع مهارة من المحادثة»), picked up once by the page. */
 let pendingDraft: SkillDraft | null = null;
@@ -25,14 +26,16 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
   const create = useMutation(api.skills.create);
   const update = useMutation(api.skills.update);
   const remove = useMutation(api.skills.remove);
-  const [editing, setEditing] = useState<(SkillDraft & { _id?: string }) | null>(null);
+  const [editing, setEditing] = useState<(SkillDraft & { _id?: string; files?: SkillFile[] }) | null>(null);
+  const [open, setOpen] = useState<string | null>(null);
+  const fileEdits = useFileEdits();
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
 
   useEffect(() => {
     if (pendingDraft) {
       setEditing(pendingDraft);
-      setNote("مسودة من المحادثة: راجعها وعدّلها ثم احفظها.");
+      setNote("مسودة من المحادثة: راجعها وعدّلها ثم احفظها. يُحفظ معها الكود الذي نجح في المحادثة وآخر مخرج كتبه المساعد، إن وُجدا.");
       pendingDraft = null;
     }
   }, []);
@@ -41,11 +44,12 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
     if (!editing) return;
     setError("");
     try {
-      const { _id, fromThreadId, ...fields } = editing;
-      if (_id) await update({ skillId: _id, ...fields });
+      const { _id, fromThreadId, files, ...fields } = editing;
+      if (_id) await update({ skillId: _id, ...fields, ...fileEdits.keep(files) });
       else await create({ ...fields, ...(fromThreadId ? { fromThreadId } : {}) });
       setNote(`حُفظت /${editing.name.replace(/^\//, "")}. اكتب / في المحادثة لاستخدامها.`);
       setEditing(null);
+      fileEdits.reset();
     } catch (e) {
       setError(errorText(e));
     }
@@ -91,6 +95,7 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
             <span className="label">التعليمات</span>
             <textarea className="textarea min-h-48 w-full leading-7" dir="auto" value={editing.instructions} maxLength={16000} onChange={(e) => set("instructions", e.target.value)} placeholder="ابدأ بـ«سعادة…»، ثم الموضوع في سطر، ثم فقرتين قصيرتين…" />
           </label>
+          {editing.files && <SkillFiles files={editing.files} removed={fileEdits.removed} onToggle={fileEdits.toggle} />}
           <div className="flex gap-2">
             <button className="btn-primary" onClick={() => void save()} disabled={!editing.name.trim() || !editing.instructions.trim()}>
               حفظ
@@ -122,15 +127,25 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
                   </span>
                   <span className="truncate text-sm text-muted">{s.title}</span>
                   {s.source === "chat" && <span className="badge">من محادثة</span>}
+                  {s.files.length > 0 && (
+                    <button className="badge" onClick={() => setOpen(open === s._id ? null : s._id)} aria-expanded={open === s._id}>
+                      {s.files.length} {s.files.length === 1 ? "ملف" : "ملفات"}
+                    </button>
+                  )}
                 </div>
                 <div className="meta truncate">
                   {s.description || "—"} · استُخدمت {s.uses} · {formatDate(s.updatedAt)}
                 </div>
+                {open === s._id && (
+                  <div className="mt-2">
+                    <SkillFiles files={s.files} />
+                  </div>
+                )}
               </div>
               <button className="btn-ghost" onClick={() => onTry({ id: s._id, name: s.name })}>
                 استخدمها
               </button>
-              <button className="btn-ghost" onClick={() => (setEditing({ ...s }), setNote(""))}>
+              <button className="btn-ghost" onClick={() => (setEditing({ ...s }), fileEdits.reset(), setNote(""))}>
                 تعديل
               </button>
               <button className="btn-danger" onClick={() => void ask(`حذف /${s.name}؟`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void remove({ skillId: s._id }).catch((e) => setError(errorText(e))); })}>

@@ -6,6 +6,11 @@
 //
 // The AI can draft a skill from a finished chat (draftFromThread): it returns a draft for the user
 // to review and save; nothing is stored until they do.
+//
+// A skill saved from a chat also keeps what made the answer (plans/09 §2, captureFiles): the
+// Python that ran successfully there (rerun as is on new files, so numbers come from the same
+// code) and the last output the assistant wrote (its shape is kept next time). Nothing from a
+// sensitive space leaves it this way.
 
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -14,6 +19,7 @@ import { action, internalMutation, internalQuery, mutation, query, type Mutation
 import { assertCan, Denied, requireActive, requireUserId } from "./access";
 import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
+import { maskSecrets } from "./lib/secrets";
 
 export const NAME_RE = /^[\p{L}\p{N}_-]{2,40}$/u;
 const TITLE_MAX = 80;
@@ -22,6 +28,11 @@ const INSTRUCTIONS_MAX = 16000;
 const MAX_SKILLS = 100;
 
 type Input = { name: string; title: string; description: string; instructions: string };
+export type SkillFile = { name: string; kind: "script" | "example"; content: string; inputs?: string[] };
+
+const MAX_FILES = 4;
+const SCRIPT_MAX = 50_000;
+const EXAMPLE_MAX = 20_000;
 
 function clean(i: Input): Input {
   const name = String(i.name ?? "").trim().replace(/^\//, "").replace(/\s+/g, "-");
@@ -55,7 +66,104 @@ async function mine(ctx: QueryCtx | MutationCtx, userId: Id<"users">, skillId: s
 }
 
 function shape(s: Doc<"skills">) {
-  return { _id: s._id, name: s.name, title: s.title, description: s.description, instructions: s.instructions, source: s.source, uses: s.uses, updatedAt: s.updatedAt };
+  return { _id: s._id, name: s.name, title: s.title, description: s.description, instructions: s.instructions, source: s.source, uses: s.uses, updatedAt: s.updatedAt, files: s.files ?? [] };
+}
+
+/** Keep only the named files (the editor's «احذف الملف»); unknown names are ignored. */
+function keepOnly(files: SkillFile[] | undefined, keep: string[] | undefined): SkillFile[] | undefined {
+  if (!keep) return files;
+  const k = new Set(keep);
+  return (files ?? []).filter((f) => k.has(f.name));
+}
+
+// ---------------------------------------------------------------- files kept from the chat
+
+const reEscape = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/**
+ * The script as it ran, with its input file names replaced by INPUTS[i], so it runs on whatever
+ * files are passed next time (run_analysis defines INPUTS, in fileIds order).
+ */
+export function generalizeInputs(code: string, names: string[]): string {
+  let out = code;
+  names.forEach((n, i) => {
+    const e = reEscape(n);
+    out = out.replace(new RegExp(`([rbuf]?)(["'])/input/${e}\\2`, "g"), (m, pre) => (pre.includes("f") ? m : `INPUTS[${i}]`));
+    out = out.replace(new RegExp(`([rbuf]?)(["'])${e}\\2`, "g"), (m, pre) => (pre.includes("f") ? m : `INPUTS[${i}]`));
+  });
+  return out;
+}
+
+/** Python that sets INPUTS: the paths of this run's files, in the order they were passed. */
+export function inputsPreamble(names: string[]): string {
+  return `INPUTS = [${names.map((n) => JSON.stringify(`/input/${n}`)).join(", ")}]  # files of this run, in order\n`;
+}
+
+/**
+ * What a skill saved from this chat carries: the successful sandbox runs (the given ones, else the
+ * last) and the last output the assistant wrote itself (not a run's data table). Anything built on
+ * a sensitive space is kept only when the skill belongs to that same space.
+ */
+async function captureFiles(ctx: QueryCtx | MutationCtx, userId: Id<"users">, threadId: string, targetSpaceId: Id<"spaces"> | null, runIds?: string[]): Promise<SkillFile[]> {
+  const sensitive = new Map<string, boolean>();
+  const blocked = async (spaceId: string | undefined) => {
+    if (!spaceId) return false;
+    if (!sensitive.has(spaceId)) {
+      const id = ctx.db.normalizeId("spaces", spaceId);
+      const sp = id ? await ctx.db.get(id) : null;
+      sensitive.set(spaceId, !sp || !!sp.sensitive);
+    }
+    return sensitive.get(spaceId)! && spaceId !== targetSpaceId;
+  };
+  const files: SkillFile[] = [];
+  const runs = (await ctx.db.query("runs").withIndex("by_user", (q) => q.eq("userId", userId)).order("desc").take(300)).filter(
+    (r) => r.threadId === threadId && r.status === "done" && r.exit?.code === 0 && !!r.code,
+  );
+  let picked = runIds?.length ? runIds.map((id) => runs.find((r) => r._id === id)).filter((r) => !!r) : runs.slice(0, 1);
+  picked = picked.filter((r, i) => picked.findIndex((x) => x.codeHash === r.codeHash) === i).slice(0, MAX_FILES - 1);
+  // Oldest first, so the scripts read in the order they ran.
+  picked.sort((a, b) => a.createdAt - b.createdAt);
+  for (const r of picked) {
+    if ((await blocked(r.spaceId)) || (await Promise.all(r.inputs.map((i) => blocked(i.spaceId)))).some(Boolean)) continue;
+    const inputs = r.inputs.map((i) => i.name);
+    const code = maskSecrets(generalizeInputs(r.skill ? r.code!.replace(/^INPUTS = .*\n/, "") : r.code!, inputs));
+    if (code.length > SCRIPT_MAX) continue;
+    files.push({ name: files.length ? `script-${files.length + 1}.py` : "script.py", kind: "script", content: code, inputs });
+  }
+  const arts = (await ctx.db.query("artifacts").withIndex("by_owner", (q) => q.eq("ownerId", userId)).collect())
+    .filter((a) => a.sourceThreadId === threadId)
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  for (const a of arts) {
+    if (a.classification === "sensitive" && (a.originSpaceId ?? a.spaceId) !== targetSpaceId) continue;
+    if (await blocked(a.spaceId)) continue;
+    const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", a._id).eq("version", a.currentVersion)).unique();
+    if (!ver || ver.runId) continue; // a run's output is data; its script already makes that shape
+    const ext = a.kind === "html" ? "html" : a.kind === "table" ? "csv" : "md";
+    files.push({ name: `example.${ext}`, kind: "example", content: maskSecrets(ver.content).slice(0, EXAMPLE_MAX) });
+    break;
+  }
+  return files;
+}
+
+/** How a skill's files are put to the model (use_skill and a /name question): run the scripts as saved, keep the example's shape. */
+export function skillFilesText(name: string, files: SkillFile[] | undefined): string {
+  const parts: string[] = [];
+  for (const f of files ?? []) {
+    if (f.kind === "script") {
+      const ins = f.inputs?.length ? `كُتب على: ${f.inputs.join("، ")}؛ ` : "";
+      parts.push(
+        `سكربت محفوظ ${f.name} (${ins}INPUTS = مسارات الملفات بالترتيب). شغّله كما هو: run_analysis مع skill="${name}" و script="${f.name}" و fileIds للملفات الجديدة بنفس الترتيب، بدل كتابة كود جديد. لا تعِد كتابته ولا تنسخه في code. للاطلاع فقط:\n\`\`\`python\n${f.content.slice(0, 6000)}\n\`\`\``,
+      );
+    } else parts.push(`نموذج المخرج ${f.name}: حافظ على بنيته وعناوينه وترتيبه وتنسيقه، والمحتوى من الطلب الجديد:\n\n${f.content}`);
+  }
+  return parts.join("\n\n---\n\n");
+}
+
+/** The thread to learn from, if it is the user's own. */
+async function ownThread(ctx: QueryCtx | MutationCtx, userId: Id<"users">, threadId: string | undefined) {
+  if (!threadId) return undefined;
+  const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
+  return meta?.userId === userId ? threadId : undefined;
 }
 
 export const list = query({
@@ -67,20 +175,19 @@ export const list = query({
   },
 });
 
-async function insertSkill(ctx: MutationCtx, userId: Id<"users">, a: Input & { fromThreadId?: string }) {
+type InsertArgs = Input & { fromThreadId?: string; runIds?: string[]; files?: SkillFile[] };
+
+async function insertSkill(ctx: MutationCtx, userId: Id<"users">, a: InsertArgs) {
   const c = clean(a);
   if (await nameTaken(ctx, userId, c.name)) throw new OneBaseError(`لديك مهارة باسم /${c.name}`);
   const count = (await personalOf(ctx, userId)).length;
   if (count >= MAX_SKILLS) throw new OneBaseError(`الحد ${MAX_SKILLS} مهارة`);
-  let fromThreadId: string | undefined;
-  if (a.fromThreadId) {
-    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", a.fromThreadId!)).unique();
-    if (meta?.userId === userId) fromThreadId = a.fromThreadId;
-  }
+  const fromThreadId = await ownThread(ctx, userId, a.fromThreadId);
+  const files = a.files ?? (fromThreadId ? await captureFiles(ctx, userId, fromThreadId, null, a.runIds) : []);
   const now = Date.now();
-  const id = await ctx.db.insert("skills", { ownerId: userId, ...c, source: fromThreadId ? "chat" : "manual", fromThreadId, uses: 0, createdAt: now, updatedAt: now });
-  await writeAudit(ctx, { userId, action: "skill.create", resourceType: "skill", resourceId: id, detail: { name: c.name, source: fromThreadId ? "chat" : "manual" } });
-  return { id, name: c.name };
+  const id = await ctx.db.insert("skills", { ownerId: userId, ...c, source: fromThreadId ? "chat" : "manual", fromThreadId, uses: 0, createdAt: now, updatedAt: now, ...(files.length ? { files } : {}) });
+  await writeAudit(ctx, { userId, action: "skill.create", resourceType: "skill", resourceId: id, detail: { name: c.name, source: fromThreadId ? "chat" : "manual", files: files.map((f) => f.name).join(", ") } });
+  return { id, name: c.name, files: files.map((f) => f.name) };
 }
 
 export const create = mutation({
@@ -93,15 +200,24 @@ export const create = mutation({
 
 /** The create_skill tool: same checks, as the turn's user; errors come back for the model to fix. */
 export const createFromTool = internalMutation({
-  args: { userId: v.id("users"), name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), threadId: v.optional(v.string()), spaceId: v.optional(v.string()) },
+  args: {
+    userId: v.id("users"),
+    name: v.string(),
+    title: v.string(),
+    description: v.string(),
+    instructions: v.string(),
+    threadId: v.optional(v.string()),
+    spaceId: v.optional(v.string()),
+    runIds: v.optional(v.array(v.string())),
+  },
   handler: async (ctx, { userId, threadId, spaceId, ...a }) => {
     try {
       if (spaceId) {
         const r = await insertSpaceSkill(ctx, userId, spaceId, { ...a, fromThreadId: threadId });
-        return { ok: true as const, id: r.id as string, name: r.name, state: r.state, space: r.space };
+        return { ok: true as const, id: r.id as string, name: r.name, state: r.state, space: r.space, files: r.files };
       }
       const r = await insertSkill(ctx, userId, { ...a, fromThreadId: threadId });
-      return { ok: true as const, id: r.id as string, name: r.name, state: "active" as const, space: null };
+      return { ok: true as const, id: r.id as string, name: r.name, state: "active" as const, space: null, files: r.files };
     } catch (e) {
       return { ok: false as const, error: e instanceof Error ? e.message : String(e) };
     }
@@ -121,13 +237,13 @@ export async function undoSkills(ctx: MutationCtx, userId: Id<"users">, ids: str
 }
 
 export const update = mutation({
-  args: { skillId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string() },
-  handler: async (ctx, { skillId, ...a }) => {
+  args: { skillId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), keepFiles: v.optional(v.array(v.string())) },
+  handler: async (ctx, { skillId, keepFiles, ...a }) => {
     const me = await requireActive(ctx);
     const s = await mine(ctx, me.userId, skillId);
     const c = clean(a);
     if (await nameTaken(ctx, me.userId, c.name, s._id)) throw new OneBaseError(`لديك مهارة باسم /${c.name}`);
-    await ctx.db.patch(s._id, { ...c, updatedAt: Date.now() });
+    await ctx.db.patch(s._id, { ...c, files: keepOnly(s.files, keepFiles), updatedAt: Date.now() });
     await writeAudit(ctx, { userId: me.userId, action: "skill.update", resourceType: "skill", resourceId: s._id, detail: { name: c.name } });
   },
 });
@@ -247,18 +363,15 @@ async function spaceNameTaken(ctx: QueryCtx | MutationCtx, spaceId: Id<"spaces">
 }
 
 /** A manager's skill is active at once; a member's waits for a manager. Readers can't add. */
-async function insertSpaceSkill(ctx: MutationCtx, userId: Id<"users">, spaceId: string, a: Input & { fromThreadId?: string }) {
+async function insertSpaceSkill(ctx: MutationCtx, userId: Id<"users">, spaceId: string, a: InsertArgs) {
   const { space, manager, member } = await spaceRole(ctx, userId, spaceId);
   if (!member) throw new Denied();
   const c = clean(a);
   if (await spaceNameTaken(ctx, space._id, c.name)) throw new OneBaseError(`في المساحة مهارة باسم /${c.name}`);
   const count = (await ctx.db.query("skills").withIndex("by_space", (q) => q.eq("spaceId", space._id)).collect()).length;
   if (count >= MAX_SPACE_SKILLS) throw new OneBaseError(`الحد ${MAX_SPACE_SKILLS} مهارة للمساحة`);
-  let fromThreadId: string | undefined;
-  if (a.fromThreadId) {
-    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", a.fromThreadId!)).unique();
-    if (meta?.userId === userId) fromThreadId = a.fromThreadId;
-  }
+  const fromThreadId = await ownThread(ctx, userId, a.fromThreadId);
+  const files = a.files ?? (fromThreadId ? await captureFiles(ctx, userId, fromThreadId, space._id, a.runIds) : []);
   const now = Date.now();
   const state = manager ? ("active" as const) : ("proposed" as const);
   const id = await ctx.db.insert("skills", {
@@ -273,9 +386,10 @@ async function insertSpaceSkill(ctx: MutationCtx, userId: Id<"users">, spaceId: 
     state,
     version: 1,
     ...(manager ? { approvedBy: userId } : {}),
+    ...(files.length ? { files } : {}),
   });
-  await writeAudit(ctx, { userId, action: manager ? "skill.create" : "skill.propose", resourceType: "skill", resourceId: id, spaceId: space._id, detail: { name: c.name, space: true } });
-  return { id, name: c.name, state, space: space.name };
+  await writeAudit(ctx, { userId, action: manager ? "skill.create" : "skill.propose", resourceType: "skill", resourceId: id, spaceId: space._id, detail: { name: c.name, space: true, files: files.map((f) => f.name).join(", ") } });
+  return { id, name: c.name, state, space: space.name, files: files.map((f) => f.name) };
 }
 
 async function spaceSkill(ctx: QueryCtx | MutationCtx, skillId: string): Promise<Doc<"skills">> {
@@ -322,7 +436,7 @@ export const shareToSpace = mutation({
   handler: async (ctx, { skillId, spaceId }) => {
     const me = await requireActive(ctx);
     const s = await mine(ctx, me.userId, skillId);
-    const r = await insertSpaceSkill(ctx, me.userId, spaceId, { name: s.name, title: s.title, description: s.description, instructions: s.instructions });
+    const r = await insertSpaceSkill(ctx, me.userId, spaceId, { name: s.name, title: s.title, description: s.description, instructions: s.instructions, files: s.files ?? [] });
     return { id: r.id, state: r.state };
   },
 });
@@ -344,8 +458,8 @@ export const reviewSpace = mutation({
 });
 
 export const updateSpace = mutation({
-  args: { skillId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string() },
-  handler: async (ctx, { skillId, ...a }) => {
+  args: { skillId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), keepFiles: v.optional(v.array(v.string())) },
+  handler: async (ctx, { skillId, keepFiles, ...a }) => {
     const me = await requireActive(ctx);
     const s = await spaceSkill(ctx, skillId);
     const { manager } = await spaceRole(ctx, me.userId, s.spaceId!);
@@ -353,7 +467,7 @@ export const updateSpace = mutation({
     if (!manager && !(s.state === "proposed" && s.ownerId === me.userId)) throw new Denied();
     const c = clean(a);
     if (await spaceNameTaken(ctx, s.spaceId!, c.name, s._id)) throw new OneBaseError(`في المساحة مهارة باسم /${c.name}`);
-    await ctx.db.patch(s._id, { ...c, version: (s.version ?? 1) + (s.state === "active" ? 1 : 0), updatedAt: Date.now() });
+    await ctx.db.patch(s._id, { ...c, files: keepOnly(s.files, keepFiles), version: (s.version ?? 1) + (s.state === "active" ? 1 : 0), updatedAt: Date.now() });
     await writeAudit(ctx, { userId: me.userId, action: "skill.update", resourceType: "skill", resourceId: s._id, spaceId: s.spaceId, detail: { name: c.name } });
   },
 });
@@ -407,7 +521,7 @@ export async function skillIndex(ctx: QueryCtx, userId: Id<"users">, spaceId: Id
   const lines: string[] = [];
   let chars = 0;
   for (const { s, where } of all.slice(0, INDEX_MAX_ITEMS)) {
-    const line = `- /${s.name}: ${s.description || s.title} (${where})`;
+    const line = `- /${s.name}: ${s.description || s.title} (${where}${s.files?.some((f) => f.kind === "script") ? "، فيها سكربت محفوظ" : ""})`;
     if (chars + line.length > INDEX_MAX_CHARS) break;
     lines.push(line);
     chars += line.length;
@@ -439,7 +553,22 @@ export const useFromTool = internalMutation({
     const hit = shared.find((s) => s.name === n) ?? own.find((s) => s.name === n);
     if (!hit) return { found: false as const, names: [...shared, ...own].map((s) => s.name).slice(0, 30) };
     await ctx.db.patch(hit._id, { uses: hit.uses + 1 });
-    return { found: true as const, name: hit.name, title: hit.title, instructions: hit.instructions, space: hit.spaceId ? spaceName : null, version: hit.version ?? 1 };
+    return { found: true as const, name: hit.name, title: hit.title, instructions: hit.instructions, space: hit.spaceId ? spaceName : null, version: hit.version ?? 1, files: hit.files ?? [] };
+  },
+});
+
+/** run_analysis with skill + script: the saved code of a skill this chat may use (same rule as use_skill). */
+export const scriptForTool = internalQuery({
+  args: { userId: v.id("users"), name: v.string(), script: v.string(), threadId: v.optional(v.string()), scopeSpaceIds: v.array(v.string()) },
+  handler: async (ctx, { userId, name, script, threadId, scopeSpaceIds }) => {
+    const { own, shared } = await usableSkills(ctx, userId, await chatSpace(ctx, userId, threadId, scopeSpaceIds));
+    const n = name.trim().replace(/^\//, "");
+    const hit = shared.find((s) => s.name === n) ?? own.find((s) => s.name === n);
+    if (!hit) throw new OneBaseError(`لا توجد مهارة /${n} في هذه المحادثة`);
+    const scripts = (hit.files ?? []).filter((f) => f.kind === "script");
+    const f = scripts.find((x) => x.name === script.trim()) ?? (scripts.length === 1 && !script.trim() ? scripts[0] : undefined);
+    if (!f) throw new OneBaseError(`لا يوجد سكربت ${script} في /${n}${scripts.length ? ` (الموجود: ${scripts.map((x) => x.name).join("، ")})` : ""}`);
+    return { id: hit._id as string, name: hit.name, version: hit.version ?? 1, script: f.name, code: f.content };
   },
 });
 

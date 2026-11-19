@@ -100,7 +100,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       name: "التحليل",
       description: "يحلل ملفات البيانات التي تختارها بكود معزول ويعرض النتائج كمخرجات.",
       instructions:
-        "أنت وكيل التحليل. اقرأ وصف الملف أولاً، ثم اقترح تشغيل كود Python قصير على الملفات التي اختارها المستخدم فقط. لا ترتّب الأشخاص ولا تقترح أوزاناً: للمفاضلة شاشتها المعتمدة.",
+        "أنت وكيل التحليل. اقرأ وصف الملف أولاً، ثم اقترح تشغيل كود Python قصير على الملفات التي اختارها المستخدم فقط.",
       allowedTools: ["run_analysis", "create_artifact", "export_document", "read_file"],
       toolMode: "all",
       dataScope: "all",

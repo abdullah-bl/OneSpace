@@ -38,7 +38,7 @@ import type { AppTool, Citation, ToolContext } from "./tools/types";
 import { autoRunEnabled, type Tier } from "./tiers";
 import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
-import { ownSkill, skillIndex, undoSkills } from "./skills";
+import { ownSkill, skillFilesText, skillIndex, undoSkills, type SkillFile } from "./skills";
 
 /** A positive number from the environment, or the default. */
 const envNum = (k: string, d: number) => {
@@ -717,17 +717,18 @@ async function turnSkill(ctx: QueryCtx, turn: Doc<"turns">, spaceId: Id<"spaces"
   if (!turn.skillId) return null;
   try {
     const s = await ownSkill(ctx, turn.userId, turn.skillId, spaceId);
-    return s ? { name: s.name, title: s.title, instructions: s.instructions, space: !!s.spaceId } : null;
+    return s ? { name: s.name, title: s.title, instructions: s.instructions, space: !!s.spaceId, files: s.files ?? [] } : null;
   } catch {
     return null;
   }
 }
 
 /** The skill joins the system prompt as instructions for this request, under the agent's rules. */
-function skillBlock(skill: { name: string; title: string; instructions: string; space?: boolean } | null) {
+function skillBlock(skill: { name: string; title: string; instructions: string; space?: boolean; files?: SkillFile[] } | null) {
   if (!skill) return "";
   const who = skill.space ? `مهارة المساحة «${skill.title}» (/${skill.name})، وقد اعتمدها مديرو المساحة` : `مهارته «${skill.title}» (/${skill.name})، وهي تعليماته هو`;
-  return `\n\n---\nطلب المستخدم أن تطبّق ${who}. اتبعها لطريقة أداء هذا الطلب ما لم تخالف قواعدك أعلاه أو صلاحياته:\n${skill.instructions}`;
+  const files = skillFilesText(skill.name, skill.files);
+  return `\n\n---\nطلب المستخدم أن تطبّق ${who}. اتبعها لطريقة أداء هذا الطلب ما لم تخالف قواعدك أعلاه أو صلاحياته:\n${skill.instructions}${files ? `\n\n${files}` : ""}`;
 }
 
 export const turnContext = internalQuery({

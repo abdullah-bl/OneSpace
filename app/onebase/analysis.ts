@@ -14,6 +14,7 @@ import { action, internalAction, internalMutation, internalQuery, query } from "
 import { actorFor, assertCan, Denied, readableSpaceIds, requireActive, requireUserId } from "./access";
 import { insertArtifact, normalizeContent, place, type Source } from "./artifacts";
 import { writeAudit } from "./audit";
+import { inputsPreamble } from "./skills";
 import { artifactKind } from "./outputsSchema";
 import { executeAnalysis, runAnalysisTool } from "./tools/run_analysis";
 import type { ToolResult } from "./tools/types";
@@ -65,12 +66,13 @@ export const begin = internalMutation({
     limits: limitsV,
     threadId: v.optional(v.string()),
     agentId: v.optional(v.string()),
+    // A skill's saved script (plans/09 §2): INPUTS = the files' paths in fileIds order is prepended.
+    skill: v.optional(v.object({ id: v.string(), name: v.string(), version: v.number(), script: v.string() })),
   },
   handler: async (ctx, a) => {
     const actor = await actorFor(ctx, a.userId);
     if (!actor) throw new Denied();
     if (!a.code.trim()) throw new OneBaseError("لا يوجد كود للتشغيل");
-    if (a.code.length > MAX_CODE_CHARS) throw new OneBaseError("الكود طويل جداً");
     const ids = [...new Set(a.fileIds)];
     if (ids.length > MAX_INPUT_FILES) throw new OneBaseError(`الحد ${MAX_INPUT_FILES} ملفاً لكل تشغيل`);
     const scope = new Set(a.scopeSpaceIds);
@@ -89,27 +91,31 @@ export const begin = internalMutation({
     // still classified sensitive); write access on the target, and in the turn's scope.
     const sources: Source[] = files.map(({ file, space }) => ({ type: "file", id: file._id, spaceId: space._id }));
     const { space: target } = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true });
-    const codeHash = sha256(a.code);
+    const code = a.skill ? inputsPreamble(files.map(({ file }) => file.name)) + a.code : a.code;
+    if (code.length > MAX_CODE_CHARS) throw new OneBaseError("الكود طويل جداً");
+    const codeHash = sha256(code);
     const runId = await ctx.db.insert("runs", {
       kind: "sandbox",
       userId: a.userId,
       spaceId: target._id,
       status: "running",
-      code: a.code,
+      code,
       codeHash,
       inputs: files.map(({ file, space }) => ({ fileId: file._id, name: file.name, sha256: null, size: file.size, spaceId: space._id })), // hex hash of the exported bytes is set by finish
       outputs: [],
       limits: a.limits,
       threadId: a.threadId,
       agentId: a.agentId,
+      ...(a.skill ? { skill: a.skill } : {}),
       createdAt: Date.now(),
     });
     for (const { file, space } of files) {
       await writeAudit(ctx, { userId: a.userId, action: "sandbox.export", resourceType: "file", resourceId: file._id, spaceId: space._id, detail: { fileName: file.name, runId, sha256: file.sha256 } });
     }
-    await writeAudit(ctx, { userId: a.userId, action: "sandbox.run", resourceType: "run", resourceId: runId, spaceId: target._id, detail: { runId, inputs: files.length, codeHash, agentId: a.agentId ?? null } });
+    await writeAudit(ctx, { userId: a.userId, action: "sandbox.run", resourceType: "run", resourceId: runId, spaceId: target._id, detail: { runId, inputs: files.length, codeHash, agentId: a.agentId ?? null, ...(a.skill ? { skill: a.skill.name, skillVersion: a.skill.version } : {}) } });
     return {
       runId,
+      code,
       targetSpaceId: target._id,
       targetName: target.kind === "personal" ? "مساحتي" : target.name,
       inputSpaceIds: [...new Set(files.map((f) => f.space._id as string))],

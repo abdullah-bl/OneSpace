@@ -9,13 +9,6 @@ export const taskStatus = v.union(v.literal("new"), v.literal("inProgress"), v.l
 export const taskPriority = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
 // A task link: a file or a Phase 4 artifact, always in the task's own space (tasks.ts).
 export const taskLinkType = v.union(v.literal("file"), v.literal("artifact"));
-// Where a ranking snapshot came from (lib/records.ts): a CSV/XLSX file version, or one import
-// version of a Phase 4 record set. sha256 = the file's / the imported Excel file's hash.
-export const snapshotSource = v.union(
-  v.object({ kind: v.literal("file"), fileId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
-  v.object({ kind: v.literal("records"), recordSetId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
-);
-
 export default defineSchema({
   // The built-in auth fields plus OneSpace's account status. A missing status counts as
   // "pending" (fail-closed): only a workspace admin can make an account active.
@@ -138,12 +131,12 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_task", ["taskId", "createdAt"]),
 
-  // ---- Phase 5: sandbox runs and ranking ----
+  // ---- Phase 5: sandbox runs ----
 
-  // Every sandbox execution and every ranking calculation: what ran, on which inputs (hashes),
+  // Every sandbox execution: what ran, on which inputs (hashes),
   // what came out, with which limits, and how it ended.
   runs: defineTable({
-    kind: v.union(v.literal("sandbox"), v.literal("ranking")),
+    kind: v.literal("sandbox"),
     userId: v.id("users"),
     spaceId: v.id("spaces"), // where the outputs went
     status: v.union(v.literal("running"), v.literal("done"), v.literal("failed")),
@@ -168,103 +161,12 @@ export default defineSchema({
     runtime: v.optional(v.string()),
     threadId: v.optional(v.string()),
     agentId: v.optional(v.string()),
-    rankingRunId: v.optional(v.string()),
+    skill: v.optional(v.object({ id: v.string(), name: v.string(), version: v.number(), script: v.string() })), // a skill's saved script, rerun (plans/09 §2)
     createdAt: v.number(),
     finishedAt: v.optional(v.number()),
   })
     .index("by_user", ["userId", "createdAt"])
     .index("by_space", ["spaceId", "createdAt"]),
-
-  // Versioned ranking criteria. A version is edited while draft; once approved it never changes
-  // and a change is a new version (same seriesId, version + 1).
-  rankingCriteria: defineTable({
-    spaceId: v.id("spaces"),
-    seriesId: v.string(),
-    version: v.number(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    idField: v.string(),
-    nameField: v.string(),
-    criteria: v.array(
-      v.object({
-        field: v.string(),
-        label: v.string(),
-        weight: v.number(),
-        direction: v.union(v.literal("desc"), v.literal("asc")),
-        min: v.number(),
-        max: v.number(),
-      }),
-    ),
-    tieBreak: v.array(v.object({ field: v.string(), direction: v.union(v.literal("desc"), v.literal("asc")) })),
-    status: v.union(v.literal("draft"), v.literal("approved")),
-    specHash: v.string(),
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-    approvedBy: v.optional(v.id("users")),
-    approvedAt: v.optional(v.number()),
-  })
-    .index("by_space", ["spaceId"])
-    .index("by_series", ["seriesId", "version"]),
-
-  // The exact input of a ranking: the parsed table, stored as canonical JSON with its hash.
-  rankingSnapshots: defineTable({
-    spaceId: v.id("spaces"),
-    source: snapshotSource,
-    storageId: v.id("_storage"),
-    sha256: v.string(),
-    fields: v.array(v.string()),
-    rowCount: v.number(),
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-  }).index("by_space", ["spaceId"]),
-
-  // draft → approved by a human (space manager). Approved runs are never changed: a correction
-  // is a new run (correctsRunId) on the same or a new snapshot/criteria version.
-  rankingRuns: defineTable({
-    spaceId: v.id("spaces"),
-    criteriaId: v.id("rankingCriteria"),
-    criteriaVersion: v.number(),
-    criteriaHash: v.string(),
-    snapshotId: v.id("rankingSnapshots"),
-    snapshotHash: v.string(),
-    resultsHash: v.string(),
-    algorithm: v.string(),
-    count: v.number(),
-    status: v.union(v.literal("draft"), v.literal("approved")),
-    correctsRunId: v.optional(v.id("rankingRuns")),
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-    approvedBy: v.optional(v.id("users")),
-    approvedAt: v.optional(v.number()),
-  }).index("by_space", ["spaceId", "createdAt"]),
-
-  // One row per student per run: rank, total and the per-criterion breakdown.
-  rankingResults: defineTable({
-    rankingRunId: v.id("rankingRuns"),
-    key: v.string(),
-    name: v.string(),
-    rank: v.number(),
-    total: v.number(),
-    breakdown: v.array(
-      v.object({
-        field: v.string(),
-        label: v.string(),
-        weight: v.number(),
-        direction: v.union(v.literal("desc"), v.literal("asc")),
-        min: v.number(),
-        max: v.number(),
-        raw: v.union(v.string(), v.number(), v.null()),
-        value: v.union(v.number(), v.null()),
-        normalized: v.number(),
-        points: v.number(),
-        missing: v.boolean(),
-        clamped: v.boolean(),
-      }),
-    ),
-    tieBreak: v.array(v.object({ field: v.string(), direction: v.union(v.literal("desc"), v.literal("asc")), value: v.union(v.number(), v.null()) })),
-  })
-    .index("by_run_rank", ["rankingRunId", "rank"])
-    .index("by_run_key", ["rankingRunId", "key"]),
 
   // Append-only: nothing in the app patches or deletes these rows.
   auditLog: defineTable({
@@ -421,6 +323,12 @@ export default defineSchema({
     state: v.optional(v.union(v.literal("active"), v.literal("proposed"))),
     version: v.optional(v.number()),
     approvedBy: v.optional(v.id("users")),
+    // plans/09 §2: what the skill carries besides instructions, kept from the chat it was saved from:
+    // the Python that worked (rerun as is on new files through run_analysis) and an example output
+    // whose shape the next answer keeps. `inputs`: the file names the script was written against.
+    files: v.optional(
+      v.array(v.object({ name: v.string(), kind: v.union(v.literal("script"), v.literal("example")), content: v.string(), inputs: v.optional(v.array(v.string())) })),
+    ),
   })
     .index("by_owner", ["ownerId", "name"])
     .index("by_space", ["spaceId", "state", "name"]),
