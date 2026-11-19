@@ -180,6 +180,47 @@ export default defineSchema({
     .index("by_key", ["day", "model", "purpose", "userKey"])
     .index("by_day", ["day"]),
 
+  // «النشر» (plans/11): an output version served at a fixed link from the content origin
+  // (PUBLISH_ORIGIN), never the app's. Step 1: private audiences only.
+  publications: defineTable({
+    artifactId: v.id("artifacts"),
+    version: v.number(),
+    slug: v.string(),
+    title: v.string(),
+    spaceId: v.id("spaces"),
+    audience: v.union(v.literal("space"), v.literal("workspace")),
+    state: v.union(v.literal("live"), v.literal("pending"), v.literal("revoked")),
+    createdBy: v.id("users"),
+    approvedBy: v.optional(v.id("users")),
+    views: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    revokedAt: v.optional(v.number()),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_artifact", ["artifactId"])
+    .index("by_space", ["spaceId", "createdAt"])
+    .index("by_creator", ["createdBy", "createdAt"]),
+
+  // One-time tickets (app → content origin) and the short sessions they turn into (a cookie
+  // scoped to one page). Only hashes are stored.
+  publicationTickets: defineTable({
+    tokenHash: v.string(),
+    publicationId: v.id("publications"),
+    userId: v.id("users"),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_expiry", ["expiresAt"]),
+  publicationSessions: defineTable({
+    tokenHash: v.string(),
+    publicationId: v.id("publications"),
+    userId: v.id("users"),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_expiry", ["expiresAt"]),
+
   // ---- Phase 5: sandbox runs ----
 
   // Every sandbox execution: what ran, on which inputs (hashes),

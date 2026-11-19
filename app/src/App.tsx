@@ -10,6 +10,7 @@ import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
 import { ListPage, ListsPage } from "./ListView";
+import { OpenPublication, PublishedPage } from "./PublishView";
 import { SkillsView } from "./SkillsView";
 import { MemoryView } from "./MemoryView";
 import { SpaceView, SpacesPage } from "./SpaceView";
@@ -181,6 +182,8 @@ function Shell({ me }: { me: Me }) {
   else if (head === "me") screen = <Wide><MyRecordsView /></Wide>;
   else if (head === "memory") screen = <Wide><MemoryView /></Wide>;
   else if (head === "lists") screen = <ListsPage spaces={spaces} go={go} />;
+  else if (head === "published") screen = <PublishedPage />;
+  else if (head === "open" && a) screen = <OpenPublication key={a} slug={a} />;
   else if (head === "list" && a) screen = <ListPage key={a} listId={a} go={go} />;
   else if (head === "skills")
     screen = (
@@ -422,6 +425,7 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
           )}
           {item("ذاكرتي", "/memory")}
           {item("مهاراتي", "/skills")}
+          {item("منشوراتي", "/published")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
           {item("مركز المساعدة", "/help")}

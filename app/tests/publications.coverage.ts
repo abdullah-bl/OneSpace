@@ -1,0 +1,2 @@
+// plans/11 public functions; each is checked per actor × space in publications.test.ts.
+export const PUBLICATIONS_COVERED = ["publications:forArtifact", "publications:mine", "publications:publish", "publications:update", "publications:review", "publications:revoke", "publications:openTicket"];
