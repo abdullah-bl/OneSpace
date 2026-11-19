@@ -23,4 +23,5 @@ export const SKILLS_COVERED = [
   "skills:updateSpace",
   "skills:removeSpace",
   "skills:forChat",
+  "skills:parseImport", // checked in skill-import.test.ts
 ];

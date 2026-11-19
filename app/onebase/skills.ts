@@ -16,10 +16,11 @@ import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertCan, Denied, requireActive, requireUserId } from "./access";
+import { actorFor, assertCan, Denied, requireActive, requireUserId } from "./access";
 import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 import { maskSecrets } from "./lib/secrets";
+import { IMPORT_LIMITS, parseSkillPackage, SkillImportError } from "./lib/skillImport";
 
 export const NAME_RE = /^[\p{L}\p{N}_-]{2,40}$/u;
 const TITLE_MAX = 80;
@@ -28,9 +29,11 @@ const INSTRUCTIONS_MAX = 16000;
 const MAX_SKILLS = 100;
 
 type Input = { name: string; title: string; description: string; instructions: string };
-export type SkillFile = { name: string; kind: "script" | "example"; content: string; inputs?: string[] };
+export type SkillFile = { name: string; kind: "script" | "example" | "reference"; content: string; inputs?: string[] };
 
-const MAX_FILES = 4;
+const MAX_FILES = 4; // kept from a chat (scripts and an example)
+/** An imported skill (SKILL.md / .zip): its files, checked again here whatever the client sent. */
+const IMPORT_MAX_FILES = IMPORT_LIMITS.files + 1;
 const SCRIPT_MAX = 50_000;
 const EXAMPLE_MAX = 20_000;
 
@@ -148,15 +151,43 @@ async function captureFiles(ctx: QueryCtx | MutationCtx, userId: Id<"users">, th
 /** How a skill's files are put to the model (use_skill and a /name question): run the scripts as saved, keep the example's shape. */
 export function skillFilesText(name: string, files: SkillFile[] | undefined): string {
   const parts: string[] = [];
-  for (const f of files ?? []) {
-    if (f.kind === "script") {
-      const ins = f.inputs?.length ? `كُتب على: ${f.inputs.join("، ")}؛ ` : "";
-      parts.push(
-        `سكربت محفوظ ${f.name} (${ins}INPUTS = مسارات الملفات بالترتيب). شغّله كما هو: run_analysis مع skill="${name}" و script="${f.name}" و fileIds للملفات الجديدة بنفس الترتيب، بدل كتابة كود جديد. لا تعِد كتابته ولا تنسخه في code. للاطلاع فقط:\n\`\`\`python\n${f.content.slice(0, 6000)}\n\`\`\``,
-      );
-    } else parts.push(`نموذج المخرج ${f.name}: حافظ على بنيته وعناوينه وترتيبه وتنسيقه، والمحتوى من الطلب الجديد:\n\n${f.content}`);
+  const all = files ?? [];
+  const scripts = all.filter((f) => f.kind === "script");
+  // A few short scripts (kept from a chat) are shown; an imported package's are listed and loaded on demand.
+  const inline = scripts.length <= 2 && scripts.every((f) => f.content.length <= 6000);
+  for (const f of scripts) {
+    const ins = f.inputs?.length ? `كُتب على: ${f.inputs.join("، ")}؛ ` : "";
+    parts.push(
+      `سكربت محفوظ ${f.name} (${ins}INPUTS = مسارات الملفات بالترتيب). شغّله كما هو: run_analysis مع skill="${name}" و script="${f.name}" و fileIds للملفات الجديدة بنفس الترتيب، بدل كتابة كود جديد. لا تعِد كتابته ولا تنسخه في code.` +
+        (inline ? ` للاطلاع فقط:\n\`\`\`python\n${f.content}\n\`\`\`` : ` لقراءته: use_skill مع name="${name}" و file="${f.name}".`),
+    );
   }
+  for (const f of all.filter((x) => x.kind === "example")) parts.push(`نموذج المخرج ${f.name}: حافظ على بنيته وعناوينه وترتيبه وتنسيقه، والمحتوى من الطلب الجديد:\n\n${f.content}`);
+  const refs = all.filter((f) => f.kind === "reference" || (f.kind === "script" && !f.name.endsWith(".py")));
+  if (refs.length)
+    parts.push(
+      `ملفات مرجعية للمهارة (لا تحمّل إلا ما تحتاجه للطلب، بأداة use_skill مع name="${name}" و file=اسم الملف):\n` + refs.map((f) => `- ${f.name} (${f.content.length} حرفاً)`).join("\n"),
+    );
   return parts.join("\n\n---\n\n");
+}
+
+/** Imported files as the client sent them, checked: kinds, clean names, sizes, count; secrets masked. */
+function cleanImportFiles(files: { name: string; kind: string; content: string }[]): SkillFile[] {
+  if (files.length > IMPORT_MAX_FILES) throw new OneBaseError(`الحد ${IMPORT_LIMITS.files} ملفاً للمهارة`);
+  const seen = new Set<string>();
+  const out: SkillFile[] = [];
+  let total = 0;
+  for (const f of files) {
+    const name = String(f.name ?? "").replace(/\\/g, "/").split("/").filter((x) => x && x !== "." && x !== "..").join("/").slice(0, 200);
+    if (!name || seen.has(name)) continue;
+    seen.add(name);
+    const kind = f.kind === "script" || f.kind === "example" ? f.kind : "reference";
+    const content = maskSecrets(String(f.content ?? "")).slice(0, IMPORT_LIMITS.fileChars);
+    total += content.length;
+    if (total > IMPORT_LIMITS.totalChars) throw new OneBaseError("ملفات المهارة أكبر من المسموح");
+    out.push({ name, kind: kind === "script" && !name.endsWith(".py") ? "reference" : kind, content });
+  }
+  return out;
 }
 
 /** The thread to learn from, if it is the user's own. */
@@ -190,11 +221,41 @@ async function insertSkill(ctx: MutationCtx, userId: Id<"users">, a: InsertArgs)
   return { id, name: c.name, files: files.map((f) => f.name) };
 }
 
+const importedFilesV = v.optional(v.array(v.object({ name: v.string(), kind: v.string(), content: v.string() })));
+
 export const create = mutation({
-  args: { name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), fromThreadId: v.optional(v.string()) },
-  handler: async (ctx, a) => {
+  args: { name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), fromThreadId: v.optional(v.string()), files: importedFilesV },
+  handler: async (ctx, { files, ...a }) => {
     const me = await requireActive(ctx);
-    return (await insertSkill(ctx, me.userId, a)).id;
+    return (await insertSkill(ctx, me.userId, { ...a, ...(files ? { files: cleanImportFiles(files) } : {}) })).id;
+  },
+});
+
+/** Actions can't read the database: an active employee only (pending and disabled accounts can't). */
+export const assertActive = internalQuery({
+  args: { userId: v.id("users") },
+  handler: async (ctx, { userId }) => {
+    if (!(await actorFor(ctx, userId))) throw new Denied();
+  },
+});
+
+/**
+ * «استيراد مهارة»: a SKILL.md or a .zip of a skill's folder (skills.sh, GitHub) read into a draft for
+ * the person to review; nothing is saved here (create / addSpace save it).
+ */
+export const parseImport = action({
+  args: { fileName: v.string(), dataBase64: v.string() },
+  handler: async (ctx, { fileName, dataBase64 }) => {
+    await ctx.runQuery(internal.skills.assertActive, { userId: await requireUserId(ctx) });
+    if (dataBase64.length > IMPORT_LIMITS.zipBytes * 1.4) throw new OneBaseError(`الملف أكبر من ${IMPORT_LIMITS.zipBytes / 1024 / 1024} م.ب`);
+    if (!/\.(zip|md|markdown)$/i.test(fileName)) throw new OneBaseError("اختر ملف SKILL.md أو ملف zip لمجلد المهارة");
+    try {
+      const r = parseSkillPackage(fileName, new Uint8Array(Buffer.from(dataBase64, "base64")));
+      return { ...r, instructions: maskSecrets(r.instructions), files: r.files.map((f) => ({ ...f, content: maskSecrets(f.content) })) };
+    } catch (e) {
+      if (e instanceof SkillImportError) throw new OneBaseError(e.message);
+      throw new OneBaseError("تعذّرت قراءة الملف");
+    }
   },
 });
 
@@ -423,10 +484,10 @@ export const space = query({
 });
 
 export const addSpace = mutation({
-  args: { spaceId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), fromThreadId: v.optional(v.string()) },
-  handler: async (ctx, { spaceId, ...a }) => {
+  args: { spaceId: v.string(), name: v.string(), title: v.string(), description: v.string(), instructions: v.string(), fromThreadId: v.optional(v.string()), files: importedFilesV },
+  handler: async (ctx, { spaceId, files, ...a }) => {
     const me = await requireActive(ctx);
-    const r = await insertSpaceSkill(ctx, me.userId, spaceId, a);
+    const r = await insertSpaceSkill(ctx, me.userId, spaceId, { ...a, ...(files ? { files: cleanImportFiles(files) } : {}) });
     return { id: r.id, state: r.state };
   },
 });
@@ -547,12 +608,17 @@ async function chatSpace(ctx: QueryCtx | MutationCtx, userId: Id<"users">, threa
 
 /** use_skill: the full instructions of a skill this chat may use, by /name; counts a use. */
 export const useFromTool = internalMutation({
-  args: { userId: v.id("users"), name: v.string(), threadId: v.optional(v.string()), scopeSpaceIds: v.array(v.string()) },
-  handler: async (ctx, { userId, name, threadId, scopeSpaceIds }) => {
+  args: { userId: v.id("users"), name: v.string(), threadId: v.optional(v.string()), scopeSpaceIds: v.array(v.string()), file: v.optional(v.string()) },
+  handler: async (ctx, { userId, name, threadId, scopeSpaceIds, file }) => {
     const { own, shared, spaceName } = await usableSkills(ctx, userId, await chatSpace(ctx, userId, threadId, scopeSpaceIds));
     const n = name.trim().replace(/^\//, "");
     const hit = shared.find((s) => s.name === n) ?? own.find((s) => s.name === n);
     if (!hit) return { found: false as const, names: [...shared, ...own].map((s) => s.name).slice(0, 30) };
+    if (file) {
+      // One of the skill's files, by name (a reference, a script to read, an example).
+      const f = (hit.files ?? []).find((x) => x.name === file.trim()) ?? (hit.files ?? []).find((x) => x.name.endsWith(`/${file.trim()}`));
+      return { found: true as const, name: hit.name, file: f ? { name: f.name, kind: f.kind, content: f.content } : null, fileNames: (hit.files ?? []).map((x) => x.name) };
+    }
     await ctx.db.patch(hit._id, { uses: hit.uses + 1 });
     return { found: true as const, name: hit.name, title: hit.title, instructions: hit.instructions, space: hit.spaceId ? spaceName : null, version: hit.version ?? 1, files: hit.files ?? [] };
   },

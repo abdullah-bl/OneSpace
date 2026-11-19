@@ -4,9 +4,9 @@
 
 import { useState } from "react";
 
-export type SkillFile = { name: string; kind: "script" | "example"; content: string; inputs?: string[] };
+export type SkillFile = { name: string; kind: "script" | "example" | "reference"; content: string; inputs?: string[] };
 
-const KIND = { script: "سكربت", example: "نموذج المخرج" } as const;
+const KIND = { script: "سكربت", example: "نموذج المخرج", reference: "مرجع" } as const;
 
 export function SkillFiles({ files, removed, onToggle }: { files: SkillFile[]; removed?: string[]; onToggle?: (name: string) => void }) {
   const [open, setOpen] = useState<string | null>(null);
@@ -34,7 +34,7 @@ export function SkillFiles({ files, removed, onToggle }: { files: SkillFile[]; r
                 )}
               </div>
               {open === f.name && (
-                <pre className="max-h-64 overflow-auto whitespace-pre-wrap border-t border-line bg-sunken p-2 text-[11px] leading-5" dir={f.kind === "script" ? "ltr" : "auto"}>
+                <pre className="max-h-64 overflow-auto whitespace-pre-wrap border-t border-line bg-sunken p-2 text-[11px] leading-5" dir={f.kind === "script" || /\.(json|ya?ml|py|sh|js|ts|sql)$/.test(f.name) ? "ltr" : "auto"}>
                   {f.content}
                 </pre>
               )}

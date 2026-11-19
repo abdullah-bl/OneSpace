@@ -8,6 +8,7 @@ import { api, errorText } from "./lib";
 import { Icon } from "./icons";
 import { ask, Menu, tell } from "./ui";
 import { SkillFiles, useFileEdits, type SkillFile } from "./SkillFiles";
+import { SkillImport } from "./SkillImport";
 
 type Draft = { name: string; title: string; description: string; instructions: string };
 type Row = Draft & { _id: string; uses: number; version: number; by: string; mine: boolean; files: SkillFile[] };
@@ -156,6 +157,14 @@ export function SpaceSkills({ spaceId }: { spaceId: string }) {
           <button className="btn-secondary h-8" onClick={() => (setEditing({ ...EMPTY }), setMsg(""))}>
             <Icon name="plus" size={14} /> {data.canManage ? "مهارة جديدة" : "اقترح مهارة"}
           </button>
+          <SkillImport
+            className="btn-ghost h-8"
+            saveLabel={data.canManage ? "أضفها للمساحة" : "اقترحها على المدير"}
+            onSave={async (d) => {
+              const r = await add({ spaceId, ...d });
+              setMsg(r.state === "proposed" ? "أُرسلت لمديري المساحة لاعتمادها" : "أُضيفت إلى المساحة");
+            }}
+          />
           {mine && mine.length > 0 && (
             <select
               className="input h-8 w-auto text-xs"

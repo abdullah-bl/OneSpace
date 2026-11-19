@@ -62,7 +62,7 @@ This is the main security point. A published page is content the model wrote. Se
 
 A form is not generated HTML. Model-written `<form>` + JS is exactly what the sandbox blocks. A form is **declared**: it targets one live list (plans/10), and its fields are that list's columns (or a chosen subset):
 
-- **Rendering:** our own hashed form script renders the fields from the publication's form spec inside the page, below or in place of a `<div data-form>` the model may leave in the HTML. Column types map to inputs:
+- **Rendering:** the server renders the fields from the publication's form spec as plain HTML under the page, with no script. Column types map to inputs:
   - text → input or textarea;
   - number, date → the matching inputs;
   - select and status → a select;
@@ -103,16 +103,16 @@ A form is not generated HTML. Model-written `<form>` + JS is exactly what the sa
 
 ## Build order
 
-1. **Publications (private only).**
-   - The `publications` table.
-   - Publish, update and revoke.
-   - The content origin with tickets.
-   - «انشر» on outputs and «منشوراتي».
-   - The rules 1–3, 5 and 7 tests.
-2. **Forms → lists.**
-   - The form spec and the hashed form script.
-   - `/f/<slug>`, with limits.
-   - The «ملاحظات» preset.
+1. **Publications (private only).** Built:
+   - the `publications` table;
+   - publish, update and revoke, and approval of a member's page by a manager;
+   - the content origin with one-time tickets;
+   - «انشر برابط…» on outputs and «منشوراتي»;
+   - the rules tests.
+2. **Forms → lists.** Built. The form is plain HTML rendered by the server, with no script; the page CSP lets it post only to `/f/`.
+   - `/f/<slug>`, with a form token bound to the reader's session.
+   - Limits: closing date, reply limit, one reply per reader.
+   - The «نموذج ملاحظات» preset.
 3. **Public.** Built:
    - **Admin policy:** set in «نظرة عامة» and off by default. Turning it off closes every public page at once.
    - **Opening:** a public page opens with no sign-in. The app's host still never serves `/p/`.
@@ -124,7 +124,13 @@ A form is not generated HTML. Model-written `<form>` + JS is exactly what the sa
    - **Rate limits:** per client address (views 60/min; replies 4/min, burst 3), and replies per page.
    - **Always `noindex`:** there is no «searchable» option yet.
    - **`publish_output`:** for the public it is a tier-3 card.
-4. **`publish_output` for the assistant**, plus a skill example («استبيان رضا المتدربين»).
+4. **`publish_output` for the assistant.** Built:
+   - always a card, with a form or a quiz bound to a list;
+   - quizzes marked by code (score and level), with choices shuffled per page;
+   - publishing refused if the intro page shows the answers;
+   - «جرّبها», a preview that saves nothing.
+
+   No example skill: users build their own skills from their work, and the platform's part is the tools.
 5. **Later:**
    - multi-file sites on `@onebase/static-hosting` once it has `siteId` and an app-callable publish;
    - a custom domain per space;
