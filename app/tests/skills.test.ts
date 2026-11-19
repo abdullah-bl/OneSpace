@@ -112,6 +112,10 @@ describe("AI drafts", () => {
     const d = must(await s.call("action", "skills:draftFromThread", { threadId: t }, tok("mem")));
     expect(d.name).toBe("خطاب-رسمي-2"); // "خطاب رسمي" → "خطاب-رسمي", taken → suffixed
     expect(d.instructions).toContain("SKILLMARK-42");
+    // Hidden reasoning is turned off, so a reasoning model can't spend the budget and cut the JSON off.
+    const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && r.body.response_format).at(-1);
+    expect(req.body.reasoning).toEqual({ enabled: false });
+    expect(req.body.max_tokens).toBeGreaterThanOrEqual(6000);
     expect(must(await s.call("query", "skills:list", {}, tok("mem"))).length).toBe(before); // nothing saved yet
     expect((await s.call("action", "skills:draftFromThread", { threadId: t }, tok("mgr"))).ok).toBe(false);
     const id = must(await s.call("mutation", "skills:create", { ...d, fromThreadId: t }, tok("mem")));

@@ -61,7 +61,7 @@ export const draftWithAI = action({
     const res = await chat({
       role: "main",
       temperature: 0.2,
-      maxTokens: 2500,
+      maxTokens: 5000,
       messages: [
         { role: "system", content: PROMPT },
         { role: "user", content: user },

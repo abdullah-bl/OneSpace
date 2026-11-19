@@ -177,11 +177,19 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     stream,
     ...(stream ? { stream_options: { include_usage: true } } : {}),
     chat_template_kwargs: { enable_thinking: opts.thinking ?? cfg.thinking },
+    // Hosted routers (OpenRouter) ignore chat_template_kwargs; without this a reasoning model spends
+    // max_tokens on hidden reasoning and the answer (often JSON) is cut off. llama.cpp ignores it.
+    ...((opts.thinking ?? cfg.thinking) ? {} : { reasoning: { enabled: false } }),
   };
   if (opts.tools?.length) body.tools = opts.tools.map((t) => ({ type: "function", function: t }));
   if (opts.jsonSchema) body.response_format = { type: "json_schema", json_schema: { name: "answer", schema: opts.jsonSchema, strict: true } };
 
   let res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
+  if (!res.ok && res.status === 400 && body.reasoning) {
+    // A model that must reason refuses the switch: ask again without it.
+    delete body.reasoning;
+    res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
+  }
   if (!res.ok && opts.jsonSchema && res.status === 400) {
     body.response_format = { type: "json_object" };
     res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
@@ -321,6 +329,7 @@ export async function ocr(imageDataUrl: string): Promise<string> {
       max_tokens: 4096,
       temperature: 0,
       chat_template_kwargs: { enable_thinking: false },
+      reasoning: { enabled: false },
     },
     cfg.apiKey,
   );

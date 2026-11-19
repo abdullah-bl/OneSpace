@@ -176,7 +176,7 @@ export const draftFromThread = action({
     const res = await chat({
       role: "main",
       temperature: 0.2,
-      maxTokens: 1500,
+      maxTokens: 6000,
       messages: [
         { role: "system", content: DRAFT_PROMPT },
         { role: "user", content: `${t.summary ? `ملخص الجزء الأقدم: ${t.summary}\n\n` : ""}عنوان المحادثة: ${t.title}\n\n${convo}` },
@@ -192,7 +192,8 @@ export const draftFromThread = action({
     try {
       d = JSON.parse(res.text.trim().replace(/^```(?:json)?|```$/g, ""));
     } catch {
-      throw new OneBaseError("تعذّر تجهيز المسودة، حاول مرة أخرى");
+      console.error(`skills:draftFromThread: unparsable draft (finish ${res.finishReason}, ${res.text.length} chars)`);
+      throw new OneBaseError(res.finishReason === "length" ? "المحادثة أطول من أن تُلخَّص في مهارة دفعة واحدة. جرّب «مهارة جديدة» والصق التعليمات بنفسك." : "تعذّر تجهيز المسودة، حاول مرة أخرى");
     }
     // A usable, free /name: cleaned, and suffixed if the user already has one like it.
     let name = String(d.name ?? "").trim().replace(/^\//, "").replace(/\s+/g, "-").replace(/[^\p{L}\p{N}_-]/gu, "").slice(0, 36) || "مهارة";
