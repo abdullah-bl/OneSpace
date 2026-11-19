@@ -34,10 +34,11 @@ import { maskSecrets } from "./lib/secrets";
 import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId, undoMemories } from "./memory";
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
-import type { AppTool, Citation, ToolContext } from "./tools/types";
+import type { AppTool, Citation, ToolContext, ToolResult } from "./tools/types";
 import { autoRunEnabled, type Tier } from "./tiers";
 import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
+import { listIndex, undoLists } from "./lists";
 import { ownSkill, skillFilesText, skillIndex, undoSkills, type SkillFile } from "./skills";
 
 /** A positive number from the environment, or the default. */
@@ -760,6 +761,11 @@ export const turnContext = internalQuery({
       const here = threadSpaceId(ctx, meta);
       const index = await skillIndex(ctx, turn.userId, here && spaceIds.includes(here) ? here : null);
       if (index) context.push(index);
+      // Lists (plans/10): the chat's space's and my own, so «وش باقي من مهامي؟» reads the live list.
+      const personal = (await ctx.db.query("spaces").withIndex("by_owner", (q) => q.eq("ownerId", turn.userId)).collect()).find((x) => x.kind === "personal");
+      const listSpaces = [...new Set([here, personal?._id].filter((x): x is Id<"spaces"> => !!x && spaceIds.includes(x)))];
+      const lists = await listIndex(ctx, turn.userId, listSpaces);
+      if (lists) context.push(lists);
     }
     // External data sources this employee may read (only if the agent and level allow the tool).
     if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
@@ -1451,7 +1457,7 @@ export const runTurn = internalAction({
               toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "اقتراح مرفوض" });
               continue;
             }
-            let tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds });
+            let tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds, threadId: c.turn.threadId });
             // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
             // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
             if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
@@ -1655,7 +1661,7 @@ async function runPart(
           if (!offered.includes(tc.name)) return `الأداة ${tc.name} غير متاحة في هذا الجزء.`;
           const tool = registry[tc.name]!;
           if (tool.requiresConfirmation) {
-            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds });
+            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds, threadId: pc.turn.threadId });
             if (tier !== 1 || !autoRunEnabled() || (tc.args as any)?.__invalid !== undefined) return "لا يُنفَّذ هذا الإجراء داخل جزء: يحتاج تأكيد الموظف. اكتب نتيجتك مما لديك.";
             if (sandboxRuns >= 2) return "بلغ هذا الجزء حدّ التشغيلات. اكتب نتيجتك مما لديك.";
             sandboxRuns++;
@@ -1875,9 +1881,10 @@ export const undo = mutation({
     if (!p || p.userId !== me.userId) throw new Denied();
     await ownThread(ctx, me.userId, p.threadId);
     if (!p.auto || p.state !== "executed") throw new OneBaseError("لا يمكن التراجع عن هذا الإجراء");
-    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; deleteMemories?: string[]; deleteSkills?: string[]; restore?: { artifactId: string; version: number } };
+    const u = (p.undo ?? {}) as NonNullable<ToolResult["undo"]>;
     if (u.deleteMemories?.length) await undoMemories(ctx, me.userId, u.deleteMemories);
     if (u.deleteSkills?.length) await undoSkills(ctx, me.userId, u.deleteSkills);
+    if (u.deleteLists?.length || u.lists) await undoLists(ctx, me.userId, { deleteLists: u.deleteLists, ...(u.lists ?? {}) });
     const mine = async (spaceId: Id<"spaces">) => {
       const space = await ctx.db.get(spaceId);
       if (!space || space.kind !== "personal" || space.ownerId !== me.userId) return false;

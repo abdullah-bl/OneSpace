@@ -12,6 +12,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan } from "./access";
 import { place, resolveSources, type SourceRef } from "./artifacts";
+import { placeForTier } from "./lists";
 
 export type Tier = 1 | 2 | 3;
 
@@ -38,8 +39,8 @@ function refs(sources: unknown): SourceRef[] {
 }
 
 export const resolve = internalQuery({
-  args: { userId: v.id("users"), tool: v.string(), args: v.any(), scopeSpaceIds: v.array(v.string()) },
-  handler: async (ctx, { userId, tool, args, scopeSpaceIds }): Promise<Tier> => {
+  args: { userId: v.id("users"), tool: v.string(), args: v.any(), scopeSpaceIds: v.array(v.string()), threadId: v.optional(v.string()) },
+  handler: async (ctx, { userId, tool, args, scopeSpaceIds, threadId }): Promise<Tier> => {
     if (ALWAYS_OFFICIAL.has(tool)) return 3;
     const actor = await actorFor(ctx, userId);
     if (!actor) return 2;
@@ -55,6 +56,17 @@ export const resolve = internalQuery({
           if (a.scope !== "space") return 1;
           const { space } = await assertCan(ctx, userId, String(a.spaceId ?? ""), "read");
           return space.sensitive ? 3 : 2;
+        }
+        case "create_list": {
+          const space = await placeForTier(ctx, userId, threadId, scopeSpaceIds);
+          return tierFor(userId, space, false);
+        }
+        case "update_list": {
+          const id = ctx.db.normalizeId("lists", String(a.listId ?? ""));
+          const list = id ? await ctx.db.get(id) : null;
+          if (!list) return 2;
+          const { space } = await assertCan(ctx, userId, list.spaceId, "write");
+          return tierFor(userId, space, false);
         }
         case "update_artifact":
           return await artifactTier(ctx, userId, a.artifactId);

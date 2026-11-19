@@ -16,6 +16,9 @@ import { remember } from "./remember";
 import { recall } from "./recall";
 import { create_skill } from "./create_skill";
 import { use_skill } from "./use_skill";
+import { create_list } from "./create_list";
+import { update_list } from "./update_list";
+import { read_list } from "./read_list";
 
 export const tools: Record<string, AppTool> = {
   // Phase 4: outputs, records, templates
@@ -39,12 +42,16 @@ export const tools: Record<string, AppTool> = {
   create_skill,
   // plans/09 §2: loads a skill from the prompt's index (mine, or the chat's space's).
   use_skill,
+  // plans/10: live lists («القوائم»), every agent: tracked items belong in a list, not a static table.
+  create_list,
+  update_list,
+  read_list,
 };
 
 /** Memory tools follow the employee's level and the chat («بلا ذاكرة»), not the agent's tool list. */
 export const MEMORY_TOOLS = ["remember", "recall"];
-/** Tools every agent gets, whatever its tool list: they only touch the user's own things. */
-export const PERSONAL_TOOLS = ["create_skill", "use_skill"];
+/** Tools every agent gets, whatever its tool list: the user's own skills and the lists they can write (checked per call). */
+export const PERSONAL_TOOLS = ["create_skill", "use_skill", "create_list", "update_list", "read_list"];
 
 export function getTool(name: string): AppTool | undefined {
   return Object.hasOwn(tools, name) ? tools[name] : undefined;

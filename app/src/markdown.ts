@@ -17,6 +17,8 @@ const md = new Marked({
     },
     link(token) {
       const text = this.parser.parseInline(token.tokens);
+      // An in-app page the assistant points to (a list it made): same tab, ids only.
+      if (/^#\/(list|lists|tasks|space)\/?[\w/-]*$/.test(token.href.trim())) return `<a href="${esc(token.href.trim())}">${text}</a>`;
       const href = safeHref(token.href);
       return href ? `<a href="${esc(href)}" target="_blank" rel="noopener noreferrer">${text}</a>` : text;
     },

@@ -17,6 +17,7 @@ import { SpaceSkills } from "./SpaceSkills";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
 import { DocumentsTab } from "./DocumentsView";
+import { SpaceLists } from "./ListView";
 import { askAboutFile, Page, relTime, startChatWith } from "./ChatView";
 
 /** "المساحات": my personal space and the shared spaces I can read. */
@@ -65,6 +66,7 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
     { id: "overview", label: "المحادثات", show: true },
     { id: "files", label: "الملفات", show: true },
     { id: "tasks", label: "المهام", show: hasTasks },
+    { id: "lists", label: "القوائم", show: true },
     { id: "outputs", label: "المخرجات", show: true },
     { id: "records", label: "السجلات", show: shared },
     { id: "documents", label: "القوالب والمستندات", show: shared },
@@ -119,6 +121,7 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
       <div className="mt-6">
         {current === "overview" && <Overview space={space} hasTasks={hasTasks} go={go} />}
         {current === "files" && <FilesPanel space={space} spaces={spaces} />}
+        {current === "lists" && <SpaceLists spaceId={space._id} go={go} />}
         {current === "outputs" && <OutputsTab space={space} spaces={spaces} />}
         {current === "records" && shared && <RecordsTab space={space} />}
         {current === "documents" && shared && <DocumentsTab space={space} />}

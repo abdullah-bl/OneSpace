@@ -9,6 +9,9 @@ export const taskStatus = v.union(v.literal("new"), v.literal("inProgress"), v.l
 export const taskPriority = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
 // A task link: a file or a Phase 4 artifact, always in the task's own space (tasks.ts).
 export const taskLinkType = v.union(v.literal("file"), v.literal("artifact"));
+export const listColumnType = v.union(v.literal("text"), v.literal("number"), v.literal("date"), v.literal("status"), v.literal("select"), v.literal("person"), v.literal("check"));
+export const listCell = v.union(v.string(), v.number(), v.boolean(), v.null());
+
 export default defineSchema({
   // The built-in auth fields plus OneSpace's account status. A missing status counts as
   // "pending" (fail-closed): only a workspace admin can make an account active.
@@ -130,6 +133,33 @@ export default defineSchema({
     body: v.string(),
     createdAt: v.number(),
   }).index("by_task", ["taskId", "createdAt"]),
+
+  // «القوائم» (plans/10): a live table in a space, like a Notion database. Typed columns; rows
+  // edited in place by anyone who can write in the space, and by the assistant (create_list,
+  // update_list). Every open screen sees a change at once (reactive queries).
+  lists: defineTable({
+    spaceId: v.id("spaces"),
+    ownerId: v.id("users"),
+    title: v.string(),
+    description: v.optional(v.string()),
+    columns: v.array(v.object({ key: v.string(), name: v.string(), type: listColumnType, options: v.optional(v.array(v.string())) })),
+    view: v.union(v.literal("table"), v.literal("board")),
+    nextKey: v.number(),
+    rowCount: v.number(),
+    sourceThreadId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_space", ["spaceId", "updatedAt"]),
+
+  listRows: defineTable({
+    listId: v.id("lists"),
+    cells: v.record(v.string(), listCell),
+    order: v.number(),
+    createdBy: v.id("users"),
+    updatedBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_list", ["listId", "order"]),
 
   // ---- Phase 5: sandbox runs ----
 

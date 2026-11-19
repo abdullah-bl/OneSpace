@@ -1018,7 +1018,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         </pre>
       </details>
       {p.state === "executed" && p.display ? (
-        <p className="mt-1 text-sm text-ink">{p.display}</p>
+        <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "")}</p>
       ) : p.result &&
         (p.state === "executed" ? (
           <details className="mt-1 text-xs text-muted">
@@ -1049,6 +1049,11 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         {p.artifactIds.map((id) => (
           <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
         ))}
+        {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
+          <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
+            <Icon name="table" size={14} /> افتح القائمة
+          </a>
+        )}
       </div>
       {error && <p className="mt-1 text-xs text-negative">{error}</p>}
       {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}

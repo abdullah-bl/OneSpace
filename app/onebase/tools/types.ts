@@ -32,7 +32,15 @@ export type ToolResult = {
   /** What the user sees on the action card after «نفّذ». Without it the card shows the raw output folded. */
   display?: string;
   /** How «تراجع» reverses an action that ran without asking (tier 1, onebase/tiers.ts). */
-  undo?: { deleteArtifacts?: string[]; deleteFiles?: string[]; deleteMemories?: string[]; deleteSkills?: string[]; restore?: { artifactId: string; version: number } };
+  undo?: {
+    deleteArtifacts?: string[];
+    deleteFiles?: string[];
+    deleteMemories?: string[];
+    deleteSkills?: string[];
+    deleteLists?: string[];
+    lists?: { listId: string; deleteRows: string[]; restoreRows: { rowId?: string; cells: Record<string, string | number | boolean | null>; order: number }[] };
+    restore?: { artifactId: string; version: number };
+  };
   citations?: Citation[];
   /** Artifacts created or updated by the tool (shown in the side panel). */
   artifactIds?: string[];

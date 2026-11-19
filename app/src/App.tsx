@@ -9,6 +9,7 @@ import { useAuthActions, useMutation, useOnebaseAuth, useQuery } from "onebase/r
 import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
+import { ListPage, ListsPage } from "./ListView";
 import { SkillsView } from "./SkillsView";
 import { MemoryView } from "./MemoryView";
 import { SpaceView, SpacesPage } from "./SpaceView";
@@ -179,6 +180,8 @@ function Shell({ me }: { me: Me }) {
   else if (head === "mentions") screen = <MentionsPage go={go} />;
   else if (head === "me") screen = <Wide><MyRecordsView /></Wide>;
   else if (head === "memory") screen = <Wide><MemoryView /></Wide>;
+  else if (head === "lists") screen = <ListsPage spaces={spaces} go={go} />;
+  else if (head === "list" && a) screen = <ListPage key={a} listId={a} go={go} />;
   else if (head === "skills")
     screen = (
       <SkillsView
@@ -313,6 +316,9 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
         </NavLink>
         <NavLink href="#/tasks" icon="tasks" on={section === "tasks" || section === "schedules"} count={openTasks}>
           المهام
+        </NavLink>
+        <NavLink href="#/lists" icon="table" on={section === "lists" || section === "list"}>
+          القوائم
         </NavLink>
         <NavLink href="#/mentions" icon="at" on={section === "mentions"} count={mentionsUnread}>
           الإشارات
