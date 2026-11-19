@@ -2,7 +2,7 @@
 // identifiers, disable) and «المساحات» (shared spaces, their managers and flags). An admin sees a
 // space's existence and managers here, never its files unless they're a member.
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, STATUS_LABELS } from "./lib";
 import { Icon } from "./icons";
@@ -154,11 +154,6 @@ function EditUserDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
   const [employeeNo, setEmployeeNo] = useState(user.employeeNo ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
   const canRole = user.status === "active" && !!user.workspaceRole;
   const save = async () => {
     setError("");
@@ -177,24 +172,7 @@ function EditUserDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
     }
   };
   return (
-    <div className="fixed inset-0 z-[100] grid place-items-end bg-black/30 backdrop-blur-[2px] sm:place-items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <form
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="edit-user-title"
-        className="card w-full animate-rise rounded-b-none p-5 shadow-xl sm:max-w-md sm:rounded-b-lg"
-        onSubmit={(e) => {
-          e.preventDefault();
-          void save();
-        }}
-      >
-        <p id="edit-user-title" className="font-medium">
-          {user.name ?? "—"}
-        </p>
-        <p className="truncate text-xs text-muted">
-          <span dir="ltr">{user.email}</span>
-        </p>
-        {error && <p className="alert-negative mt-3">{error}</p>}
+    <Sheet title={user.name ?? "—"} subtitle={<span dir="ltr">{user.email}</span>} error={error} busy={busy} onSubmit={save} onClose={onClose}>
         <div className="mt-4 space-y-3">
           <label className="block text-sm">
             <span className="label">الدور</span>
@@ -219,12 +197,59 @@ function EditUserDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
           </div>
           <p className="text-xs text-muted">تُطابَق بهما سجلات الموظف في «بياناتي». يضعهما المدير فقط؛ اترك الحقل فارغاً لحذفه.</p>
         </div>
+    </Sheet>
+  );
+}
+
+/** Modal form: centred card on desktop, bottom sheet on phones. Escape or a backdrop click closes it. */
+function Sheet({
+  title,
+  subtitle,
+  error,
+  busy,
+  submitLabel = "حفظ",
+  onSubmit,
+  onClose,
+  children,
+}: {
+  title: string;
+  subtitle?: ReactNode;
+  error?: string;
+  busy?: boolean;
+  submitLabel?: string;
+  onSubmit: () => void | Promise<void>;
+  onClose: () => void;
+  children: ReactNode;
+}) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return (
+    <div className="fixed inset-0 z-[100] grid place-items-end bg-black/30 backdrop-blur-[2px] sm:place-items-center sm:p-4" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="sheet-title"
+        className="card max-h-[90dvh] w-full animate-rise overflow-y-auto rounded-b-none p-5 shadow-xl sm:max-w-md sm:rounded-b-lg"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void onSubmit();
+        }}
+      >
+        <p id="sheet-title" className="font-medium">
+          {title}
+        </p>
+        {subtitle && <p className="truncate text-xs text-muted">{subtitle}</p>}
+        {error && <p className="alert-negative mt-3">{error}</p>}
+        {children}
         <div className="mt-5 flex justify-end gap-2">
           <button type="button" className="btn-secondary" onClick={onClose}>
             إلغاء
           </button>
           <button type="submit" className="btn-primary" disabled={busy}>
-            {busy ? "جارٍ الحفظ…" : "حفظ"}
+            {busy ? "جارٍ الحفظ…" : submitLabel}
           </button>
         </div>
       </form>
@@ -232,18 +257,17 @@ function EditUserDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
   );
 }
 
+type AdminSpace = NonNullable<ReturnType<typeof useQuery<typeof api.admin.spaces>>>[number];
+
 export function SpacesAdmin() {
   const users = useQuery(api.admin.users);
   const spaces = useQuery(api.admin.spaces);
-  const createSpace = useMutation(api.admin.createSharedSpace);
-  const setManager = useMutation(api.admin.setSpaceManager);
-  const updateSpace = useMutation(api.admin.updateSpace);
-  const { error, run } = useRun();
-  const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: "", managerId: "", everyone: false, sensitive: false });
+  const [dialog, setDialog] = useState<"new" | string | null>(null);
   const [q, setQ] = useState("");
   const active = users?.filter((u) => u.status === "active" && u.workspaceRole) ?? [];
-  const shown = (spaces ?? []).filter((s) => !q.trim() || s.name.includes(q.trim()));
+  const needle = q.trim();
+  const shown = (spaces ?? []).filter((s) => !needle || s.name.includes(needle) || s.managers.some((m) => m.name.includes(needle)));
+  const editing = dialog && dialog !== "new" ? spaces?.find((s) => s._id === dialog) : undefined;
 
   return (
     <div>
@@ -251,105 +275,136 @@ export function SpacesAdmin() {
         title="المساحات"
         subtitle="ترى هنا وجود المساحة ومديرها فقط. لا ترى ملفاتها ما لم تكن عضواً فيها."
         actions={
-          !creating && (
-            <button className="btn-primary" onClick={() => setCreating(true)}>
-              <Icon name="plus" /> مساحة جديدة
-            </button>
-          )
+          <button className="btn-primary" onClick={() => setDialog("new")}>
+            <Icon name="plus" /> مساحة جديدة
+          </button>
         }
       />
-      {error && <p className="alert-negative mb-4">{error}</p>}
-      {creating && (
-        <form
-          className="card mb-5 space-y-4 p-5"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void run(async () => {
-              await createSpace({ name: form.name, managerId: form.managerId as any, everyone: form.everyone, sensitive: form.sensitive });
-              setForm({ name: "", managerId: "", everyone: false, sensitive: false });
-              setCreating(false);
-            });
-          }}
-        >
-          <p className="font-medium">مساحة مشتركة جديدة</p>
-          <div className="grid gap-3 sm:grid-cols-2">
-            <label className="block text-sm">
-              <span className="label">الاسم</span>
-              <input className="input w-full" placeholder="الشؤون المالية" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required autoFocus />
-            </label>
-            <label className="block text-sm">
-              <span className="label">المدير</span>
-              <select className="input w-full" value={form.managerId} onChange={(e) => setForm({ ...form, managerId: e.target.value })} required>
-                <option value="">اختر موظفاً…</option>
-                {active.map((u) => (
-                  <option key={u._id} value={u._id}>
-                    {u.name ?? u.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-          <div className="grid gap-2 sm:grid-cols-2">
-            <Toggle checked={form.everyone} onChange={(v) => setForm({ ...form, everyone: v })} title="للجميع" detail="يقرؤها كل الموظفين، مثل الأنظمة واللوائح" />
-            <Toggle checked={form.sensitive} onChange={(v) => setForm({ ...form, sensitive: v })} title="حسّاسة" detail="مخرجاتها لا تُنقل خارجها إلا بموافقة مديرها" />
-          </div>
-          <div className="flex justify-end gap-2">
-            <button type="button" className="btn-secondary" onClick={() => setCreating(false)}>
-              إلغاء
-            </button>
-            <button className="btn-primary">إنشاء</button>
-          </div>
-        </form>
-      )}
       {(spaces?.length ?? 0) > 6 && (
         <div className="relative mb-3 sm:max-w-xs">
           <Icon name="search" className="pointer-events-none absolute start-3 top-1/2 -translate-y-1/2 text-faint" />
-          <input className="input w-full ps-9" placeholder="ابحث باسم المساحة" value={q} onChange={(e) => setQ(e.target.value)} />
+          <input className="input w-full ps-9" type="search" placeholder="ابحث باسم المساحة أو مديرها" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
       )}
       {spaces === undefined ? (
         <p className="text-sm text-muted">جارٍ التحميل…</p>
       ) : spaces.length === 0 ? (
-        <EmptyState icon="folder" title="لا مساحات مشتركة بعد" action={<button className="btn-primary" onClick={() => setCreating(true)}>أنشئ أول مساحة</button>}>
+        <EmptyState icon="folder" title="لا مساحات مشتركة بعد" action={<button className="btn-primary" onClick={() => setDialog("new")}>أنشئ أول مساحة</button>}>
           المساحة المشتركة مكان ملفات فريق ومهامه ومحادثاته.
         </EmptyState>
+      ) : shown.length === 0 ? (
+        <EmptyState icon="folder" title="لا نتائج" />
       ) : (
-        <ul className="card divide-y divide-rule">
+        <ul className="card divide-y divide-rule overflow-hidden">
           {shown.map((s) => (
-            <li key={s._id} className="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3">
-              <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-active text-muted">
+            <li key={s._id} className="flex items-center gap-3 px-4 py-3">
+              <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${s.everyone ? "bg-primary-soft text-primary" : s.sensitive ? "bg-warning-soft text-warning" : "bg-active text-muted"}`} aria-hidden>
                 <Icon name={s.everyone ? "globe" : s.sensitive ? "lock" : "folder"} size={16} />
               </span>
-              <div className="min-w-48 flex-1">
-                <p className="flex flex-wrap items-center gap-1.5 font-medium">
-                  {s.name}
+              <button className="min-w-0 flex-1 text-start" onClick={() => setDialog(s._id)} title="إعدادات المساحة">
+                <p className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                  <span className="font-medium">{s.name}</span>
                   {s.everyone && <span className="badge-primary">للجميع</span>}
                   {s.sensitive && <span className="badge-warning">حسّاسة</span>}
+                  {s.iAmMember && <span className="badge">أنت عضو</span>}
                 </p>
-                <p className="text-xs text-muted">
-                  المدير: {s.managers.map((m) => m.name).join("، ") || "—"} · <span className="num">{s.memberCount}</span> عضو
+                <p className="mt-0.5 flex flex-wrap gap-x-2 text-xs text-muted">
+                  <span className={s.managers.length ? "" : "text-warning"}>{s.managers.length ? `${s.managers.length > 1 ? "المديرون" : "المدير"}: ${s.managers.map((m) => m.name).join("، ")}` : "بلا مدير"}</span>
+                  <span>
+                    <span className="num">{s.memberCount}</span> {s.memberCount === 1 ? "عضو" : "أعضاء"}
+                  </span>
                 </p>
-              </div>
-              <select className="input h-8 w-auto text-sm" aria-label="تعيين مدير" value="" onChange={(e) => e.target.value && run(() => setManager({ spaceId: s._id as any, userId: e.target.value as any }))}>
-                <option value="">تعيين مدير…</option>
-                {active.map((u) => (
-                  <option key={u._id} value={u._id}>
-                    {u.name ?? u.email}
-                  </option>
-                ))}
-              </select>
-              <Menu
-                label={`خيارات ${s.name}`}
-                items={[
-                  { label: s.everyone ? "اجعلها للأعضاء فقط" : "اجعلها للجميع", icon: "globe", onSelect: () => void run(() => updateSpace({ spaceId: s._id as any, everyone: !s.everyone })) },
-                  { label: s.sensitive ? "أزل وسم «حسّاسة»" : "اجعلها حسّاسة", icon: "lock", onSelect: () => void run(() => updateSpace({ spaceId: s._id as any, sensitive: !s.sensitive })) },
-                ]}
-              />
+              </button>
+              <Menu className="shrink-0" label={`خيارات ${s.name}`} items={[{ label: "إعدادات المساحة", icon: "pencil", onSelect: () => setDialog(s._id) }]} />
             </li>
           ))}
         </ul>
       )}
+      {dialog === "new" && <SpaceDialog active={active} onClose={() => setDialog(null)} />}
+      {editing && <SpaceDialog key={editing._id} space={editing} active={active} onClose={() => setDialog(null)} />}
     </div>
+  );
+}
+
+/** Create a shared space, or edit one: name, flags, and add a manager. Saves only what changed. */
+function SpaceDialog({ space, active, onClose }: { space?: AdminSpace; active: { _id: string; name: string | null; email: string | null }[]; onClose: () => void }) {
+  const createSpace = useMutation(api.admin.createSharedSpace);
+  const setManager = useMutation(api.admin.setSpaceManager);
+  const updateSpace = useMutation(api.admin.updateSpace);
+  const [name, setName] = useState(space?.name ?? "");
+  const [managerId, setManagerId] = useState("");
+  const [everyone, setEveryone] = useState(space?.everyone ?? false);
+  const [sensitive, setSensitive] = useState(space?.sensitive ?? false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const managerIds = new Set<string>(space?.managers.map((m) => m.userId) ?? []);
+  const candidates = active.filter((u) => !managerIds.has(u._id));
+  const save = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      if (!space) await createSpace({ name, managerId: managerId as any, everyone, sensitive });
+      else {
+        const patch: { name?: string; everyone?: boolean; sensitive?: boolean } = {};
+        if (name.trim() && name.trim() !== space.name) patch.name = name.trim();
+        if (everyone !== space.everyone) patch.everyone = everyone;
+        if (sensitive !== space.sensitive) patch.sensitive = sensitive;
+        if (Object.keys(patch).length) await updateSpace({ spaceId: space._id as any, ...patch });
+        if (managerId) await setManager({ spaceId: space._id as any, userId: managerId as any });
+      }
+      onClose();
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet
+      title={space ? "إعدادات المساحة" : "مساحة مشتركة جديدة"}
+      subtitle={space ? <span className="num">{space.memberCount} {space.memberCount === 1 ? "عضو" : "أعضاء"}</span> : undefined}
+      error={error}
+      busy={busy}
+      submitLabel={space ? "حفظ" : "إنشاء"}
+      onSubmit={save}
+      onClose={onClose}
+    >
+      <div className="mt-4 space-y-4">
+        <label className="block text-sm">
+          <span className="label">الاسم</span>
+          <input className="input w-full" placeholder="الشؤون المالية" value={name} onChange={(e) => setName(e.target.value)} required autoFocus={!space} />
+        </label>
+        <div className="text-sm">
+          <span className="label">{space ? "المديرون" : "المدير"}</span>
+          {space && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {space.managers.length ? (
+                space.managers.map((m) => (
+                  <span key={m.userId} className="badge h-6 px-2 text-xs">
+                    {m.name}
+                  </span>
+                ))
+              ) : (
+                <span className="text-xs text-warning">لا مدير لهذه المساحة بعد.</span>
+              )}
+            </div>
+          )}
+          <select className="input w-full" aria-label={space ? "أضف مديراً" : "المدير"} value={managerId} onChange={(e) => setManagerId(e.target.value)} required={!space}>
+            <option value="">{space ? "أضف مديراً…" : "اختر موظفاً…"}</option>
+            {candidates.map((u) => (
+              <option key={u._id} value={u._id}>
+                {u.name ?? u.email}
+              </option>
+            ))}
+          </select>
+          {space && <span className="mt-1 block text-xs text-muted">يُضاف مديراً إلى جانب المديرين الحاليين. إزالة مدير تتم من داخل المساحة.</span>}
+        </div>
+        <div className="grid gap-2">
+          <Toggle checked={everyone} onChange={setEveryone} title="للجميع" detail="يقرؤها كل الموظفين، مثل الأنظمة واللوائح" />
+          <Toggle checked={sensitive} onChange={setSensitive} title="حسّاسة" detail="مخرجاتها لا تُنقل خارجها إلا بموافقة مديرها" />
+        </div>
+      </div>
+    </Sheet>
   );
 }
 
