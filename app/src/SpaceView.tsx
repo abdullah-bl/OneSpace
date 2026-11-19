@@ -13,6 +13,7 @@ import { STATUS, TaskBoard } from "./TasksView";
 import { Menu, type MenuItem, ask } from "./ui";
 import { SpaceInstructions } from "./SpaceInstructions";
 import { SpaceMemory } from "./MemoryView";
+import { SpaceSkills } from "./SpaceSkills";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
 import { DocumentsTab } from "./DocumentsView";
@@ -225,9 +226,14 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           </Panel>
         ) : null}
         {space.kind === "shared" ? (
-          <Panel title="ذاكرة المساحة" hint="قرارات الفريق واصطلاحاته ومصطلحاته">
-            <SpaceMemory spaceId={space._id} />
-          </Panel>
+          <>
+            <Panel title="مهارات المساحة" hint="طرق عمل الفريق: اكتب / في المحادثة">
+              <SpaceSkills spaceId={space._id} />
+            </Panel>
+            <Panel title="ذاكرة المساحة" hint="قرارات الفريق واصطلاحاته ومصطلحاته">
+              <SpaceMemory spaceId={space._id} />
+            </Panel>
+          </>
         ) : (
           <section className="rounded-xl bg-sunken p-4 text-sm">
             <div className="flex items-center gap-2 font-medium">

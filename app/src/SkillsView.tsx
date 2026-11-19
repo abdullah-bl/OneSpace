@@ -89,7 +89,7 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
           </label>
           <label className="block text-sm">
             <span className="label">التعليمات</span>
-            <textarea className="textarea min-h-48 w-full leading-7" dir="auto" value={editing.instructions} maxLength={8000} onChange={(e) => set("instructions", e.target.value)} placeholder="ابدأ بـ«سعادة…»، ثم الموضوع في سطر، ثم فقرتين قصيرتين…" />
+            <textarea className="textarea min-h-48 w-full leading-7" dir="auto" value={editing.instructions} maxLength={16000} onChange={(e) => set("instructions", e.target.value)} placeholder="ابدأ بـ«سعادة…»، ثم الموضوع في سطر، ثم فقرتين قصيرتين…" />
           </label>
           <div className="flex gap-2">
             <button className="btn-primary" onClick={() => void save()} disabled={!editing.name.trim() || !editing.instructions.trim()}>

@@ -1,4 +1,4 @@
-# 09 — The space runs the agents: context, memory, procedures, identity (draft for discussion)
+# 09 — The space runs the agents: instructions, memory, skills, identity
 
 Status: proposal, 2026-11-19. Open decisions are marked **[decide]**.
 
@@ -31,12 +31,18 @@ They don't work together. Today a member opens a space and gets an empty chat. T
 
 The goal is that **the space configures its agents**: what they know, how recurring work is done, and how the output looks. A "sector" (training, planning, budget) then needs no code of its own. It is a pack of these settings.
 
-Four layers, in build order:
+**Revised (2026-11-19): Claude Code's model, applied to a space.** We don't build tools per sector. People build them from their own work: they do a job with the agent, and a job that went well is saved as a **skill** the agent reuses. A space then has only three things to set up:
 
-1. **Memory:** personal and space. It is what the agent knows before you ask.
-2. **Space procedures («إجراءات المساحة»):** how recurring work is done.
-3. **Space context extras:** glossary and model works («أعمال قدوة»).
-4. **Identity and packs:** how the output looks, and how a sector setup moves between spaces and organisations.
+| Claude Code | In a space |
+|---|---|
+| `CLAUDE.md` | the space's instructions and memory (§1) |
+| Skills (SKILL.md, scripts), picked by their description | the space's skills (§2): instructions, and later a script run in the sandbox |
+| `/name` | `/name` in the chat, or a card on the space page |
+| a design system | the space's identity (§3) |
+
+Agents and tools stay underneath: the person never has to pick them. A "sector" (training, ranking, budget) is a pack of these three (§4). It needs no code of its own.
+
+"Procedures" (an earlier draft of §2) are dropped as a separate idea: a space skill is the procedure.
 
 ---
 
@@ -111,68 +117,44 @@ memories: {
 
 ---
 
-## 2. Space procedures («إجراءات المساحة»)
+## 2. Space skills («مهارات المساحة»)
 
-A procedure is recurring work, defined once and run by any member.
+A space skill is a personal skill (`skills`, plans/07) that belongs to a shared space: instructions any member can run, approved by a manager.
 
-```
-procedures: {
-  spaceId, name, description, icon,
-  inputs: [{ key, label, type: text|longtext|file|record|date|choice, required, from?: "memory:department" }],
-  instructions,            // how to do it (like an agent's instructions, scoped to this job)
-  agentId?,                // otherwise the router picks
-  tools?: "agent" | [..],  // narrow further, never widen
-  output: { kind: markdown|table|html|document, templateId? },  // templateId = an approved official template
-  review?: { by: "space_managers" | userIds },                  // the output is a draft until approved
-  examples: artifactIds,   // model works for this procedure
-  version, live/draft like agents, createdBy, uses
-}
-```
+### How one is made
+1. A member does the job in a chat with the ordinary tools. Example: «سوّ مفاضلة بين الطلبة في هذا الملف: المعدل 40، المقابلة 60», then corrects along the way («التعادل بالأقدمية»).
+2. When a multi-step job is done and likely to recur, the assistant offers «أحفظ هذه الطريقة كمهارة للمساحة؟». It can also be asked directly, or a member can share one of «مهاراتي» with the space.
+3. It is saved as **proposed**. A space manager approves it (it becomes active) or rejects it. A manager's own save is active at once.
+4. Managers edit and delete active skills. Each edit bumps `version`.
 
-- **Running one:**
-  - The space home shows its procedures as cards. A card opens a form.
-  - The run is a normal chat turn with the procedure as context, so the steps timeline, sub-agents and stop all work.
-  - The result goes to «أعمالي» and the space's works.
-- **«حوّل هذه المحادثة إلى إجراء»:**
-  - The fast model drafts the inputs, instructions and output from a finished chat, like `skills.draftFromThread` today.
-  - A space manager reviews and publishes it.
-  - This is how one person's good work becomes the department's way of working.
-- **Review:** when `review` is set, the output is a draft until a manager approves it. Approved outputs can be marked «نموذج» and join the procedure's `examples`.
-- **Schedules:** a schedule can point at a procedure with fixed inputs, for example a weekly budget variance report.
-- **Personal skills stay.** A skill is my own way of doing something. A procedure is the space's. «انقلها إلى المساحة» turns a skill into a procedure draft.
+### How one is used
+- **Index:** every chat in the space gets one line per active skill (`/name: description`), capped like the memory index, plus the person's own skills. The model loads the full instructions with the `use_skill` tool when a request matches. Same pattern as Claude's skills: the description decides.
+- **`/name`:** the composer lists the space's skills next to «مهاراتي».
+- **Rules:** a skill is instructions only. It never grants a tool, a space or a file: what the answer may touch is still the agent's scope ∩ what the person can read. Proposed skills are never shown to the model.
 
-## 3. Space context extras
+### Later: a script inside the skill
+- A skill can carry a Python script, saved from the chat where it worked. It runs in the sandbox (`run_analysis`) on the person's files, so a number that affects people (a ranking, a budget split) comes from fixed code, not from the model.
+- Each run keeps the input hash and the script version (the `runs` table).
+- The ranking engine (`lib/ranking.ts`) becomes a tool a skill can call. The standalone «المفاضلة» page goes away, or stays as a log of approved runs.
 
-- **Glossary:** space memory items with `kind: "term"`, shown as a list on the space settings page.
-- **Model works («أعمال قدوة»):**
-  - A manager marks an artifact as a model.
-  - The agent receives the first ~1.5k tokens of up to 2 relevant models (picked by procedure, or by embedding similarity to the request).
-  - The instruction is "match the structure and tone".
-- **Space sources and records:** described in the context automatically. Already done for sources; add record sets the same way.
+## 3. Identity
 
-## 4. Identity and packs
+- **What:** a logo, two or three colours, a font (bundled Arabic fonts, or an uploaded woff2 served locally), a letterhead and a footer.
+- **Set up by chat:** the manager uploads the logo and says «هذه هويتنا». The assistant pulls the colours from the logo and shows a preview; the manager approves.
+- **Inheritance:** the workspace identity is the default, a space inherits or overrides it, and the personal space uses the person's own.
+- **Applied at render time, never by the skill:** CSS variables in HTML outputs, the chart palette, and the Word/PDF export (font, letterhead, footer). A skill needs to know nothing about it.
 
-- **Identity:**
-  - logo, colours (primary, secondary, chart palette), a font (bundled Arabic fonts or an uploaded woff2, all served locally), and a letterhead and footer;
-  - applied at render time: CSS variables injected into HTML artifacts, the chart palette, and the Word/PDF export;
-  - the workspace has a default identity, which each space inherits or overrides.
-- **Packs:**
-  - a JSON export of a space's instructions, space memory (glossary and decisions), procedures, record set definitions (no rows), templates and identity;
-  - importing a pack creates or updates a space;
-  - starter packs: التدريب، التخطيط، الميزانية.
+## 4. Packs
+
+- A JSON export of a space's instructions, space memory, skills (with their scripts) and identity.
+- Importing a pack creates or updates a space. Starter packs: التدريب، المفاضلة، الميزانية.
 
 ---
 
 ## Build order
 
-1. **Memory:**
-   - the `memories` table;
-   - the `remember` and `recall` tools;
-   - index injection;
-   - the «ذاكرتي» page, the space memory tab, the «بلا ذاكرة» toggle;
-   - level switches;
-   - tests for the five safety rules.
-2. **Procedures:** the table, admin and manager editor, cards on the space home, run-as-turn, «حوّل المحادثة إلى إجراء», review.
-3. **Model works and glossary.**
-4. **Identity and export.**
-5. **Packs and the three starter packs.**
+1. **Memory.** Done (§1).
+2. **Space skills (§2):** proposed or active skills in a shared space, manager approval, the index and `use_skill`, `/name` in the composer, «شارك مع المساحة», and the assistant's offer to save.
+3. **Scripts inside skills:** the sandbox run, run records, the ranking engine as a tool.
+4. **Identity (§3).**
+5. **Packs (§4).**

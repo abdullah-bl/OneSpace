@@ -31,14 +31,14 @@ import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
 import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
 import { maskSecrets } from "./lib/secrets";
-import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, undoMemories } from "./memory";
+import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId, undoMemories } from "./memory";
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
 import type { AppTool, Citation, ToolContext } from "./tools/types";
 import { autoRunEnabled, type Tier } from "./tiers";
 import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
-import { ownSkill, undoSkills } from "./skills";
+import { ownSkill, skillIndex, undoSkills } from "./skills";
 
 /** A positive number from the environment, or the default. */
 const envNum = (k: string, d: number) => {
@@ -581,8 +581,8 @@ export const send = mutation({
     meta = (await ctx.db.get(meta._id))!;
     const agent = await resolveAgent(ctx, me.userId, meta);
     if ("error" in agent) throw new OneBaseError(agent.error);
-    // "/name": only my own skill (someone else's id answers like a missing one).
-    const skill = await ownSkill(ctx, me.userId, skillId);
+    // "/name": my own skill, or an active skill of this chat's space (anything else answers like a missing one).
+    const skill = await ownSkill(ctx, me.userId, skillId, threadSpaceId(ctx, meta));
     if (skill) await ctx.db.patch(skill._id, { uses: skill.uses + 1 });
     const turnId = await queueTurn(ctx, { threadId, userId: me.userId, text: question, agentId: agent.agentId, agentVersion: agent.version, mentions: narrow.length ? narrow : undefined, skillId: skill?._id, effort });
     const now = Date.now();
@@ -712,18 +712,22 @@ function shapeProposal(p: ProposalDoc, now: number) {
   };
 }
 
-/** The asker's "/name" skill for a turn, if it still exists and is still theirs. */
-async function turnSkill(ctx: QueryCtx, turn: Doc<"turns">) {
+/** The asker's "/name" skill for a turn, if it is still usable (theirs, or still active in this chat's space). */
+async function turnSkill(ctx: QueryCtx, turn: Doc<"turns">, spaceId: Id<"spaces"> | null) {
   if (!turn.skillId) return null;
-  const s = await ctx.db.get(turn.skillId);
-  return s && s.ownerId === turn.userId ? { name: s.name, title: s.title, instructions: s.instructions } : null;
+  try {
+    const s = await ownSkill(ctx, turn.userId, turn.skillId, spaceId);
+    return s ? { name: s.name, title: s.title, instructions: s.instructions, space: !!s.spaceId } : null;
+  } catch {
+    return null;
+  }
 }
 
-/** The user's skill joins the system prompt as the user's own instructions, under the agent's rules. */
-function skillBlock(skill: { name: string; title: string; instructions: string } | null) {
-  return skill
-    ? `\n\n---\nطلب المستخدم أن تطبّق مهارته «${skill.title}» (/${skill.name}). هذه تعليماته هو لطريقة أداء هذا الطلب؛ اتبعها ما لم تخالف قواعدك أعلاه أو صلاحياته:\n${skill.instructions}`
-    : "";
+/** The skill joins the system prompt as instructions for this request, under the agent's rules. */
+function skillBlock(skill: { name: string; title: string; instructions: string; space?: boolean } | null) {
+  if (!skill) return "";
+  const who = skill.space ? `مهارة المساحة «${skill.title}» (/${skill.name})، وقد اعتمدها مديرو المساحة` : `مهارته «${skill.title}» (/${skill.name})، وهي تعليماته هو`;
+  return `\n\n---\nطلب المستخدم أن تطبّق ${who}. اتبعها لطريقة أداء هذا الطلب ما لم تخالف قواعدك أعلاه أو صلاحياته:\n${skill.instructions}`;
 }
 
 export const turnContext = internalQuery({
@@ -750,6 +754,12 @@ export const turnContext = internalQuery({
     // Memory (plans/09): the asker's index and the space's, unless the level or this chat turns it off.
     const memory = !meta.test && !meta.noMemory && level.memory;
     if (memory) context.push(...(await memoryContext(ctx, turn.userId, meta, spaceIds)));
+    // Skills (plans/09 §2): one line each, mine and the chat's space's; use_skill loads one.
+    if (!meta.test) {
+      const here = threadSpaceId(ctx, meta);
+      const index = await skillIndex(ctx, turn.userId, here && spaceIds.includes(here) ? here : null);
+      if (index) context.push(index);
+    }
     // External data sources this employee may read (only if the agent and level allow the tool).
     if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
       const sources = sourcesContext(await sourcesFor(ctx, turn.userId));
@@ -817,7 +827,7 @@ export const turnContext = internalQuery({
       scheduled: !!turn.scheduleId,
       afterRun,
       afterRunMissing: !!turn.afterProposal && !afterRun,
-      skill: await turnSkill(ctx, turn),
+      skill: await turnSkill(ctx, turn, threadSpaceId(ctx, meta)),
       // A personal save runs without «نفّذ» only when the person asked for it, outside sensitive spaces.
       memory: { on: memory, autoSave: memory && !(await sensitiveOrigin(ctx, meta)) },
     };

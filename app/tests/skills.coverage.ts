@@ -15,4 +15,12 @@ export const SKILLS_COVERED = [
   "levels:setDefault",
   "levels:assign",
   "levels:mine",
+  // plans/09 §2, checked in space-skills.test.ts
+  "skills:space",
+  "skills:addSpace",
+  "skills:shareToSpace",
+  "skills:reviewSpace",
+  "skills:updateSpace",
+  "skills:removeSpace",
+  "skills:forChat",
 ];

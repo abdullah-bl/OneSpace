@@ -15,6 +15,7 @@ import { query_source } from "./query_source";
 import { remember } from "./remember";
 import { recall } from "./recall";
 import { create_skill } from "./create_skill";
+import { use_skill } from "./use_skill";
 
 export const tools: Record<string, AppTool> = {
   // Phase 4: outputs, records, templates
@@ -36,12 +37,14 @@ export const tools: Record<string, AppTool> = {
   recall,
   // The user's own skills («مهاراتي»): every agent may save one when asked.
   create_skill,
+  // plans/09 §2: loads a skill from the prompt's index (mine, or the chat's space's).
+  use_skill,
 };
 
 /** Memory tools follow the employee's level and the chat («بلا ذاكرة»), not the agent's tool list. */
 export const MEMORY_TOOLS = ["remember", "recall"];
 /** Tools every agent gets, whatever its tool list: they only touch the user's own things. */
-export const PERSONAL_TOOLS = ["create_skill"];
+export const PERSONAL_TOOLS = ["create_skill", "use_skill"];
 
 export function getTool(name: string): AppTool | undefined {
   return Object.hasOwn(tools, name) ? tools[name] : undefined;

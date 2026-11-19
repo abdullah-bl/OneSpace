@@ -327,7 +327,8 @@ function Composer(props: {
   // "/": my skills. One per message; its "/name" stays in the text.
   const [slash, setSlash] = useState<string | null>(null);
   const [skill, setSkill] = useState<SkillRef | null>(props.initial?.skill ?? null);
-  const mySkills = useQuery(api.skills.list, slash !== null || skill ? {} : "skip");
+  // Mine, and this chat's space skills (plans/09 §2).
+  const mySkills = useQuery(api.skills.forChat, slash !== null || skill ? (props.space?.kind === "shared" ? { spaceId: props.space._id } : {}) : "skip");
   const skillItems = useMemo(() => {
     if (slash === null || !mySkills) return [];
     const q = slash.toLowerCase();
@@ -472,7 +473,7 @@ function Composer(props: {
           <MentionList items={items as (Mention & { detail: string })[]} active={active} onPick={pick} />
         )}
         {slash !== null && mySkills && (
-          <div className="absolute inset-x-2 bottom-full z-20 mb-2 max-h-72 animate-pop overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="listbox" aria-label="مهاراتي">
+          <div className="absolute inset-x-2 bottom-full z-20 mb-2 max-h-72 animate-pop overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="listbox" aria-label="المهارات">
             {skillItems.map((s, i) => (
               <button
                 key={s._id}
@@ -485,6 +486,7 @@ function Composer(props: {
                   /{s.name}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-muted">{s.title}</span>
+                {s.space && <span className="badge shrink-0">المساحة</span>}
                 <span className="max-w-[40%] shrink-0 truncate text-xs text-faint">{s.description}</span>
               </button>
             ))}

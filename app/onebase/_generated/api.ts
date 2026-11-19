@@ -74,7 +74,8 @@ import type * as module66 from "../tools/run_analysis";
 import type * as module67 from "../tools/search_documents";
 import type * as module68 from "../tools/types";
 import type * as module69 from "../tools/update_artifact";
-import type * as module70 from "../toolsAdmin";
+import type * as module70 from "../tools/use_skill";
+import type * as module71 from "../toolsAdmin";
 
 /** References to public functions, e.g. `api.messages.list`. */
 export const api: {
@@ -151,8 +152,9 @@ export const api: {
     search_documents: ApiFromModule<typeof module67, "public">;
     types: ApiFromModule<typeof module68, "public">;
     update_artifact: ApiFromModule<typeof module69, "public">;
+    use_skill: ApiFromModule<typeof module70, "public">;
   };
-  toolsAdmin: ApiFromModule<typeof module70, "public">;
+  toolsAdmin: ApiFromModule<typeof module71, "public">;
 } & { components: ComponentsApi<typeof components, "public"> } = anyApi;
 
 /** References to internal functions (callable from other functions only). */
@@ -230,6 +232,7 @@ export const internal: {
     search_documents: ApiFromModule<typeof module67, "internal">;
     types: ApiFromModule<typeof module68, "internal">;
     update_artifact: ApiFromModule<typeof module69, "internal">;
+    use_skill: ApiFromModule<typeof module70, "internal">;
   };
-  toolsAdmin: ApiFromModule<typeof module70, "internal">;
+  toolsAdmin: ApiFromModule<typeof module71, "internal">;
 } & { components: ComponentsApi<typeof components, "internal"> } = anyApi;

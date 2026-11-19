@@ -48,7 +48,8 @@ export const resolve = internalQuery({
     try {
       switch (tool) {
         case "create_skill":
-          return 1; // my own «مهاراتي» (chat.ts asks anyway unless I asked for a skill)
+          // My own «مهاراتي»: tier 1 (chat.ts asks anyway unless I asked for a skill). A space's skills are shared.
+          return a.scope === "space" ? 2 : 1;
         case "remember": {
           // My own memory: tier 1 (chat.ts asks anyway unless I asked for it). A space's memory is shared.
           if (a.scope !== "space") return 1;

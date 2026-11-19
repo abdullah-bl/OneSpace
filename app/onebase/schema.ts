@@ -416,7 +416,14 @@ export default defineSchema({
     uses: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_owner", ["ownerId", "name"]),
+    // plans/09 §2: a space skill. ownerId is who wrote it; a manager approves it (proposed → active).
+    spaceId: v.optional(v.id("spaces")),
+    state: v.optional(v.union(v.literal("active"), v.literal("proposed"))),
+    version: v.optional(v.number()),
+    approvedBy: v.optional(v.id("users")),
+  })
+    .index("by_owner", ["ownerId", "name"])
+    .index("by_space", ["spaceId", "state", "name"]),
 
   turns: defineTable({
     threadId: v.string(),
