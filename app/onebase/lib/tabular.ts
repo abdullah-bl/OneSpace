@@ -2,7 +2,8 @@
 // Done in code, never by the model. No dependencies: XLSX is a zip of XML, read with node:zlib.
 
 import { inflateRawSync } from "node:zlib";
-import type { Cell, Row } from "./ranking";
+export type Cell = string | number | null;
+export type Row = Record<string, Cell>;
 
 export type Table = { fields: string[]; rows: Row[] };
 

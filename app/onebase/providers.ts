@@ -151,7 +151,7 @@ export const resolved = internalQuery({
       const c = roles[r];
       if (!c) continue;
       const p = await ctx.db.get(c.providerId);
-      if (p?.enabled) out[r] = { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey };
+      if (p?.enabled) out[r] = { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey, provider: p.name };
     }
     return out;
   },

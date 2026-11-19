@@ -9,12 +9,8 @@ export const taskStatus = v.union(v.literal("new"), v.literal("inProgress"), v.l
 export const taskPriority = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
 // A task link: a file or a Phase 4 artifact, always in the task's own space (tasks.ts).
 export const taskLinkType = v.union(v.literal("file"), v.literal("artifact"));
-// Where a ranking snapshot came from (lib/records.ts): a CSV/XLSX file version, or one import
-// version of a Phase 4 record set. sha256 = the file's / the imported Excel file's hash.
-export const snapshotSource = v.union(
-  v.object({ kind: v.literal("file"), fileId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
-  v.object({ kind: v.literal("records"), recordSetId: v.string(), version: v.number(), name: v.string(), sha256: v.union(v.string(), v.null()) }),
-);
+export const listColumnType = v.union(v.literal("text"), v.literal("number"), v.literal("date"), v.literal("status"), v.literal("select"), v.literal("person"), v.literal("check"));
+export const listCell = v.union(v.string(), v.number(), v.boolean(), v.null());
 
 export default defineSchema({
   // The built-in auth fields plus OneSpace's account status. A missing status counts as
@@ -39,6 +35,8 @@ export default defineSchema({
     teamId: v.string(),
     name: v.string(),
     createdAt: v.number(),
+    // plans/11 step 3: whether outputs may be published for anyone with the link (admin; off by default).
+    publicPublishing: v.optional(v.boolean()),
   }).index("by_team", ["teamId"]),
 
   spaces: defineTable({
@@ -138,12 +136,135 @@ export default defineSchema({
     createdAt: v.number(),
   }).index("by_task", ["taskId", "createdAt"]),
 
-  // ---- Phase 5: sandbox runs and ranking ----
+  // «القوائم» (plans/10): a live table in a space, like a Notion database. Typed columns; rows
+  // edited in place by anyone who can write in the space, and by the assistant (create_list,
+  // update_list). Every open screen sees a change at once (reactive queries).
+  lists: defineTable({
+    spaceId: v.id("spaces"),
+    ownerId: v.id("users"),
+    title: v.string(),
+    description: v.optional(v.string()),
+    columns: v.array(v.object({ key: v.string(), name: v.string(), type: listColumnType, options: v.optional(v.array(v.string())) })),
+    view: v.union(v.literal("table"), v.literal("board")),
+    nextKey: v.number(),
+    rowCount: v.number(),
+    sourceThreadId: v.optional(v.string()),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_space", ["spaceId", "updatedAt"]),
 
-  // Every sandbox execution and every ranking calculation: what ran, on which inputs (hashes),
+  listRows: defineTable({
+    listId: v.id("lists"),
+    cells: v.record(v.string(), listCell),
+    order: v.number(),
+    createdBy: v.id("users"),
+    updatedBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_list", ["listId", "order"]),
+
+  // Model usage (admin «نظرة عامة»): one row per workspace day × model × purpose × employee,
+  // added to by every chat() call (ai.ts → usage.record). No prompt or answer text is kept.
+  aiUsage: defineTable({
+    day: v.string(), // YYYY-MM-DD in workspace time (ONESPACE_TZ_OFFSET_MIN)
+    model: v.string(),
+    provider: v.string(),
+    role: v.string(), // main | fast
+    purpose: v.string(),
+    userKey: v.string(), // the employee's id, or "-" for calls made for no one in particular
+    calls: v.number(),
+    failed: v.number(),
+    uncounted: v.number(), // calls whose server returned no token counts
+    prompt: v.number(),
+    completion: v.number(),
+    ms: v.number(),
+  })
+    .index("by_key", ["day", "model", "purpose", "userKey"])
+    .index("by_day", ["day"]),
+
+  // «النشر» (plans/11): an output version served at a fixed link from the content origin
+  // (PUBLISH_ORIGIN), never the app's. Step 1: private audiences only.
+  publications: defineTable({
+    artifactId: v.id("artifacts"),
+    version: v.number(),
+    slug: v.string(),
+    title: v.string(),
+    spaceId: v.id("spaces"),
+    audience: v.union(v.literal("space"), v.literal("workspace"), v.literal("public")),
+    state: v.union(v.literal("live"), v.literal("pending"), v.literal("revoked")),
+    formSecret: v.optional(v.string()), // public pages: the form token is derived from it (no session)
+    createdBy: v.id("users"),
+    approvedBy: v.optional(v.id("users")),
+    views: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    revokedAt: v.optional(v.number()),
+    // plans/11 step 2: a form under the page; each reply is a row of `listId` (same space).
+    form: v.optional(
+      v.object({
+        listId: v.id("lists"),
+        fields: v.array(v.object({ key: v.string(), required: v.boolean() })),
+        senderKey: v.optional(v.string()), // a person column filled with who sent it
+        thanks: v.optional(v.string()),
+        closesAt: v.optional(v.number()),
+        maxReplies: v.optional(v.number()),
+        onePerReader: v.boolean(),
+        replies: v.number(),
+        // A quiz: code marks each reply against the key and writes the score (and level) columns.
+        quiz: v.optional(
+          v.object({
+            answers: v.array(v.object({ key: v.string(), correct: v.string(), points: v.number() })),
+            scoreKey: v.string(),
+            levelKey: v.optional(v.string()),
+            bands: v.array(v.object({ min: v.number(), label: v.string() })),
+            showResult: v.boolean(),
+          }),
+        ),
+      }),
+    ),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_artifact", ["artifactId"])
+    .index("by_space", ["spaceId", "createdAt"])
+    .index("by_creator", ["createdBy", "createdAt"]),
+
+  // One-time tickets (app → content origin) and the short sessions they turn into (a cookie
+  // scoped to one page). Only hashes are stored.
+  publicationTickets: defineTable({
+    tokenHash: v.string(),
+    publicationId: v.id("publications"),
+    userId: v.id("users"),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_expiry", ["expiresAt"]),
+  publicationSessions: defineTable({
+    tokenHash: v.string(),
+    formTokenHash: v.optional(v.string()), // the page's form posts this (the cookie isn't sent from a sandboxed page)
+    publicationId: v.id("publications"),
+    userId: v.id("users"),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_form_hash", ["formTokenHash"])
+    .index("by_expiry", ["expiresAt"]),
+  formReplies: defineTable({
+    publicationId: v.id("publications"),
+    userId: v.id("users"), // for an anonymous reply on a public page: the publisher
+    anon: v.optional(v.boolean()),
+    rowId: v.string(),
+    at: v.number(),
+    score: v.optional(v.number()),
+    max: v.optional(v.number()),
+    level: v.optional(v.string()),
+  }).index("by_pub_user", ["publicationId", "userId", "at"]),
+
+  // ---- Phase 5: sandbox runs ----
+
+  // Every sandbox execution: what ran, on which inputs (hashes),
   // what came out, with which limits, and how it ended.
   runs: defineTable({
-    kind: v.union(v.literal("sandbox"), v.literal("ranking")),
+    kind: v.literal("sandbox"),
     userId: v.id("users"),
     spaceId: v.id("spaces"), // where the outputs went
     status: v.union(v.literal("running"), v.literal("done"), v.literal("failed")),
@@ -168,103 +289,12 @@ export default defineSchema({
     runtime: v.optional(v.string()),
     threadId: v.optional(v.string()),
     agentId: v.optional(v.string()),
-    rankingRunId: v.optional(v.string()),
+    skill: v.optional(v.object({ id: v.string(), name: v.string(), version: v.number(), script: v.string() })), // a skill's saved script, rerun (plans/09 §2)
     createdAt: v.number(),
     finishedAt: v.optional(v.number()),
   })
     .index("by_user", ["userId", "createdAt"])
     .index("by_space", ["spaceId", "createdAt"]),
-
-  // Versioned ranking criteria. A version is edited while draft; once approved it never changes
-  // and a change is a new version (same seriesId, version + 1).
-  rankingCriteria: defineTable({
-    spaceId: v.id("spaces"),
-    seriesId: v.string(),
-    version: v.number(),
-    name: v.string(),
-    description: v.optional(v.string()),
-    idField: v.string(),
-    nameField: v.string(),
-    criteria: v.array(
-      v.object({
-        field: v.string(),
-        label: v.string(),
-        weight: v.number(),
-        direction: v.union(v.literal("desc"), v.literal("asc")),
-        min: v.number(),
-        max: v.number(),
-      }),
-    ),
-    tieBreak: v.array(v.object({ field: v.string(), direction: v.union(v.literal("desc"), v.literal("asc")) })),
-    status: v.union(v.literal("draft"), v.literal("approved")),
-    specHash: v.string(),
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-    approvedBy: v.optional(v.id("users")),
-    approvedAt: v.optional(v.number()),
-  })
-    .index("by_space", ["spaceId"])
-    .index("by_series", ["seriesId", "version"]),
-
-  // The exact input of a ranking: the parsed table, stored as canonical JSON with its hash.
-  rankingSnapshots: defineTable({
-    spaceId: v.id("spaces"),
-    source: snapshotSource,
-    storageId: v.id("_storage"),
-    sha256: v.string(),
-    fields: v.array(v.string()),
-    rowCount: v.number(),
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-  }).index("by_space", ["spaceId"]),
-
-  // draft → approved by a human (space manager). Approved runs are never changed: a correction
-  // is a new run (correctsRunId) on the same or a new snapshot/criteria version.
-  rankingRuns: defineTable({
-    spaceId: v.id("spaces"),
-    criteriaId: v.id("rankingCriteria"),
-    criteriaVersion: v.number(),
-    criteriaHash: v.string(),
-    snapshotId: v.id("rankingSnapshots"),
-    snapshotHash: v.string(),
-    resultsHash: v.string(),
-    algorithm: v.string(),
-    count: v.number(),
-    status: v.union(v.literal("draft"), v.literal("approved")),
-    correctsRunId: v.optional(v.id("rankingRuns")),
-    createdBy: v.id("users"),
-    createdAt: v.number(),
-    approvedBy: v.optional(v.id("users")),
-    approvedAt: v.optional(v.number()),
-  }).index("by_space", ["spaceId", "createdAt"]),
-
-  // One row per student per run: rank, total and the per-criterion breakdown.
-  rankingResults: defineTable({
-    rankingRunId: v.id("rankingRuns"),
-    key: v.string(),
-    name: v.string(),
-    rank: v.number(),
-    total: v.number(),
-    breakdown: v.array(
-      v.object({
-        field: v.string(),
-        label: v.string(),
-        weight: v.number(),
-        direction: v.union(v.literal("desc"), v.literal("asc")),
-        min: v.number(),
-        max: v.number(),
-        raw: v.union(v.string(), v.number(), v.null()),
-        value: v.union(v.number(), v.null()),
-        normalized: v.number(),
-        points: v.number(),
-        missing: v.boolean(),
-        clamped: v.boolean(),
-      }),
-    ),
-    tieBreak: v.array(v.object({ field: v.string(), direction: v.union(v.literal("desc"), v.literal("asc")), value: v.union(v.number(), v.null()) })),
-  })
-    .index("by_run_rank", ["rankingRunId", "rank"])
-    .index("by_run_key", ["rankingRunId", "key"]),
 
   // Append-only: nothing in the app patches or deletes these rows.
   auditLog: defineTable({
@@ -298,6 +328,7 @@ export default defineSchema({
     sources: v.optional(v.array(v.id("dataSources"))), // allowed data sources (none = all the employee may see)
     spaceIds: v.optional(v.array(v.id("spaces"))), // team level: members of these shared spaces get it (unless they have their own)
     subagents: v.number(), // max parts a request may be split into (0 = no splitting)
+    memory: v.optional(v.boolean()), // plans/09: personal and space memory (missing = on)
     dailyQuestions: v.number(), // 0 = unlimited
     isDefault: v.boolean(),
     createdAt: v.number(),
@@ -356,6 +387,8 @@ export default defineSchema({
     taskId: v.optional(v.string()), // Phase 6: opened from a task ("اعمل عليها مع الوكيل")
     test: v.optional(v.boolean()), // an admin's "جرّب الوكيل" run: hidden from the chat list
     pinnedAt: v.optional(v.number()), // pinned to the top of my chat list (newest pin first)
+    noMemory: v.optional(v.boolean()), // «محادثة بلا ذاكرة»: no memory read or written in this chat (plans/09)
+    memoryScannedAt: v.optional(v.number()), // how many user messages the suggestion pass has read
     agentDraft: v.optional(v.boolean()), // test runs use the agent's unpublished draft
     // UX redesign: a chat started inside a space belongs to it (listed on the space page, scoped
     // to it, with its instructions and file list as context). Still private to its owner.
@@ -413,7 +446,20 @@ export default defineSchema({
     uses: v.number(),
     createdAt: v.number(),
     updatedAt: v.number(),
-  }).index("by_owner", ["ownerId", "name"]),
+    // plans/09 §2: a space skill. ownerId is who wrote it; a manager approves it (proposed → active).
+    spaceId: v.optional(v.id("spaces")),
+    state: v.optional(v.union(v.literal("active"), v.literal("proposed"))),
+    version: v.optional(v.number()),
+    approvedBy: v.optional(v.id("users")),
+    // plans/09 §2: what the skill carries besides instructions, kept from the chat it was saved from:
+    // the Python that worked (rerun as is on new files through run_analysis) and an example output
+    // whose shape the next answer keeps. `inputs`: the file names the script was written against.
+    files: v.optional(
+      v.array(v.object({ name: v.string(), kind: v.union(v.literal("script"), v.literal("example")), content: v.string(), inputs: v.optional(v.array(v.string())) })),
+    ),
+  })
+    .index("by_owner", ["ownerId", "name"])
+    .index("by_space", ["spaceId", "state", "name"]),
 
   turns: defineTable({
     threadId: v.string(),
@@ -489,6 +535,28 @@ export default defineSchema({
   })
     .index("by_user", ["userId", "createdAt"])
     .index("by_due", ["enabled", "nextRunAt"]),
+
+  // plans/09: what the assistant remembers. "user" items are the owner's alone (admins can't read
+  // them); "space" items are shared with the space's readers and written only by its managers
+  // (members propose). Every item is data in the prompt, never instructions. originSpaceId ties
+  // what was learned in a space's chat to that space: it is shown only while the owner can read it.
+  memories: defineTable({
+    scope: v.union(v.literal("user"), v.literal("space")),
+    ownerId: v.optional(v.id("users")), // user scope
+    spaceId: v.optional(v.id("spaces")), // space scope
+    text: v.string(),
+    kind: v.union(v.literal("fact"), v.literal("preference"), v.literal("decision"), v.literal("term")),
+    state: v.union(v.literal("active"), v.literal("proposed")),
+    how: v.union(v.literal("asked"), v.literal("auto"), v.literal("manual")), // the user asked / suggested by the model / typed on the page
+    by: v.id("users"),
+    threadId: v.optional(v.string()),
+    originSpaceId: v.optional(v.id("spaces")),
+    uses: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["ownerId", "state", "updatedAt"])
+    .index("by_space", ["spaceId", "state", "updatedAt"]),
 
   aiSettings: defineTable({ key: v.string(), value: v.any(), updatedAt: v.number() }).index("by_key", ["key"]),
 

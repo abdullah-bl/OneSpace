@@ -18,6 +18,7 @@ import { internal } from "./_generated/api";
 import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan, Denied, requireActive, requireUserId, roleAllows, spaceRoleOf, type Actor } from "./access";
 import { writeAudit } from "./audit";
+import { revokeForArtifact } from "./publications";
 import { artifactKind, cellValue } from "./outputsSchema";
 import { sha256Hex } from "./recordSources";
 import { renderDocument, type DocFormat } from "./lib/docExport";
@@ -404,6 +405,7 @@ export const remove = mutation({
 export async function deleteArtifactRows(ctx: MutationCtx, userId: Id<"users">, art: Doc<"artifacts">, via: string) {
   for (const row of await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id)).collect()) await ctx.db.delete(row._id);
   for (const t of await ctx.db.query("artifactTransfers").withIndex("by_artifact", (q) => q.eq("artifactId", art._id)).collect()) await ctx.db.delete(t._id);
+  await revokeForArtifact(ctx, userId, art._id);
   await ctx.db.delete(art._id);
   await writeAudit(ctx, { userId, action: "artifact.delete", resourceType: "artifact", resourceId: art._id, spaceId: art.spaceId, detail: { name: art.title, ...(via !== "user" ? { via } : {}) } });
 }

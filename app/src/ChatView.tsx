@@ -185,7 +185,12 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
             <span className="ms-auto" />
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            {data?.noMemory && (
+              <span className="flex shrink-0 items-center gap-1 rounded bg-raised px-2 py-0.5 text-xs text-muted" title="لا يقرأ المساعد الذاكرة ولا يحفظ فيها في هذه المحادثة">
+                <Icon name="memory" size={13} /> بلا ذاكرة
+              </span>
+            )}
+            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} noMemory={!!data?.noMemory} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
           </header>
         )}
         <div
@@ -230,8 +235,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   );
 }
 
-function ThreadMenu({ threadId, title, pinned, onDeleted, go }: { threadId: string; title: string; pinned: boolean; onDeleted: () => void; go: (path: string) => void }) {
+function ThreadMenu({ threadId, title, pinned, noMemory, onDeleted, go }: { threadId: string; title: string; pinned: boolean; noMemory: boolean; onDeleted: () => void; go: (path: string) => void }) {
   const rename = useMutation(api.chat.rename);
+  const setNoMemory = useMutation(api.chat.setNoMemory);
   const setPinned = useMutation(api.chat.setPinned);
   const del = useMutation(api.chat.deleteThread);
   const draftSkill = useAction(api.skills.draftFromThread);
@@ -256,6 +262,12 @@ function ThreadMenu({ threadId, title, pinned, onDeleted, go }: { threadId: stri
         },
         "divider",
         { label: pinned ? "إلغاء التثبيت" : "تثبيت في الأعلى", icon: "pin", onSelect: () => void setPinned({ threadId, pinned: !pinned }).catch((e) => void tell(errorText(e))) },
+        {
+          label: noMemory ? "شغّل الذاكرة في هذه المحادثة" : "محادثة بلا ذاكرة",
+          icon: "memory",
+          hint: noMemory ? undefined : "لا يقرأ الذاكرة ولا يحفظ فيها",
+          onSelect: () => void setNoMemory({ threadId, on: !noMemory }).catch((e) => void tell(errorText(e))),
+        },
         {
           label: "إعادة التسمية",
           icon: "pencil",
@@ -315,7 +327,8 @@ function Composer(props: {
   // "/": my skills. One per message; its "/name" stays in the text.
   const [slash, setSlash] = useState<string | null>(null);
   const [skill, setSkill] = useState<SkillRef | null>(props.initial?.skill ?? null);
-  const mySkills = useQuery(api.skills.list, slash !== null || skill ? {} : "skip");
+  // Mine, and this chat's space skills (plans/09 §2).
+  const mySkills = useQuery(api.skills.forChat, slash !== null || skill ? (props.space?.kind === "shared" ? { spaceId: props.space._id } : {}) : "skip");
   const skillItems = useMemo(() => {
     if (slash === null || !mySkills) return [];
     const q = slash.toLowerCase();
@@ -460,7 +473,7 @@ function Composer(props: {
           <MentionList items={items as (Mention & { detail: string })[]} active={active} onPick={pick} />
         )}
         {slash !== null && mySkills && (
-          <div className="absolute inset-x-2 bottom-full z-20 mb-2 max-h-72 animate-pop overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="listbox" aria-label="مهاراتي">
+          <div className="absolute inset-x-2 bottom-full z-20 mb-2 max-h-72 animate-pop overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="listbox" aria-label="المهارات">
             {skillItems.map((s, i) => (
               <button
                 key={s._id}
@@ -473,6 +486,7 @@ function Composer(props: {
                   /{s.name}
                 </span>
                 <span className="min-w-0 flex-1 truncate text-muted">{s.title}</span>
+                {s.space && <span className="badge shrink-0">المساحة</span>}
                 <span className="max-w-[40%] shrink-0 truncate text-xs text-faint">{s.description}</span>
               </button>
             ))}
@@ -795,9 +809,7 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
             ))}
           </div>
         ) : null}
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7" dir="auto">
-          {m.text}
-        </div>
+        <UserText text={m.text ?? ""} />
       </div>
     );
 
@@ -956,11 +968,42 @@ function proposalSummary(p: Proposal): string[] {
   if (a.title) out.push(`العنوان: ${a.title}`);
   if (a.kind) out.push(`النوع: ${a.kind}`);
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
+  if (p.tool === "publish_output") {
+    out.push(`لمن: ${a.audience === "public" ? "أي أحد معه الرابط (بلا تسجيل دخول)" : a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
+    if (a.form?.quiz) out.push(`اختبار يُصحَّح آلياً: ${Object.keys(a.form.quiz.answers ?? {}).length} سؤالاً`);
+    else if (a.form) out.push("نموذج تُحفظ ردوده في قائمة");
+    return out;
+  }
+  if (a.skill) out.push(`سكربت المهارة: /${a.skill}${a.script ? ` (${a.script})` : ""}`);
   if (Array.isArray(a.fileIds)) out.push(`الملفات: ${a.fileIds.length}`);
   if (a.templateId) out.push(`القالب: ${a.templateId}`);
   if (a.recordId) out.push(`السجل: ${a.recordId}`);
   if (a.artifactId) out.push(`المخرج: ${a.artifactId}`);
   return out;
+}
+
+/** Under a publish card: open the page, try it (nothing saved), copy the link, see the replies. */
+function PublishedLinks({ url, listId }: { url: string; listId?: string }) {
+  const [copied, setCopied] = useState(false);
+  if (!url) return null;
+  return (
+    <>
+      <a className="btn-secondary h-8" href={url} target="_blank" rel="noopener noreferrer">
+        <Icon name="globe" size={14} /> افتح الصفحة
+      </a>
+      <a className="btn-secondary h-8" href={`${url}?preview=1`} target="_blank" rel="noopener noreferrer" title="تفتح الصفحة والنموذج، وما ترسله لا يُحفظ">
+        <Icon name="eye" size={14} /> جرّبها
+      </a>
+      <button className="btn-secondary h-8" onClick={() => void navigator.clipboard?.writeText(url).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))}>
+        <Icon name={copied ? "check" : "copy"} size={14} /> {copied ? "نُسخ" : "انسخ الرابط"}
+      </button>
+      {listId && (
+        <a className="btn-secondary h-8" href={`#/list/${listId}`}>
+          <Icon name="table" size={14} /> الردود
+        </a>
+      )}
+    </>
+  );
 }
 
 function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id: string) => void }) {
@@ -1005,7 +1048,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         </pre>
       </details>
       {p.state === "executed" && p.display ? (
-        <p className="mt-1 text-sm text-ink">{p.display}</p>
+        <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
       ) : p.result &&
         (p.state === "executed" ? (
           <details className="mt-1 text-xs text-muted">
@@ -1036,6 +1079,12 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         {p.artifactIds.map((id) => (
           <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
         ))}
+        {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
+        {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
+          <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
+            <Icon name="table" size={14} /> افتح القائمة
+          </a>
+        )}
       </div>
       {error && <p className="mt-1 text-xs text-negative">{error}</p>}
       {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
@@ -1100,6 +1149,28 @@ export function Page({ title, sub, actions, children }: { title: string; sub?: R
       </div>
       {sub && <p className="mt-1 text-muted">{sub}</p>}
       <div className="mt-6">{children}</div>
+    </div>
+  );
+}
+
+/** A question bubble. A long paste (a document, a skill) is folded to its first lines, with «عرض الكل». */
+const FOLD_CHARS = 900;
+const FOLD_LINES = 14;
+function UserText({ text }: { text: string }) {
+  const lines = text.split("\n");
+  const long = text.length > FOLD_CHARS * 1.4 || lines.length > FOLD_LINES * 1.5;
+  const [open, setOpen] = useState(false);
+  const shown = !long || open ? text : lines.slice(0, FOLD_LINES).join("\n").slice(0, FOLD_CHARS);
+  return (
+    <div className="max-w-[85%] rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7">
+      <div className={`whitespace-pre-wrap [overflow-wrap:anywhere] ${long && !open ? "max-h-[22rem] overflow-hidden [mask-image:linear-gradient(to_bottom,black_70%,transparent)]" : ""}`} dir="auto">
+        {shown}
+      </div>
+      {long && (
+        <button className="mt-1 text-xs font-medium text-primary hover:underline" onClick={() => setOpen(!open)}>
+          {open ? "اطوِ النص" : `عرض الكل (${text.length} حرف)`}
+        </button>
+      )}
     </div>
   );
 }

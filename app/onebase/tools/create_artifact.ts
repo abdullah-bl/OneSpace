@@ -19,7 +19,9 @@ export const create_artifact: AppTool<Args> = {
     "Every table in an output is interactive automatically: a search box, sortable columns and a row count. So for a searchable or sortable page of data, " +
     "make a table output (or an HTML page with a <table>) — never paste page code into the chat. For a whole spreadsheet, use run_analysis to write the HTML/CSV to /output. " +
     "List the files/record sets/artifacts it was built from in `sources`; it is saved in their space (or the user's personal space). " +
-    "Outputs are not official documents: certificates are only produced with fill_template.",
+    "Outputs are not official documents: certificates are only produced with fill_template. " +
+    "Anything people must answer or fill in (a quiz, placement test, survey, registration, feedback) is NOT an HTML page with inputs or buttons (they don't work): " +
+    "make a list of the questions (create_list), this output as the intro page only, then publish_output with a form (and quiz key) bound to that list.",
   requiresConfirmation: true,
   parameters: {
     type: "object",
@@ -48,6 +50,7 @@ export const create_artifact: AppTool<Args> = {
   },
   async run(t, args) {
     const content = args.kind === "table" ? (args.table ?? args.content) : args.content;
+    if (typeof content === "string" ? !content.trim() : !content) throw new Error("المخرج فارغ: اكتب محتواه كاملاً");
     const sources = Array.isArray(args.sources) ? args.sources.map((s) => ({ type: s.type, id: String(s.id) })) : undefined;
     const r = await t.ctx.runMutation(internal.artifacts.createForUser, {
       userId: t.userId,

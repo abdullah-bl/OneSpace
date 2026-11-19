@@ -10,6 +10,7 @@ import { marked } from "marked";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
 import { frameAttributes } from "./sandbox";
+import { PublishBox } from "./PublishView";
 import { Icon, type IconName } from "./icons";
 import { EmptyState, Menu, type MenuItem, ask } from "./ui";
 
@@ -146,6 +147,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   const [draft, setDraft] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [details, setDetails] = useState(false);
+  const [publishing, setPublishing] = useState(false);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const body = useRef<HTMLDivElement>(null);
@@ -229,6 +231,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   ];
   const more: MenuItem[] = [
     { label: details ? "إخفاء التفاصيل" : "التفاصيل", icon: "eye", onSelect: () => setDetails(!details) },
+    { label: "انشر برابط…", icon: "globe", onSelect: () => setPublishing(true) },
     ...(kind !== "table" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
     ...(writable.length ? (["divider", ...writable.map((s): MenuItem => ({ label: `نقل إلى ${s.kind === "personal" ? "مساحتي" : s.name}`, icon: "folder", onSelect: () => moveTo(s._id) }))] as MenuItem[]) : []),
     ...(canWrite
@@ -287,6 +290,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
         <Menu label={busy ? "يجهّز الملف…" : "تنزيل"} icon="download" items={downloads.map((m) => (m === "divider" ? m : { ...m, disabled: !!busy }))} />
         <Menu label="المزيد" items={more} />
       </header>
+      {publishing && <PublishBox artifactId={artifactId} onClose={() => setPublishing(false)} />}
 
       {(error || note || busy) && (
         <div className="shrink-0 px-3 pt-2">

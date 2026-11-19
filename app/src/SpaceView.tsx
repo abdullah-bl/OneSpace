@@ -12,9 +12,12 @@ import { AuditTable } from "./AuditView";
 import { STATUS, TaskBoard } from "./TasksView";
 import { Menu, type MenuItem, ask } from "./ui";
 import { SpaceInstructions } from "./SpaceInstructions";
+import { SpaceMemory } from "./MemoryView";
+import { SpaceSkills } from "./SpaceSkills";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
 import { DocumentsTab } from "./DocumentsView";
+import { SpaceLists } from "./ListView";
 import { askAboutFile, Page, relTime, startChatWith } from "./ChatView";
 
 /** "المساحات": my personal space and the shared spaces I can read. */
@@ -63,6 +66,7 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
     { id: "overview", label: "المحادثات", show: true },
     { id: "files", label: "الملفات", show: true },
     { id: "tasks", label: "المهام", show: hasTasks },
+    { id: "lists", label: "القوائم", show: true },
     { id: "outputs", label: "المخرجات", show: true },
     { id: "records", label: "السجلات", show: shared },
     { id: "documents", label: "القوالب والمستندات", show: shared },
@@ -117,6 +121,7 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
       <div className="mt-6">
         {current === "overview" && <Overview space={space} hasTasks={hasTasks} go={go} />}
         {current === "files" && <FilesPanel space={space} spaces={spaces} />}
+        {current === "lists" && <SpaceLists spaceId={space._id} go={go} />}
         {current === "outputs" && <OutputsTab space={space} spaces={spaces} />}
         {current === "records" && shared && <RecordsTab space={space} />}
         {current === "documents" && shared && <DocumentsTab space={space} />}
@@ -136,7 +141,6 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
   const threads = useQuery(api.chat.spaceThreads, { spaceId: space._id });
   const files = useQuery(api.files.list, { spaceId: space._id as any });
   const ingest = useQuery(api.ingest.statuses, { spaceId: space._id as any });
-  const info = useQuery(api.spaces.get, { spaceId: space._id as any });
   const tasks = useQuery(api.tasks.board, hasTasks ? { spaceId: space._id as any } : "skip");
   const members = useQuery(api.spaces.members, space.kind === "shared" ? { spaceId: space._id as any } : "skip");
   const [allChats, setAllChats] = useState(false);
@@ -222,14 +226,26 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
         {space.kind === "shared" ? (
           <Panel title="التعليمات" hint="يقرؤها المساعد في كل محادثة هنا">
             <SpaceInstructions space={space} />
-            {info?.instructions === null && !space.canManage && <p className="text-sm text-muted">لا تعليمات لهذه المساحة.</p>}
           </Panel>
+        ) : null}
+        {space.kind === "shared" ? (
+          <>
+            <Panel title="مهارات المساحة" hint="طرق عمل الفريق: اكتب / في المحادثة">
+              <SpaceSkills spaceId={space._id} />
+            </Panel>
+            <Panel title="ذاكرة المساحة" hint="قرارات الفريق واصطلاحاته ومصطلحاته">
+              <SpaceMemory spaceId={space._id} />
+            </Panel>
+          </>
         ) : (
           <section className="rounded-xl bg-sunken p-4 text-sm">
             <div className="flex items-center gap-2 font-medium">
               <Icon name="lock" size={15} /> مساحتك الخاصة
             </div>
             <p className="mt-1.5 leading-6 text-muted">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. ما يُنشئه المساعد لك يُحفظ هنا. للمشاركة انقل الملف أو انسخه إلى مساحة مشتركة.</p>
+            <a href="#/memory" className="mt-2 inline-flex items-center gap-1 text-primary hover:underline">
+              <Icon name="memory" size={14} /> ما يتذكّره المساعد عنك
+            </a>
           </section>
         )}
         <Panel

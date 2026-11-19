@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { httpAction } from "./_generated/server";
 import { requireUserId } from "./access";
 import { registerDocumentRoutes } from "./documentsHttp";
+import { registerPublicationRoutes } from "./publicationsHttp";
 
 const http = httpRouter();
 
@@ -65,5 +66,7 @@ http.route({
 
 // Phase 4: issued documents (/document) and public verification (/verify).
 registerDocumentRoutes(http);
+// plans/11: published pages, on the content origin only.
+registerPublicationRoutes(http);
 
 export default http;

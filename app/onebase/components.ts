@@ -48,6 +48,10 @@ export default defineComponents({
     rates: {
       // Per user: bursts of CHAT_BURST questions (6), then CHAT_RATE_PER_MIN per minute (10).
       chatTurn: { kind: "token bucket", rate: Number(process.env.CHAT_RATE_PER_MIN || 10), period: MINUTE, capacity: Number(process.env.CHAT_BURST || 6) },
+      // Public pages (plans/11 step 3), per client address: views, form replies; and replies per page.
+      publicView: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 30 },
+      publicReply: { kind: "token bucket", rate: 4, period: MINUTE, capacity: 3 },
+      publicReplyPerPage: { kind: "token bucket", rate: 120, period: MINUTE, capacity: 60 },
     },
   }),
 });

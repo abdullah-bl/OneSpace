@@ -23,20 +23,28 @@ import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { onCompleteArgs } from "onebase/components/work-queue";
 import { actorFor, assertCan, assertTaskCan, canBeAssignee, Denied, requireActive, requireUserId, taskRoleAllows } from "./access";
-import { agentTools, effectiveScope, groundingOf, narrowByMentions, resolveAgent } from "./agents";
+import { agentTools, effectiveScope, groundingOf, MAX_STEPS_LIMIT, MIN_STEPS, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
 import { queueTurn } from "./lib/turns";
-import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi } from "./ai";
+import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
-import { tools as registry } from "./tools";
+import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
+
+/** Platform tools: a round that uses only these doesn't count against the agent's tool rounds. */
+const PLATFORM_STEP_FREE = new Set([...PERSONAL_TOOLS, ...MEMORY_TOOLS]);
+/** Every tool round of one answer, whatever counts. */
+const HARD_STEPS = 24;
+import { maskSecrets } from "./lib/secrets";
+import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId, undoMemories } from "./memory";
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
-import type { AppTool, Citation, ToolContext } from "./tools/types";
+import type { AppTool, Citation, ToolContext, ToolResult } from "./tools/types";
 import { autoRunEnabled, type Tier } from "./tiers";
 import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
-import { ownSkill } from "./skills";
+import { listIndex, undoLists } from "./lists";
+import { ownSkill, skillFilesText, skillIndex, undoSkills, type SkillFile } from "./skills";
 
 /** A positive number from the environment, or the default. */
 const envNum = (k: string, d: number) => {
@@ -56,6 +64,9 @@ const turnMaxCompletion = () => Number(process.env.TURN_MAX_COMPLETION_TOKENS ??
 const MAX_SANDBOX_RUNS = 3;
 const STOP_NOTE = "\n\n*(أُوقفت الإجابة)*";
 const STOPPED_BEFORE_START = "أوقفتَ الإجابة قبل أن تبدأ";
+/** Said with the last-round nudge, so a cut-short answer says what is left instead of inventing a reason. */
+const UNFINISHED_NOTE =
+  "إن بقي من طلب المستخدم شيء لم تنفّذه بأداة (نشر، إنشاء، تعديل)، فقل ذلك صراحةً في جملة: ما الذي بقي، واطلب منه أن يكتب «أكمل» لتتمّه. لا تخترع سبباً ولا تقل إنه يحتاج خطوة يدوية منه.";
 const BUDGET_NOTE = "انتهى الوقت المتاح لهذه الإجابة: اذكر باختصار ما أنجزته وما بقي.";
 /** What a proposal keeps of its tool's output (shown on its card, and read by the follow-up answer). */
 const MAX_RUN_RESULT = envNum("CHAT_MAX_RUN_RESULT_CHARS", 24_000);
@@ -317,6 +328,16 @@ export const setPinned = mutation({
 });
 const MAX_PINNED = 20;
 
+/** «محادثة بلا ذاكرة»: this chat neither reads nor writes memory, and isn't searched by recall. */
+export const setNoMemory = mutation({
+  args: { threadId: v.string(), on: v.boolean() },
+  handler: async (ctx, { threadId, on }) => {
+    const me = await requireActive(ctx);
+    const meta = await ownThread(ctx, me.userId, threadId);
+    await ctx.db.patch(meta._id, { noMemory: on || undefined });
+  },
+});
+
 /** Picks the agent for my thread (null = the default agent). Test threads keep their draft agent. */
 export const setAgent = mutation({
   args: { threadId: v.string(), agentId: v.union(v.string(), v.null()) },
@@ -419,7 +440,21 @@ export const messages = query({
     const proposals = new Map<string, ReturnType<typeof shapeProposal>[]>();
     for (const p of await ctx.db.query("proposals").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) {
       if (!proposals.has(p.messageId)) proposals.set(p.messageId, []);
-      proposals.get(p.messageId)!.push(shapeProposal(p, now));
+      const shaped = shapeProposal(p, now);
+      // An output removed since («تراجع», deleted, moved away) gets no chip: opening it would fail.
+      const live: string[] = [];
+      for (const aid of shaped.artifactIds) {
+        const nid = ctx.db.normalizeId("artifacts", aid);
+        const art = nid ? await ctx.db.get(nid) : null;
+        if (!art) continue;
+        try {
+          await assertCan(ctx, me.userId, art.spaceId, "read");
+          live.push(aid);
+        } catch {
+          // moved to a space this reader can't open
+        }
+      }
+      proposals.get(p.messageId)!.push({ ...shaped, artifactIds: live });
     }
     // The skill (agent) behind each answer, by name, for its chip.
     const agentNames = new Map<string, string>();
@@ -483,6 +518,7 @@ export const messages = query({
     return {
       title: meta.title,
       pinned: !!meta.pinnedAt,
+      noMemory: !!meta.noMemory,
       scope: meta.scope,
       scopeLabel: await scopeLabel(ctx, meta.scope, me.userId),
       spaceId: spaceName ? (meta.spaceId ?? null) : null,
@@ -568,8 +604,8 @@ export const send = mutation({
     meta = (await ctx.db.get(meta._id))!;
     const agent = await resolveAgent(ctx, me.userId, meta);
     if ("error" in agent) throw new OneBaseError(agent.error);
-    // "/name": only my own skill (someone else's id answers like a missing one).
-    const skill = await ownSkill(ctx, me.userId, skillId);
+    // "/name": my own skill, or an active skill of this chat's space (anything else answers like a missing one).
+    const skill = await ownSkill(ctx, me.userId, skillId, threadSpaceId(ctx, meta));
     if (skill) await ctx.db.patch(skill._id, { uses: skill.uses + 1 });
     const turnId = await queueTurn(ctx, { threadId, userId: me.userId, text: question, agentId: agent.agentId, agentVersion: agent.version, mentions: narrow.length ? narrow : undefined, skillId: skill?._id, effort });
     const now = Date.now();
@@ -699,18 +735,23 @@ function shapeProposal(p: ProposalDoc, now: number) {
   };
 }
 
-/** The asker's "/name" skill for a turn, if it still exists and is still theirs. */
-async function turnSkill(ctx: QueryCtx, turn: Doc<"turns">) {
+/** The asker's "/name" skill for a turn, if it is still usable (theirs, or still active in this chat's space). */
+async function turnSkill(ctx: QueryCtx, turn: Doc<"turns">, spaceId: Id<"spaces"> | null) {
   if (!turn.skillId) return null;
-  const s = await ctx.db.get(turn.skillId);
-  return s && s.ownerId === turn.userId ? { name: s.name, title: s.title, instructions: s.instructions } : null;
+  try {
+    const s = await ownSkill(ctx, turn.userId, turn.skillId, spaceId);
+    return s ? { name: s.name, title: s.title, instructions: s.instructions, space: !!s.spaceId, files: s.files ?? [] } : null;
+  } catch {
+    return null;
+  }
 }
 
-/** The user's skill joins the system prompt as the user's own instructions, under the agent's rules. */
-function skillBlock(skill: { name: string; title: string; instructions: string } | null) {
-  return skill
-    ? `\n\n---\nطلب المستخدم أن تطبّق مهارته «${skill.title}» (/${skill.name}). هذه تعليماته هو لطريقة أداء هذا الطلب؛ اتبعها ما لم تخالف قواعدك أعلاه أو صلاحياته:\n${skill.instructions}`
-    : "";
+/** The skill joins the system prompt as instructions for this request, under the agent's rules. */
+function skillBlock(skill: { name: string; title: string; instructions: string; space?: boolean; files?: SkillFile[] } | null) {
+  if (!skill) return "";
+  const who = skill.space ? `مهارة المساحة «${skill.title}» (/${skill.name})، وقد اعتمدها مديرو المساحة` : `مهارته «${skill.title}» (/${skill.name})، وهي تعليماته هو`;
+  const files = skillFilesText(skill.name, skill.files);
+  return `\n\n---\nطلب المستخدم أن تطبّق ${who}. اتبعها لطريقة أداء هذا الطلب ما لم تخالف قواعدك أعلاه أو صلاحياته:\n${skill.instructions}${files ? `\n\n${files}` : ""}`;
 }
 
 export const turnContext = internalQuery({
@@ -729,11 +770,25 @@ export const turnContext = internalQuery({
     // The agent, resolved now (an admin may have disabled or narrowed it since the question was sent).
     // The router's pick is resolved like a user's pick: enabled, published, visible to this user.
     const agent = await resolveAgent(ctx, turn.userId, agentOverride ? { agentId: agentOverride } : meta);
-    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false, skill: null };
+    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false, skill: null, memory: { on: false, autoSave: false } };
     // Scope = readable spaces right now ∩ the agent's data scope ∩ the thread's scope chips
     // (∩ what the question @mentions: narrowing only).
     const { spaceIds, fileIds } = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId, agent.config.dataScope, meta.scope), mentions);
     const context = [...(await turnExtraContext(ctx, turn.userId, meta, spaceIds)), ...(await mentionContext(ctx, mentions, spaceIds, fileIds))];
+    // Memory (plans/09): the asker's index and the space's, unless the level or this chat turns it off.
+    const memory = !meta.test && !meta.noMemory && level.memory;
+    if (memory) context.push(...(await memoryContext(ctx, turn.userId, meta, spaceIds)));
+    // Skills (plans/09 §2): one line each, mine and the chat's space's; use_skill loads one.
+    if (!meta.test) {
+      const here = threadSpaceId(ctx, meta);
+      const index = await skillIndex(ctx, turn.userId, here && spaceIds.includes(here) ? here : null);
+      if (index) context.push(index);
+      // Lists (plans/10): the chat's space's and my own, so «وش باقي من مهامي؟» reads the live list.
+      const personal = (await ctx.db.query("spaces").withIndex("by_owner", (q) => q.eq("ownerId", turn.userId)).collect()).find((x) => x.kind === "personal");
+      const listSpaces = [...new Set([here, personal?._id].filter((x): x is Id<"spaces"> => !!x && spaceIds.includes(x)))];
+      const lists = await listIndex(ctx, turn.userId, listSpaces);
+      if (lists) context.push(lists);
+    }
     // External data sources this employee may read (only if the agent and level allow the tool).
     if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
       const sources = sourcesContext(await sourcesFor(ctx, turn.userId));
@@ -778,7 +833,7 @@ export const turnContext = internalQuery({
         draft: agent.draft,
         name: agent.config.name,
         instructions: agent.config.instructions,
-        allowedTools: levelTools(level, agentTools(agent.config)),
+        allowedTools: [...levelTools(level, agentTools(agent.config)), ...(memory ? MEMORY_TOOLS : []), ...PERSONAL_TOOLS],
         modelRole: level.model === "fast" ? ("fast" as const) : agent.config.modelRole,
         maxSteps: agent.config.maxSteps,
         grounding: groundingOf(agent.config),
@@ -801,7 +856,9 @@ export const turnContext = internalQuery({
       scheduled: !!turn.scheduleId,
       afterRun,
       afterRunMissing: !!turn.afterProposal && !afterRun,
-      skill: await turnSkill(ctx, turn),
+      skill: await turnSkill(ctx, turn, threadSpaceId(ctx, meta)),
+      // A personal save runs without «نفّذ» only when the person asked for it, outside sensitive spaces.
+      memory: { on: memory, autoSave: memory && !(await sensitiveOrigin(ctx, meta)) },
     };
   },
 });
@@ -1078,7 +1135,7 @@ function hitToSource(h: Hit, n: number): Source {
   return { n, fileId: h.fileId, fileName: h.fileName, page: h.page, section: h.section, quote: h.text, spaceId: h.spaceId };
 }
 
-async function rewriteQuery(question: string, history: { role: string; text: string }[], summary: string | null): Promise<string> {
+async function rewriteQuery(question: string, history: { role: string; text: string }[], summary: string | null, track?: UsageTrack): Promise<string> {
   if (!history.length && !summary) return question;
   const convo =
     (summary ? `ملخص ما سبق: ${summary.slice(0, 1200)}\n` : "") +
@@ -1088,6 +1145,7 @@ async function rewriteQuery(question: string, history: { role: string; text: str
       .join("\n");
   try {
     const r = await chat({
+      ...(track ? { track } : {}),
       role: "fast",
       maxTokens: 120,
       temperature: 0,
@@ -1118,7 +1176,7 @@ export const runTurn = internalAction({
     let wantSplit = false;
     if (pre.route && pre.route.candidates.length > 1) {
       const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: "يختار الوكيل…" });
-      const pick = await pickSkill(pre.route);
+      const pick = await pickSkill(pre.route, { ctx, purpose: "route", turnId });
       routedTo = pick.agentId;
       routerDeep = pick.deep;
       wantSplit = !!pick.split;
@@ -1198,9 +1256,10 @@ export const runTurn = internalAction({
 
     const finish = async (raw: string, abstained: boolean) => {
       await writer.flush();
-      const text = scrubIds(raw, [...sources.map((s) => s.fileId), ...(c.fileIds ?? [])]);
+      // A key or password the model read (or was handed) is never shown back in full.
+      const text = maskSecrets(scrubIds(raw, [...sources.map((s) => s.fileId), ...(c.fileIds ?? [])]));
       const used = new Set([...text.matchAll(/\[(\d+)\]/g)].map((m) => Number(m[1])));
-      const citations = abstained ? [] : sources.filter((s) => used.has(s.n)).map((s) => ({ n: s.n, fileId: s.fileId, fileName: s.fileName, page: s.page, section: s.section, quote: s.quote.slice(0, 600) }));
+      const citations = abstained ? [] : sources.filter((s) => used.has(s.n)).map((s) => ({ n: s.n, fileId: s.fileId, fileName: s.fileName, page: s.page, section: s.section, quote: maskSecrets(s.quote.slice(0, 600)) }));
       await ctx.runMutation(internal.chat.finishTurn, {
         turnId,
         text,
@@ -1216,7 +1275,7 @@ export const runTurn = internalAction({
         expiresAt: Date.now() + (c.scheduled ? Math.max(proposalTtl(), SCHEDULED_PROPOSAL_TTL) : proposalTtl()),
       });
       // The answer is saved and shown; now fold the oldest messages into the chat's summary.
-      if (c.compact) await compactThread(ctx, c.turn.threadId, c.compact);
+      if (c.compact) await compactThread(ctx, c.turn.threadId, c.compact, turnId);
     };
 
     const open = agent.grounding === "open";
@@ -1233,6 +1292,7 @@ export const runTurn = internalAction({
         toolRuns.push({ name: run.tool, label: run.label, args: null, ok: true, summary: run.result.slice(0, 200) });
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يكتب الإجابة…" });
         const res = await chat({
+          track: { ctx, purpose: "answer", turnId },
           role: agent.modelRole,
           maxTokens: answerTokens,
           thinking: think,
@@ -1262,7 +1322,7 @@ export const runTurn = internalAction({
       // this agent writes one answer from their results. The level caps how many parts.
       if (wantSplit && pre.route && c.level.subagents >= 2) {
         const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: "يقسّم المهمة…" });
-        const plan = await planParts(pre.route, c.level.subagents);
+        const plan = await planParts(pre.route, c.level.subagents, { ctx, purpose: "plan", turnId });
         await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: true, detail: plan.length ? `${plan.length} أجزاء` : "مهمة واحدة" });
         if (plan.length) {
           await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يعمل على الأجزاء…" });
@@ -1294,12 +1354,19 @@ export const runTurn = internalAction({
       const search = registry.search_documents!;
       // Document-only agents always search first (and abstain on nothing). Open agents look only
       // when there is something in scope to look in, and the model may also search by itself.
-      const retrieve = !parts.length && allowed.has(search.name) && (!open || c.spaceIds.length > 0);
+      // A long pasted text is the material itself, not a search: open agents don't pre-search with
+      // it (a whole pasted document matches unrelated files); the model can still search by itself.
+      const pasted = c.question.length > LONG_PASTE;
+      // A request to make something new («سوّ لي اختباراً…») that doesn't point at the files isn't a
+      // question about them: open agents don't pre-search (it only brings unrelated passages); the
+      // model can still search if the task needs the files.
+      const making = !c.focused && makingRequest(c.question);
+      const retrieve = !parts.length && allowed.has(search.name) && (!open || (c.spaceIds.length > 0 && !pasted && !making));
       let shown = 0;
       if (retrieve) {
         // 1. Rewrite a follow-up ("وكم مدتها؟") into a standalone search query.
         if (c.history.length || c.summary) await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يفهم السؤال…" });
-        const query = await rewriteQuery(c.question, c.history, c.summary);
+        const query = (await rewriteQuery(c.question, c.history, c.summary, { ctx, purpose: "rewrite", turnId })).slice(0, MAX_QUERY);
 
         // 2. Retrieval before the first generation: the safety net if the model calls no tool.
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: search.label });
@@ -1343,7 +1410,10 @@ export const runTurn = internalAction({
         ...c.history.map((m): ChatMsg => (m.role === "user" ? { role: "user", content: m.text } : { role: "assistant", content: m.text })),
         { role: "user", content: prompt },
       ];
-      const maxSteps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, 1), 8);
+      // Tool rounds: the agent's own (at least MIN_STEPS), and rounds that only use the platform's own
+      // tools (lists, publishing, skills, memory) don't count against it. HARD_STEPS bounds the turn.
+      const maxSteps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, MIN_STEPS), MAX_STEPS_LIMIT);
+      let agentSteps = 0;
       let answer = "";
       let forceFinal = false;
       let overBudget = false;
@@ -1356,11 +1426,12 @@ export const runTurn = internalAction({
           forceFinal = true;
           overBudget = true;
         }
-        const last = step >= maxSteps - 1 || forceFinal || specs.length === 0;
-        if (last && step > 0) messages.push({ role: "user", content: (open ? FINAL_NUDGE_OPEN : FINAL_NUDGE) + (overBudget ? " " + BUDGET_NOTE : "") });
+        const last = agentSteps >= maxSteps - 1 || step >= HARD_STEPS - 1 || forceFinal || specs.length === 0;
+        if (last && step > 0) messages.push({ role: "user", content: (open ? FINAL_NUDGE_OPEN : FINAL_NUDGE) + " " + (overBudget ? BUDGET_NOTE : UNFINISHED_NOTE) });
         let res: Awaited<ReturnType<typeof chat>>;
         try {
           res = await chat({
+            track: { ctx, purpose: "answer", turnId },
             role: agent.modelRole,
             messages,
             tools: last ? undefined : specs,
@@ -1391,6 +1462,7 @@ export const runTurn = internalAction({
           continue;
         }
         if (!res.toolCalls.length || last) break;
+        if (!res.toolCalls.every((tc) => PLATFORM_STEP_FREE.has(tc.name))) agentSteps++;
         if (await stopped(true)) throw new Error("stopped");
         messages.push({ role: "assistant", content: res.text || null, tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.rawArgs || "{}" } })) });
         // Each call is classified first: refused, a card waiting for «نفّذ» (tier 2–3), run now
@@ -1410,7 +1482,7 @@ export const runTurn = internalAction({
             // A page that builds itself with its own script would show up empty (outputs run only our
             // table tools): turned back at once with the fix, so the model retries in this answer.
             plans.push({ tc, tool, kind: "refused", content: pageScriptProblem(tool.name, tc.args)! });
-            toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "صفحة بسكربت: أُعيدت للتعديل" });
+            toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "أُعيد للتعديل" });
           } else if (tool.requiresConfirmation) {
             const size = JSON.stringify(tc.args ?? null).length;
             if ((tc.args as any)?.__invalid !== undefined || size > MAX_PROPOSAL_ARGS || proposals.length + autoRuns.length >= MAX_PROPOSALS_PER_TURN) {
@@ -1418,7 +1490,12 @@ export const runTurn = internalAction({
               toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "اقتراح مرفوض" });
               continue;
             }
-            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds });
+            let tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds, threadId: c.turn.threadId });
+            // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
+            // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
+            if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
+            // Same for a skill: saved at once only when the person's own message asks for one.
+            if (tool.name === "create_skill" && tier === 1 && !asksForSkill(c.question)) tier = 2;
             plans.push({ tc, tool, kind: tier === 1 && autoRunEnabled() ? "auto" : "proposal", tier });
           } else plans.push({ tc, tool, kind: "read" });
         }
@@ -1492,7 +1569,8 @@ export const runTurn = internalAction({
       if (!answer && proposals.length) answer = `اقترحتُ ما يلي، ولن يُنفَّذ إلا إذا ضغطت «نفّذ»: ${proposals.map((p) => p.label.replace(/…$/, "")).join("، ")}.`;
       const abstained = !proposals.length && !autoRuns.length && (!answer || (ABSTAIN_RE.test(answer) && !/\[\d+\]/.test(answer)));
       await finish(answer || ABSTAIN_TEXT, abstained);
-      if (c.titlePending) await nameThread(ctx, c.turn.threadId, c.question, answer);
+      if (c.titlePending) await nameThread(ctx, c.turn.threadId, c.question, answer, turnId);
+      if (c.memory.on && !c.scheduled) await ctx.scheduler.runAfter(0, internal.memory.suggest, { threadId: c.turn.threadId });
     } catch (err) {
       if (stopper.signal.aborted) {
         // Stopped by the user: keep what was written (and anything already done), say it stopped.
@@ -1512,12 +1590,32 @@ export const runTurn = internalAction({
  * table search, sort and a row count). A page whose content comes from its own script would be empty,
  * so such a call is sent back with what to do instead. Null when the call is fine.
  */
+/** A long message is pasted material (a document, a skill), not a question to search with. */
+const LONG_PASTE = 1500;
+
+const MAKE_RE = /^\s*(?:(?:لو سمحت|ممكن|أبي|ابي|ابغى|أبغى|اريد|أريد|ودي|تقدر)\s+)?(?:ت?سو(?:ي|ّ|ّي)?|ت?نشئ|أنشئ|انشئ|ت?كتب|اكتب|ت?صمم|صمّم|جهز|جهّز|تجهز|حضر|حضّر|اعمل|ابن|ارسم|ترجم|صغ|ألّف|الف|اصنع|سوو)(?=\s|$)/;
+const FILE_RE = /ملف|ملفات|مستند|المرفق|لائحة|اللائحة|سياسة|السياسة|نظام|النظام|@/;
+/** «سوّ لي…/اكتب…/أنشئ…» without pointing at files, policies or an @mention. */
+export function makingRequest(q: string) {
+  return MAKE_RE.test(q) && !FILE_RE.test(q);
+}
+const MAX_QUERY = 600;
+
+/** The person's own message asks for a skill ("اكتبها كمهارة", "save as a skill", a SKILL.md). */
+export function asksForSkill(question: string) {
+  return /(مهار[ةه]|مهاراتي|\bskill\b|SKILL\.md)/i.test(question);
+}
+
 export function pageScriptProblem(tool: string, args: unknown): string | null {
   const a = (args ?? {}) as Record<string, unknown>;
   const fix =
     "لم يُقترح هذا: صفحات المخرجات لا تشغّل سكربتاتها، فالجدول الذي يبنيه سكربت يظهر فارغاً. " +
     "اكتب البيانات نفسها جدولاً في الصفحة (في Python: df.to_html(index=False) داخل الصفحة)، دون <script>. " +
     "البحث والترتيب وعدّاد الصفوف تُضاف لكل جدول تلقائياً. أعد الاستدعاء بهذا الشكل.";
+  if (tool === "create_artifact") {
+    const empty = a.kind === "table" ? !(a.table as any)?.rows?.length && !String(a.content ?? "").trim() : !String(a.content ?? "").trim();
+    if (empty) return "لم يُقترح هذا: المخرج فارغ. اكتب محتواه كاملاً في الاستدعاء نفسه (content، أو table للجدول)، ولا تنشئ مخرجاً لتكمله لاحقاً.";
+  }
   if (tool === "run_analysis" && typeof a.code === "string" && /<script/i.test(a.code) && /\.html?\b/i.test(a.code)) return fix;
   if ((tool === "create_artifact" || tool === "update_artifact") && typeof a.content === "string" && /<script/i.test(a.content)) return fix;
   return null;
@@ -1526,7 +1624,7 @@ export function pageScriptProblem(tool: string, args: unknown): string | null {
 // ---------------------------------------------------------------- sub-agents (plans/08 §A)
 
 type PartOut = { agent: string; goal: string; text: string; ok: boolean; ms: number; usage: { prompt: number; completion: number } };
-const PART_STEPS = 4;
+const PART_STEPS = 8;
 const PART_NOTE =
   "\n\n---\nأنت تنجز جزءاً واحداً من طلب أكبر، وسيجمع وكيل آخر نتائج الأجزاء في إجابة واحدة للموظف. اكتب نتيجة جزئك فقط: الحقائق والأرقام وما وجدته، مختصرة ومنظّمة، واستشهد بأرقام المصادر كما هي [n]. لا مقدمة ولا خاتمة، ولا تطلب تأكيداً، ولا تنشئ ملفات.";
 
@@ -1587,11 +1685,11 @@ async function runPart(
       { role: "system", content: buildSystemPrompt(agent, pc.context, agent.grounding) + PART_NOTE },
       { role: "user", content: `الطلب الكامل (للسياق فقط): ${o.question}\n\nجزؤك: ${o.part.goal}` + (found.length ? `\n\nمقاطع قد تتعلق بجزئك:\n\n${renderSources(found)}` : "") },
     ];
-    const steps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, 1), PART_STEPS);
+    const steps = Math.min(Math.max(Math.floor(agent.maxSteps) || 1, MIN_STEPS), PART_STEPS);
     for (let step = 0; ; step++) {
       if (o.signal.aborted) throw new Error("stopped");
       const last = step >= steps - 1 || !specs.length;
-      const res = await chat({ role: agent.modelRole, messages, tools: last ? undefined : specs, maxTokens: 3000 + (o.think ? 4096 : 0), thinking: o.think, signal: o.signal });
+      const res = await chat({ track: { ctx, purpose: "part", turnId: o.turnId }, role: agent.modelRole, messages, tools: last ? undefined : specs, maxTokens: 3000 + (o.think ? 4096 : 0), thinking: o.think, signal: o.signal });
       if (res.usage) {
         usage.prompt += res.usage.prompt;
         usage.completion += res.usage.completion;
@@ -1603,7 +1701,7 @@ async function runPart(
           if (!offered.includes(tc.name)) return `الأداة ${tc.name} غير متاحة في هذا الجزء.`;
           const tool = registry[tc.name]!;
           if (tool.requiresConfirmation) {
-            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds });
+            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds, threadId: pc.turn.threadId });
             if (tier !== 1 || !autoRunEnabled() || (tc.args as any)?.__invalid !== undefined) return "لا يُنفَّذ هذا الإجراء داخل جزء: يحتاج تأكيد الموظف. اكتب نتيجتك مما لديك.";
             if (sandboxRuns >= 2) return "بلغ هذا الجزء حدّ التشغيلات. اكتب نتيجتك مما لديك.";
             sandboxRuns++;
@@ -1636,10 +1734,11 @@ async function runPart(
 }
 
 /** Refreshes a long chat's summary with the messages that left the verbatim window. Best effort. */
-async function compactThread(ctx: ActionCtx, threadId: string, job: { from: number; to: number; prev: string; msgs: { role: string; text: string }[] }) {
+async function compactThread(ctx: ActionCtx, threadId: string, job: { from: number; to: number; prev: string; msgs: { role: string; text: string }[] }, turnId?: string) {
   try {
     const convo = job.msgs.map((m) => `${m.role === "user" ? "الموظف" : "المساعد"}: ${m.text.slice(0, 1500)}`).join("\n\n");
     const r = await chat({
+      ...(turnId ? { track: { ctx, purpose: "summary" as const, turnId } } : {}),
       role: "fast",
       maxTokens: 700,
       temperature: 0,
@@ -1669,10 +1768,11 @@ export const saveSummary = internalMutation({
 });
 
 /** Names a new chat with the fast model (a few words). Failures keep the provisional title. */
-async function nameThread(ctx: ActionCtx, threadId: string, question: string, answer: string) {
+async function nameThread(ctx: ActionCtx, threadId: string, question: string, answer: string, turnId?: string) {
   let title = "";
   try {
     const r = await chat({
+      ...(turnId ? { track: { ctx, purpose: "title" as const, turnId } } : {}),
       role: "fast",
       maxTokens: 40,
       temperature: 0,
@@ -1720,7 +1820,8 @@ export const claimProposal = internalMutation({
     if ("error" in agent) return await fail(agent.error);
     if ((agent.agentId ?? undefined) !== (p.agentId ?? undefined)) return await fail("تغيّر وكيل المحادثة منذ الاقتراح");
     const tool = Object.hasOwn(registry, p.tool) ? registry[p.tool] : undefined;
-    if (!tool || !tool.requiresConfirmation || !agentTools(agent.config).includes(p.tool)) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
+    const memoryTool = PERSONAL_TOOLS.includes(p.tool) || (MEMORY_TOOLS.includes(p.tool) && (await memoryOn(ctx, userId, meta)));
+    if (!tool || !tool.requiresConfirmation || !(memoryTool || agentTools(agent.config).includes(p.tool))) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
     const scope = await effectiveScope(ctx, userId, agent.config.dataScope, meta.scope);
     await ctx.db.patch(p._id, { state: "running", decidedAt: now });
     return { proposal: { id: p._id, tool: p.tool, args: p.args, threadId: p.threadId, agentId: p.agentId ?? null }, spaceIds: scope.spaceIds as string[], fileIds: scope.fileIds };
@@ -1822,7 +1923,10 @@ export const undo = mutation({
     if (!p || p.userId !== me.userId) throw new Denied();
     await ownThread(ctx, me.userId, p.threadId);
     if (!p.auto || p.state !== "executed") throw new OneBaseError("لا يمكن التراجع عن هذا الإجراء");
-    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; restore?: { artifactId: string; version: number } };
+    const u = (p.undo ?? {}) as NonNullable<ToolResult["undo"]>;
+    if (u.deleteMemories?.length) await undoMemories(ctx, me.userId, u.deleteMemories);
+    if (u.deleteSkills?.length) await undoSkills(ctx, me.userId, u.deleteSkills);
+    if (u.deleteLists?.length || u.lists) await undoLists(ctx, me.userId, { deleteLists: u.deleteLists, ...(u.lists ?? {}) });
     const mine = async (spaceId: Id<"spaces">) => {
       const space = await ctx.db.get(spaceId);
       if (!space || space.kind !== "personal" || space.ownerId !== me.userId) return false;

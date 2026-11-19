@@ -1,6 +1,6 @@
 // The shell (UX redesign, app/UX.md): a Claude-like sidebar — "محادثة جديدة", then المحادثات,
 // المساحات, المهام and الإشارات, the recent chats — and a user menu at the bottom holding what is
-// rarely used (بياناتي, التحليل, المفاضلة, and for admins/managers الإدارة, الوكلاء, سجل التدقيق).
+// rarely used (بياناتي, التحليل, and for admins/managers الإدارة, الوكلاء, سجل التدقيق).
 // Routes live in the URL hash so back/forward and links work: #/new, #/chat/<id>, #/chats,
 // #/spaces, #/space/<id>[/<tab>|/new], #/tasks[/<taskId>], #/schedules, #/mentions, #/me, …
 
@@ -9,7 +9,10 @@ import { useAuthActions, useMutation, useOnebaseAuth, useQuery } from "onebase/r
 import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
+import { ListPage, ListsPage } from "./ListView";
+import { OpenPublication, PublishedPage } from "./PublishView";
 import { SkillsView } from "./SkillsView";
+import { MemoryView } from "./MemoryView";
 import { SpaceView, SpacesPage } from "./SpaceView";
 import { TasksPage } from "./TasksView";
 import { MentionsPage } from "./MentionsView";
@@ -18,7 +21,6 @@ import { AdminConsole } from "./AdminConsole";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { HelpView } from "./HelpView";
 import { WorksView } from "./WorksView";
-import { RankingView } from "./RankingView";
 import { MyRecordsView } from "./MyRecordsView";
 import { ConfirmHost, tell } from "./ui";
 
@@ -178,6 +180,11 @@ function Shell({ me }: { me: Me }) {
   else if (head === "schedules") screen = <TasksPage tab="scheduled" taskId={null} go={go} spaces={spaces} />;
   else if (head === "mentions") screen = <MentionsPage go={go} />;
   else if (head === "me") screen = <Wide><MyRecordsView /></Wide>;
+  else if (head === "memory") screen = <Wide><MemoryView /></Wide>;
+  else if (head === "lists") screen = <ListsPage spaces={spaces} go={go} />;
+  else if (head === "published") screen = <PublishedPage />;
+  else if (head === "open" && a) screen = <OpenPublication key={a + (b ?? "")} slug={a} preview={b === "preview"} />;
+  else if (head === "list" && a) screen = <ListPage key={a} listId={a} go={go} />;
   else if (head === "skills")
     screen = (
       <SkillsView
@@ -188,7 +195,6 @@ function Shell({ me }: { me: Me }) {
       />
     );
   else if (head === "works" || head === "analysis") screen = <Wide><WorksView spaces={spaces} /></Wide>;
-  else if (head === "ranking") screen = <Wide><RankingView spaces={spaces} /></Wide>;
   else if (head === "help") screen = <Wide><HelpView article={a ?? null} isAdmin={isAdmin} /></Wide>;
   else if (head === "admin" && (isAdmin || managesAny)) screen = <AdminConsole page={a ?? (isAdmin ? "overview" : "audit")} isAdmin={isAdmin} spaces={spaces} go={go} />;
   // Old addresses of the admin pages, before «إدارة المنصة» grouped them.
@@ -314,6 +320,9 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
         <NavLink href="#/tasks" icon="tasks" on={section === "tasks" || section === "schedules"} count={openTasks}>
           المهام
         </NavLink>
+        <NavLink href="#/lists" icon="table" on={section === "lists" || section === "list"}>
+          القوائم
+        </NavLink>
         <NavLink href="#/mentions" icon="at" on={section === "mentions"} count={mentionsUnread}>
           الإشارات
         </NavLink>
@@ -414,10 +423,11 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
               {level.dailyQuestions > 0 && <span className="num"> · {Math.max(0, level.dailyQuestions - level.usedToday)} من {level.dailyQuestions} سؤالاً باقية اليوم</span>}
             </div>
           )}
+          {item("ذاكرتي", "/memory")}
           {item("مهاراتي", "/skills")}
+          {item("منشوراتي", "/published")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
-          {item("المفاضلة", "/ranking")}
           {item("مركز المساعدة", "/help")}
           {(isAdmin || managesAny) && <div className="my-1 border-t border-rule" />}
           {isAdmin && item("إدارة المنصة", "/admin")}

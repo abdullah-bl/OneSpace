@@ -71,9 +71,10 @@ describe("starter agents", () => {
     expect(byKey.grades.live.dataScope).toBe("member");
     expect(byKey.analysis.live.allowedTools.sort()).toEqual(["create_artifact", "export_document", "read_file", "run_analysis"]);
     expect(byKey.analysis.live.dataScope).toBe("all");
-    // Every tool any agent lists exists in the code registry, and the registry is within the 15 the model handles well.
+    // Every tool any agent lists exists in the code registry, and the registry stays small: the model sees
+    // all of an agent's tools at once (no tool retrieval yet, plans/07). 15 → 18 with the list tools (plans/10).
     const registry = must(await s.call("query", "agents:toolRegistry", {}, tok("admin"))).map((t: any) => t.name);
-    expect(registry.length).toBeLessThanOrEqual(15);
+    expect(registry.length).toBeLessThanOrEqual(18);
     for (const a of list) for (const t of a.live.allowedTools) expect(registry).toContain(t);
     // Seeding again adds nothing.
     expect(must(await s.call("mutation", "agents:seedStarterAgents", {}, tok("admin")))).toBe(0);
@@ -88,7 +89,7 @@ describe("starter agents", () => {
     expect(a.citations.some((c: any) => c.fileId === policyFile)).toBe(true);
     const req = chatRequestsWith(ai, "ما سياسة العمل عن بعد POLICYKEY-6610؟").at(-1);
     // The default agent uses «كل الأدوات»: the whole registry is offered (each tool still runs as the user).
-    expect([...offered(req)].sort()).toEqual(Object.keys(registry).sort());
+    expect([...offered(req)].sort()).toEqual(Object.keys(registry).filter((n) => n !== "remember" && n !== "recall" && n !== "create_skill" && n !== "use_skill" && !n.endsWith("_list") && n !== "publish_output").sort());
     expect(systemOf(req)).toContain("المساعد العام");
   });
 

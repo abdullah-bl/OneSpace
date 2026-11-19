@@ -19,6 +19,7 @@ const PAGES: { title: string; path: string; icon: IconName; words?: string }[] =
   { title: "المهام", path: "/tasks", icon: "tasks" },
   { title: "المهام المجدولة", path: "/schedules", icon: "clock", words: "جدولة تكرار" },
   { title: "الإشارات", path: "/mentions", icon: "at" },
+  { title: "ذاكرتي", path: "/memory", icon: "memory", words: "ذاكرة تذكر تفضيلات" },
   { title: "مهاراتي", path: "/skills", icon: "bulb", words: "مهارة /" },
   { title: "بياناتي", path: "/me", icon: "user", words: "سجلاتي" },
   { title: "أعمالي", path: "/works", icon: "file", words: "مخرجات مستندات جداول صفحات رسوم تحليل" },

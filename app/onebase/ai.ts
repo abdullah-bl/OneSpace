@@ -26,7 +26,7 @@ const env = (k: string) => {
   return val ? val : undefined;
 };
 
-export type Target = { baseUrl?: string; model: string; apiKey?: string };
+export type Target = { baseUrl?: string; model: string; apiKey?: string; provider?: string };
 export type RoleName = "main" | "fast" | "vision";
 /** The embedding model. `dimensions` is fixed by the rag index (EMBED_DIMENSIONS when it was mounted). */
 export type EmbedTarget = { baseUrl?: string; model: string; apiKey?: string; dimensions: number; queryPrefix: string; docPrefix: string; sendDimensions?: boolean };
@@ -151,7 +151,12 @@ export type ChatOptions = {
   thinking?: boolean;
   /** Called once when the model starts reasoning (streaming only). */
   onThinking?: () => void | Promise<void>;
+  /** Count this call's tokens (usage.ts): who it was for and why. Recording never fails the call. */
+  track?: UsageTrack;
 };
+
+export type UsagePurpose = "answer" | "part" | "route" | "plan" | "rewrite" | "summary" | "title" | "memory" | "skill_draft" | "agent_draft";
+export type UsageTrack = { ctx: { runMutation: any }; purpose: UsagePurpose; userId?: string; turnId?: string };
 
 /** The server couldn't parse the model's tool call (usually cut off by max_tokens mid-JSON). */
 export class ToolCallCutError extends Error {}
@@ -165,6 +170,40 @@ function parseArgs(raw: string): unknown {
 }
 
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
+  if (!opts.track) return chatOnce(opts);
+  const cfg = aiConfig();
+  const target = opts.role === "fast" ? cfg.fast : cfg.main;
+  const started = Date.now();
+  const note = async (usage: ChatResult["usage"], ok: boolean) => {
+    try {
+      await opts.track!.ctx.runMutation(internal.usage.record, {
+        model: target.model,
+        provider: target.provider ?? "إعدادات الخادم",
+        role: opts.role === "fast" ? "fast" : "main",
+        purpose: opts.track!.purpose,
+        ...(opts.track!.userId ? { userId: opts.track!.userId } : {}),
+        ...(opts.track!.turnId ? { turnId: opts.track!.turnId } : {}),
+        prompt: usage?.prompt ?? 0,
+        completion: usage?.completion ?? 0,
+        counted: !!usage,
+        ms: Date.now() - started,
+        ok,
+      });
+    } catch (e) {
+      console.error("usage: not recorded", e instanceof Error ? e.message : e);
+    }
+  };
+  try {
+    const r = await chatOnce(opts);
+    await note(r.usage, true);
+    return r;
+  } catch (e) {
+    await note(null, false);
+    throw e;
+  }
+}
+
+async function chatOnce(opts: ChatOptions): Promise<ChatResult> {
   const cfg = aiConfig();
   const target = opts.role === "fast" ? cfg.fast : cfg.main;
   if (!target.baseUrl) throw new OneBaseError("نموذج المحادثة غير مضبوط (LLM_BASE_URL)");
@@ -177,11 +216,19 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
     stream,
     ...(stream ? { stream_options: { include_usage: true } } : {}),
     chat_template_kwargs: { enable_thinking: opts.thinking ?? cfg.thinking },
+    // Hosted routers (OpenRouter) ignore chat_template_kwargs; without this a reasoning model spends
+    // max_tokens on hidden reasoning and the answer (often JSON) is cut off. llama.cpp ignores it.
+    ...((opts.thinking ?? cfg.thinking) ? {} : { reasoning: { enabled: false } }),
   };
   if (opts.tools?.length) body.tools = opts.tools.map((t) => ({ type: "function", function: t }));
   if (opts.jsonSchema) body.response_format = { type: "json_schema", json_schema: { name: "answer", schema: opts.jsonSchema, strict: true } };
 
   let res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
+  if (!res.ok && res.status === 400 && body.reasoning) {
+    // A model that must reason refuses the switch: ask again without it.
+    delete body.reasoning;
+    res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
+  }
   if (!res.ok && opts.jsonSchema && res.status === 400) {
     body.response_format = { type: "json_object" };
     res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
@@ -321,6 +368,7 @@ export async function ocr(imageDataUrl: string): Promise<string> {
       max_tokens: 4096,
       temperature: 0,
       chat_template_kwargs: { enable_thinking: false },
+      reasoning: { enabled: false },
     },
     cfg.apiKey,
   );

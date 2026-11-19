@@ -59,9 +59,10 @@ export const draftWithAI = action({
         : `المطلوب: ${want}`,
     ].join("\n\n");
     const res = await chat({
+      track: { ctx, purpose: "agent_draft", userId },
       role: "main",
       temperature: 0.2,
-      maxTokens: 2500,
+      maxTokens: 5000,
       messages: [
         { role: "system", content: PROMPT },
         { role: "user", content: user },

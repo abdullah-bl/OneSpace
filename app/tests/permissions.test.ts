@@ -8,6 +8,9 @@ import { PHASE5_COVERED } from "./phase5.coverage";
 import { PHASE4_PUBLIC } from "./phase4-coverage";
 import { SKILLS_COVERED } from "./skills.coverage";
 import { PLATFORM_COVERED } from "./platform.coverage";
+import { MEMORY_COVERED } from "./memory.coverage";
+import { LISTS_COVERED } from "./lists.coverage";
+import { PUBLICATIONS_COVERED } from "./publications.coverage";
 import { PHASE2_COVERED } from "./phase2-covered";
 import { PHASE6_COVERED } from "./phase6.coverage";
 import { UX_COVERED } from "./ux.coverage";
@@ -317,6 +320,9 @@ describe("workspace-level functions", () => {
       ...PHASE6_COVERED, // checked in phase6.permissions.test.ts
       ...UX_COVERED, // checked in ux.test.ts
       ...SKILLS_COVERED, // checked in skills.test.ts
+      ...MEMORY_COVERED, // checked in memory.test.ts
+      ...LISTS_COVERED, // checked in lists.test.ts
+      ...PUBLICATIONS_COVERED, // checked in publications.test.ts
       ...PLATFORM_COVERED, // checked in platform.test.ts
     ]);
     expect(publicFns.filter((n) => !covered.has(n))).toEqual([]);

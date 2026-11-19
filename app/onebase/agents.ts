@@ -18,13 +18,15 @@ import { actorFor, assertCan, Denied, readableSpaceIds, requireActive, requireAd
 import { writeAudit } from "./audit";
 import { agentConfig } from "./agentsSchema";
 import { queueTurn } from "./lib/turns";
-import { tools as registry } from "./tools";
+import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
 
 type Ctx = QueryCtx | MutationCtx;
 export type AgentConfig = Infer<typeof agentConfig>;
 export type DataScope = AgentConfig["dataScope"];
 
-export const MAX_STEPS_LIMIT = 8;
+export const MAX_STEPS_LIMIT = 20;
+/** No agent gets fewer tool rounds than this: making a list, a page and publishing it is already 3–4. */
+export const MIN_STEPS = 10;
 const NAME_MAX = 80;
 const DESCRIPTION_MAX = 500;
 const INSTRUCTIONS_MAX = 8000;
@@ -54,7 +56,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       toolMode: "all",
       dataScope: "all",
       modelRole: "main",
-      maxSteps: 4,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "open",
     },
@@ -70,7 +72,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       allowedTools: ["search_documents", "read_file"],
       dataScope: "everyone",
       modelRole: "main",
-      maxSteps: 4,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "documents",
     },
@@ -87,7 +89,7 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       allowedTools: ["query_records", "fill_template", "create_artifact"],
       dataScope: "member",
       modelRole: "main",
-      maxSteps: 5,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "documents",
     },
@@ -100,12 +102,12 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       name: "التحليل",
       description: "يحلل ملفات البيانات التي تختارها بكود معزول ويعرض النتائج كمخرجات.",
       instructions:
-        "أنت وكيل التحليل. اقرأ وصف الملف أولاً، ثم اقترح تشغيل كود Python قصير على الملفات التي اختارها المستخدم فقط. لا ترتّب الأشخاص ولا تقترح أوزاناً: للمفاضلة شاشتها المعتمدة.",
+        "أنت وكيل التحليل. اقرأ وصف الملف أولاً، ثم اقترح تشغيل كود Python قصير على الملفات التي اختارها المستخدم فقط.",
       allowedTools: ["run_analysis", "create_artifact", "export_document", "read_file"],
       toolMode: "all",
       dataScope: "all",
       modelRole: "main",
-      maxSteps: 5,
+      maxSteps: 10,
       visibility: workspaceWide,
       grounding: "open",
     },
@@ -152,7 +154,8 @@ export async function seedStarters(ctx: MutationCtx, by?: Id<"users">): Promise<
 /** "open" unless the agent was explicitly made document-only (or predates the setting). */
 /** The tools an agent may use: the whole registry for "all", else its own list (registry order). */
 export function agentTools(cfg: AgentConfig): string[] {
-  return cfg.toolMode === "all" ? Object.keys(registry) : Object.keys(registry).filter((t) => cfg.allowedTools.includes(t));
+  const all = Object.keys(registry).filter((t) => !MEMORY_TOOLS.includes(t) && !PERSONAL_TOOLS.includes(t));
+  return cfg.toolMode === "all" ? all : all.filter((t) => cfg.allowedTools.includes(t));
 }
 
 export function groundingOf(cfg: AgentConfig): "open" | "documents" {

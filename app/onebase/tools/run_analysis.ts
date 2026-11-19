@@ -15,7 +15,7 @@ import { artifactForOutput } from "../lib/outputArtifacts";
 import { callSandbox, SandboxUnavailable } from "../lib/sandboxClient";
 import type { AppTool, ToolContext, ToolResult } from "./types";
 
-export type RunAnalysisArgs = { code: string; fileIds: string[]; targetSpaceId?: string; timeoutSeconds?: number };
+export type RunAnalysisArgs = { code?: string; fileIds: string[]; targetSpaceId?: string; timeoutSeconds?: number; skill?: string; script?: string };
 
 /** Server-side limits for one run; the runner clamps them again to its own ceilings. */
 export const RUN_LIMITS = { timeoutMs: 120_000, memoryMb: 2048, cpus: 2, pids: 64, outputMb: 20 };
@@ -38,11 +38,21 @@ export type AnalysisOutcome = {
   inputs: { fileId: string; name: string }[];
   outputs: { fileId: string; name: string; size: number; sha256: string }[];
   artifactIds: string[];
+  skill?: { name: string; version: number; script: string };
 };
 
 export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "scopeSpaceIds" | "threadId" | "agentId">, args: RunAnalysisArgs): Promise<AnalysisOutcome> {
   const { ctx } = t;
-  if (typeof args?.code !== "string" || !Array.isArray(args.fileIds)) throw new OneBaseError("code و fileIds مطلوبة");
+  if (!Array.isArray(args?.fileIds)) throw new OneBaseError("fileIds مطلوبة");
+  // A skill's saved script runs as saved: the model names it, the code comes from the skill.
+  let skill: { id: string; name: string; version: number; script: string } | undefined;
+  let code = args.code;
+  if (args.skill) {
+    const s = await ctx.runQuery(internal.skills.scriptForTool, { userId: t.userId, name: String(args.skill), script: String(args.script ?? ""), threadId: t.threadId, scopeSpaceIds: t.scopeSpaceIds.map(String) });
+    skill = { id: s.id, name: s.name, version: s.version, script: s.script };
+    code = s.code;
+  }
+  if (typeof code !== "string") throw new OneBaseError("code أو skill مطلوب");
   const timeoutMs = Math.min(Math.max(Math.round((Number(args.timeoutSeconds) || RUN_LIMITS.timeoutMs / 1000) * 1000), 1000), RUN_LIMITS.timeoutMs);
   const limits = { ...RUN_LIMITS, timeoutMs };
   const begun = await ctx.runMutation(internal.analysis.begin, {
@@ -50,10 +60,11 @@ export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "s
     fileIds: args.fileIds.map(String),
     scopeSpaceIds: t.scopeSpaceIds.map(String),
     targetSpaceId: args.targetSpaceId,
-    code: args.code,
+    code,
     limits,
     threadId: t.threadId,
     agentId: t.agentId,
+    skill,
   });
   const runId = begun.runId as Id<"runs">;
   try {
@@ -70,7 +81,7 @@ export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "s
       files.push({ name: input.name, b64: Buffer.from(bytes).toString("base64") });
       inputSha256.push(new Bun.CryptoHasher("sha256").update(bytes).digest("hex"));
     }
-    const res = await callSandbox({ code: args.code, files, limits });
+    const res = await callSandbox({ code: begun.code, files, limits });
     const outputs = [];
     const artifacts = [];
     for (const f of res.files ?? []) {
@@ -114,6 +125,7 @@ export async function executeAnalysis(t: Pick<ToolContext, "ctx" | "userId" | "s
       inputs: begun.inputs.map((i) => ({ fileId: i.fileId, name: i.name })),
       outputs: saved,
       artifactIds,
+      skill,
     };
   } catch (e) {
     const message = e instanceof SandboxUnavailable ? e.message : "فشل التشغيل";
@@ -128,7 +140,7 @@ function clip(s: string, n: number) {
 }
 
 export function summarize(r: AnalysisOutcome): string {
-  const lines = [`تشغيل ${r.runId}: ${r.ok ? "نجح" : "فشل"}`];
+  const lines = [`تشغيل ${r.runId}: ${r.ok ? "نجح" : "فشل"}${r.skill ? ` (سكربت المهارة /${r.skill.name}: ${r.skill.script}، النسخة ${r.skill.version})` : ""}`];
   if (r.timedOut) lines.push("توقف: تجاوز الحد الزمني");
   if (r.oomKilled) lines.push("توقف: تجاوز حد الذاكرة");
   if (r.error) lines.push(`خطأ: ${r.error}`);
@@ -157,16 +169,20 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
     "so a searchable web page of a spreadsheet is: read it with pandas and write df.to_html(index=False) (with a title and short summary) to /output/<name>.html. Print a short summary to stdout. " +
     "Do the whole job in ONE run (read, process, save the outputs): each run outside the user's personal space waits for their «نفّذ», so don't run a separate look-at-the-data step first; " +
     "pandas tells you the columns at run time. " +
-    "Only files the user can read can be used. Never use this tool to rank or score people: ranking has its own approved criteria.",
+    "Only files the user can read can be used. " +
+    "To rerun a skill's saved script (listed by use_skill), pass skill (its /name) and script (e.g. script.py) instead of code, with the new fileIds in the same order as the skill's inputs: " +
+    "the saved code runs unchanged, with INPUTS = the passed files' paths in order. Don't rewrite or retype a saved script.",
   parameters: {
     type: "object",
     properties: {
-      code: { type: "string", description: "Python 3 code to run." },
+      code: { type: "string", description: "Python 3 code to run (omit when running a skill's script)." },
+      skill: { type: "string", description: "A skill's /name, to run its saved script instead of code." },
+      script: { type: "string", description: "The skill's script file name, e.g. script.py." },
       fileIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of the files to place in /input." },
       targetSpaceId: { type: "string", description: "Space to save /output files in: the inputs' space or the user's personal space (inputs from several spaces: personal; a sensitive space: that space). Default: the inputs' space if writable, else the personal space." },
       timeoutSeconds: { type: "number", minimum: 1, maximum: 120 },
     },
-    required: ["code", "fileIds"],
+    required: ["fileIds"],
     additionalProperties: false,
   },
   requiresConfirmation: true,

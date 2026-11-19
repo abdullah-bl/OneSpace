@@ -60,7 +60,7 @@ export const ARTIFACT_CSP = [
   "base-uri 'none'",
 ].join("; ");
 
-const BASE_STYLE = `body{font-family:system-ui,"Segoe UI",Tahoma,sans-serif;line-height:1.7;color:#0f172a;margin:16px;direction:rtl}
+export const BASE_STYLE = `body{font-family:system-ui,"Segoe UI",Tahoma,sans-serif;line-height:1.7;color:#0f172a;margin:16px;direction:rtl}
 table{border-collapse:collapse}td,th{border:1px solid #cbd5e1;padding:4px 8px}pre{white-space:pre-wrap;background:#f1f5f9;padding:8px;border-radius:6px}
 img{max-width:100%}
 .os-bar{display:flex;align-items:center;gap:8px;margin:8px 0}.os-bar input{flex:1;max-width:360px;padding:6px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit}

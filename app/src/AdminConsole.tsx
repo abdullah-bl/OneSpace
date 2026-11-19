@@ -3,10 +3,11 @@
 // oversight (the audit log). A side list on wide screens, a scrolling row of tabs on narrow ones.
 // Space managers who aren't admins see only the audit log of their spaces.
 
-import type { ReactNode } from "react";
-import { useQuery } from "onebase/react";
+import { useState, type ReactNode } from "react";
+import { useMutation, useQuery } from "onebase/react";
 import { api, type SpaceInfo } from "./lib";
 import { Icon, type IconName } from "./icons";
+import { ask } from "./ui";
 import { SpacesAdmin, UsersAdmin } from "./AdminView";
 import { AgentsView } from "./AgentsView";
 import { LevelsView } from "./LevelsView";
@@ -112,8 +113,203 @@ function Stat({ label, value, sub, href, tone }: { label: string; value: ReactNo
   );
 }
 
+// ---------------------------------------------------------------- model usage (usage.ts)
+
+type UsageTotals = { calls: number; failed: number; uncounted: number; prompt: number; completion: number; ms: number };
+type Usage = {
+  days: number;
+  total: UsageTotals;
+  today: UsageTotals;
+  byModel: (UsageTotals & { model: string; provider: string; role: string })[];
+  byPurpose: (UsageTotals & { purpose: string })[];
+  byUser: (UsageTotals & { userKey: string; name: string })[];
+  daily: (UsageTotals & { day: string })[];
+};
+
+const PURPOSE: Record<string, string> = {
+  answer: "الإجابات",
+  part: "أجزاء المهام المقسّمة",
+  route: "اختيار الوكيل",
+  plan: "تقسيم المهام",
+  rewrite: "صياغة سؤال البحث",
+  summary: "تلخيص المحادثات الطويلة",
+  title: "عناوين المحادثات",
+  memory: "اقتراحات الذاكرة",
+  skill_draft: "مسودات المهارات",
+  agent_draft: "مسودات الوكلاء",
+};
+
+const tokensOf = (t: UsageTotals) => t.prompt + t.completion;
+/** 1234 → «1.2 ألف», 3400000 → «3.4 مليون». */
+function compact(n: number) {
+  const one = (x: number) => (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10).toString();
+  if (n >= 1e9) return `${one(n / 1e9)} مليار`;
+  if (n >= 1e6) return `${one(n / 1e6)} مليون`;
+  if (n >= 1e3) return `${one(n / 1e3)} ألف`;
+  return String(n);
+}
+
+function Share({ label, sub, value, of, right }: { label: ReactNode; sub?: ReactNode; value: number; of: number; right: ReactNode }) {
+  const pct = of ? Math.max(2, Math.round((value / of) * 100)) : 0;
+  return (
+    <li className="px-4 py-2.5">
+      <div className="flex items-baseline gap-2 text-sm">
+        <span className="min-w-0 flex-1 truncate" dir="auto">
+          {label}
+          {sub && <span className="ms-2 text-xs text-faint">{sub}</span>}
+        </span>
+        <span className="num shrink-0 text-xs text-muted">{right}</span>
+      </div>
+      <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-sunken">
+        <div className="h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+      </div>
+    </li>
+  );
+}
+
+function UsagePanel({ u, days, setDays }: { u: Usage | undefined; days: number; setDays: (d: number) => void }) {
+  const max = u ? Math.max(1, ...u.daily.map(tokensOf)) : 1;
+  const total = u ? tokensOf(u.total) : 0;
+  return (
+    <section>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <h2 className="section-title">استهلاك النماذج</h2>
+        <div className="ms-auto flex rounded-md border border-line p-0.5" role="tablist" aria-label="المدة">
+          {[
+            [1, "اليوم"],
+            [7, "7 أيام"],
+            [30, "30 يوماً"],
+          ].map(([d, label]) => (
+            <button key={d} role="tab" aria-selected={days === d} className={`h-7 rounded px-2.5 text-xs ${days === d ? "bg-active font-medium" : "text-muted"}`} onClick={() => setDays(d as number)}>
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      {!u ? (
+        <p className="text-sm text-muted">جارٍ التحميل…</p>
+      ) : u.total.calls === 0 ? (
+        <p className="card p-4 text-sm text-muted">لا استدعاءات للنماذج في هذه المدة. يبدأ العدّ من أول سؤال بعد هذا التحديث.</p>
+      ) : (
+        <div className="space-y-3">
+          <div className="grid grid-cols-2 gap-3 @2xl:grid-cols-4">
+            <div className="card p-4">
+              <p className="text-xs text-muted">مجموع التوكنات</p>
+              <p className="num mt-1 text-2xl font-semibold">{compact(total)}</p>
+              <p className="mt-1 text-xs text-muted">
+                مدخل {compact(u.total.prompt)} · مخرج {compact(u.total.completion)}
+              </p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-muted">استدعاءات النماذج</p>
+              <p className="num mt-1 text-2xl font-semibold">{compact(u.total.calls)}</p>
+              <p className="mt-1 text-xs text-muted">{u.total.failed ? <span className="text-warning">{u.total.failed} تعثّر</span> : "بلا أخطاء"}</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-muted">الأكثر استخداماً</p>
+              <p className="mt-1 truncate text-base font-semibold" dir="ltr" title={u.byModel[0]?.model}>
+                {u.byModel[0]?.model.split("/").pop() ?? "—"}
+              </p>
+              <p className="mt-1 text-xs text-muted">{u.byModel[0] && total ? `${Math.round((tokensOf(u.byModel[0]) / total) * 100)}% من التوكنات` : ""}</p>
+            </div>
+            <div className="card p-4">
+              <p className="text-xs text-muted">متوسط الاستدعاء</p>
+              <p className="num mt-1 text-2xl font-semibold">{(u.total.ms / u.total.calls / 1000).toFixed(1)} ث</p>
+              <p className="mt-1 text-xs text-muted">{compact(Math.round(total / u.total.calls))} توكن للاستدعاء</p>
+            </div>
+          </div>
+
+          {u.days > 1 && (
+            <div className="card p-4">
+              <p className="mb-3 text-xs text-muted">التوكنات يومياً</p>
+              <div className="flex h-28 items-end gap-1" dir="ltr">
+                {u.daily.map((d) => (
+                  <div key={d.day} className="group relative flex h-full min-w-0 flex-1 items-end" title={`${d.day}: ${compact(tokensOf(d))} توكن، ${d.calls} استدعاء`}>
+                    <div className={`w-full rounded-t-sm ${tokensOf(d) ? "bg-primary/80 group-hover:bg-primary" : "bg-sunken"}`} style={{ height: `${Math.max(2, (tokensOf(d) / max) * 100)}%` }} />
+                  </div>
+                ))}
+              </div>
+              <div className="mt-1 flex justify-between text-[11px] text-faint" dir="ltr">
+                <span>{u.daily[0]?.day.slice(5)}</span>
+                <span>{u.daily.at(-1)?.day.slice(5)}</span>
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-3 @3xl:grid-cols-3">
+            <div className="card">
+              <p className="border-b border-rule px-4 py-2.5 text-xs font-medium text-muted">حسب النموذج</p>
+              <ul>
+                {u.byModel.map((m) => (
+                  <Share key={m.model} label={<span dir="ltr">{m.model.split("/").pop()}</span>} sub={m.provider} value={tokensOf(m)} of={total} right={`${compact(tokensOf(m))} · ${m.calls} استدعاء`} />
+                ))}
+              </ul>
+            </div>
+            <div className="card">
+              <p className="border-b border-rule px-4 py-2.5 text-xs font-medium text-muted">فيمَ صُرفت</p>
+              <ul>
+                {u.byPurpose.map((p) => (
+                  <Share key={p.purpose} label={PURPOSE[p.purpose] ?? p.purpose} value={tokensOf(p)} of={total} right={compact(tokensOf(p))} />
+                ))}
+              </ul>
+            </div>
+            <div className="card">
+              <p className="border-b border-rule px-4 py-2.5 text-xs font-medium text-muted">الأكثر استهلاكاً من الموظفين</p>
+              {u.byUser.length ? (
+                <ul>
+                  {u.byUser.map((p) => (
+                    <Share key={p.userKey} label={p.name} value={tokensOf(p)} of={tokensOf(u.byUser[0]!)} right={`${compact(tokensOf(p))} · ${p.calls}`} />
+                  ))}
+                </ul>
+              ) : (
+                <p className="p-4 text-sm text-muted">—</p>
+              )}
+            </div>
+          </div>
+          {u.total.uncounted > 0 && <p className="text-xs text-faint">{u.total.uncounted} استدعاء لم يُرجع خادمه عدد التوكنات، فحُسب بلا توكنات.</p>}
+          <p className="text-xs text-faint">يُعدّ كل استدعاء لنماذج المحادثة. التضمين والترتيب وقراءة الصور لا تُعدّ بعد.</p>
+        </div>
+      )}
+    </section>
+  );
+}
+
+/** plans/11 step 3: whether anything may be published for anyone with the link. Off by default. */
+function PublicPolicy() {
+  const policy = useQuery(api.publications.publicPolicy) as { allowed: boolean; live: number } | undefined;
+  const set = useMutation(api.publications.setPublicPolicy);
+  if (!policy) return null;
+  return (
+    <section>
+      <h2 className="section-title mb-3">النشر للعامة</h2>
+      <div className="card flex flex-wrap items-center gap-3 p-4 text-sm">
+        <div className="min-w-0 flex-1">
+          <p className="font-medium">{policy.allowed ? "مسموح: الموظفون ينشرون صفحات يفتحها أي أحد معه الرابط" : "غير مسموح: الصفحات المنشورة لموظفي الجهة فقط"}</p>
+          <p className="mt-1 text-xs text-muted">
+            {policy.allowed ? `${policy.live} صفحة عامة منشورة الآن. ` : ""}المساحات الحساسة لا تنشر للعامة أبداً، ونشر العضو في مساحة مشتركة يعتمده مديرها. إيقافه يغلق كل الصفحات العامة فوراً.
+          </p>
+        </div>
+        <button
+          className={policy.allowed ? "btn-secondary h-9" : "btn-primary h-9"}
+          onClick={() =>
+            void (policy.allowed ? ask(`إيقاف النشر للعامة؟ تُغلق ${policy.live} صفحة عامة فوراً.`, { danger: true, confirmLabel: "أوقف" }) : ask("السماح بنشر صفحات يفتحها أي أحد معه الرابط، بلا تسجيل دخول؟", { confirmLabel: "اسمح" })).then(
+              (ok) => {
+                if (ok) void set({ allowed: !policy.allowed });
+              },
+            )
+          }
+        >
+          {policy.allowed ? "أوقف النشر للعامة" : "اسمح بالنشر للعامة"}
+        </button>
+      </div>
+    </section>
+  );
+}
+
 function Overview({ go }: { go: (p: string) => void }) {
   const o = useQuery(api.admin.overview);
+  const [days, setDays] = useState(7);
+  const u = useQuery(api.usage.summary, { days }) as Usage | undefined;
   if (!o) return <p className="text-muted">جارٍ التحميل…</p>;
   const todo: { text: string; action: string; to: string; tone: "warning" | "negative" }[] = [];
   if (o.users.pending) todo.push({ text: `${o.users.pending} حساب بانتظار التفعيل`, action: "راجع", to: "/admin/users", tone: "warning" });
@@ -136,6 +332,7 @@ function Overview({ go }: { go: (p: string) => void }) {
         <Stat label="مصادر البيانات" value={o.sources.total} sub={o.sources.failing.length ? <span className="text-negative">{o.sources.failing.length} لا يتصل</span> : undefined} href="#/admin/sources" />
         <Stat label="مزوّدو النماذج" value={o.providers.total || "الخادم"} sub={o.providers.total ? undefined : "من إعدادات الخادم"} href="#/admin/providers" />
         <Stat label="المستويات" value={o.levels.total} sub={o.levels.defaultName ? `الافتراضي: ${o.levels.defaultName}` : "بلا حدود"} href="#/admin/levels" />
+        <Stat label="توكنات اليوم" value={u ? compact(tokensOf(u.today)) : "…"} sub={u ? `${u.today.calls} استدعاء` : undefined} href="#/admin/overview" />
       </section>
       <section>
         <h2 className="section-title mb-3">يحتاج انتباهك</h2>
@@ -157,6 +354,8 @@ function Overview({ go }: { go: (p: string) => void }) {
           </p>
         )}
       </section>
+      <PublicPolicy />
+      <UsagePanel u={u} days={days} setDays={setDays} />
     </div>
   );
 }
