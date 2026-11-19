@@ -196,6 +196,19 @@ export default defineSchema({
     createdAt: v.number(),
     updatedAt: v.number(),
     revokedAt: v.optional(v.number()),
+    // plans/11 step 2: a form under the page; each reply is a row of `listId` (same space).
+    form: v.optional(
+      v.object({
+        listId: v.id("lists"),
+        fields: v.array(v.object({ key: v.string(), required: v.boolean() })),
+        senderKey: v.optional(v.string()), // a person column filled with who sent it
+        thanks: v.optional(v.string()),
+        closesAt: v.optional(v.number()),
+        maxReplies: v.optional(v.number()),
+        onePerReader: v.boolean(),
+        replies: v.number(),
+      }),
+    ),
   })
     .index("by_slug", ["slug"])
     .index("by_artifact", ["artifactId"])
@@ -214,12 +227,20 @@ export default defineSchema({
     .index("by_expiry", ["expiresAt"]),
   publicationSessions: defineTable({
     tokenHash: v.string(),
+    formTokenHash: v.optional(v.string()), // the page's form posts this (the cookie isn't sent from a sandboxed page)
     publicationId: v.id("publications"),
     userId: v.id("users"),
     expiresAt: v.number(),
   })
     .index("by_hash", ["tokenHash"])
+    .index("by_form_hash", ["formTokenHash"])
     .index("by_expiry", ["expiresAt"]),
+  formReplies: defineTable({
+    publicationId: v.id("publications"),
+    userId: v.id("users"),
+    rowId: v.string(),
+    at: v.number(),
+  }).index("by_pub_user", ["publicationId", "userId", "at"]),
 
   // ---- Phase 5: sandbox runs ----
 

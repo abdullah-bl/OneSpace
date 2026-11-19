@@ -25,7 +25,150 @@ type Pub = {
   personal?: boolean;
   spaceName?: string;
   by?: string;
+  form: { listId: string; fields: { key: string; required: boolean }[]; replies: number; thanks: string; closesAt: number | null; maxReplies: number | null; onePerReader: boolean; recordSender: boolean } | null;
+  listTitle?: string | null;
 };
+
+type ListOption = { _id: string; title: string; columns: { key: string; name: string; type: string }[] };
+
+/** Under a publication: the form that sends replies into a list of the same space (plans/11 step 2). */
+function FormSettings({ p }: { p: Pub }) {
+  const [editing, setEditing] = useState(false);
+  const addFeedback = useMutation(api.publications.addFeedbackForm);
+  const setForm = useMutation(api.publications.setForm);
+  if (editing) return <FormEditor p={p} onDone={() => setEditing(false)} />;
+  if (!p.form)
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="text-muted">نموذج تحت الصفحة:</span>
+        <button className="btn-ghost h-7 px-2 text-xs" onClick={() => void run(addFeedback({ publicationId: p._id }))}>
+          <Icon name="plus" size={13} /> نموذج ملاحظات
+        </button>
+        <button className="btn-ghost h-7 px-2 text-xs" onClick={() => setEditing(true)}>
+          اربطه بقائمة…
+        </button>
+      </div>
+    );
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-md bg-surface px-2 py-1.5 text-xs">
+      <Icon name="table" size={13} className="text-primary" />
+      <span className="min-w-0 flex-1">
+        يرسل الردود إلى{" "}
+        <a className="font-medium text-primary hover:underline" href={`#/list/${p.form.listId}`}>
+          «{p.listTitle ?? "قائمة"}»
+        </a>{" "}
+        · <span className="num">{p.form.replies}</span> رد{p.form.maxReplies ? ` من ${p.form.maxReplies}` : ""}
+        {p.form.closesAt ? ` · يُغلق ${formatDate(p.form.closesAt)}` : ""}
+      </span>
+      <button className="btn-ghost h-7 px-2 text-xs" onClick={() => setEditing(true)}>
+        عدّل
+      </button>
+      <button className="btn-ghost h-7 px-2 text-xs text-negative" onClick={() => void ask("حذف النموذج من الصفحة؟ تبقى الردود في القائمة.", { confirmLabel: "احذف" }).then((ok) => ok && run(setForm({ publicationId: p._id, form: null })))}>
+        احذفه
+      </button>
+    </div>
+  );
+}
+
+function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
+  const lists = useQuery(api.publications.formOptions, { publicationId: p._id }) as ListOption[] | undefined;
+  const setForm = useMutation(api.publications.setForm);
+  const [listId, setListId] = useState(p.form?.listId ?? "");
+  const [fields, setFields] = useState<Record<string, { on: boolean; required: boolean }>>(() => Object.fromEntries((p.form?.fields ?? []).map((f) => [f.key, { on: true, required: f.required }])));
+  const [thanks, setThanks] = useState(p.form?.thanks ?? "");
+  const [onePerReader, setOne] = useState(p.form?.onePerReader ?? true);
+  const [recordSender, setSender] = useState(p.form?.recordSender ?? true);
+  const [maxReplies, setMax] = useState(p.form?.maxReplies ? String(p.form.maxReplies) : "");
+  const [closes, setCloses] = useState(p.form?.closesAt ? new Date(p.form.closesAt).toISOString().slice(0, 10) : "");
+  const [error, setError] = useState("");
+  const list = lists?.find((l) => l._id === listId);
+  useEffect(() => {
+    // A newly picked list: every column on, none required.
+    if (list && !list.columns.some((c) => fields[c.key])) setFields(Object.fromEntries(list.columns.map((c) => [c.key, { on: true, required: false }])));
+  }, [listId, lists]);
+  if (!lists) return <p className="text-xs text-muted">جارٍ التحميل…</p>;
+  const save = async () => {
+    setError("");
+    try {
+      await setForm({
+        publicationId: p._id,
+        form: {
+          listId,
+          fields: (list?.columns ?? []).filter((c) => fields[c.key]?.on).map((c) => ({ key: c.key, required: !!fields[c.key]?.required })),
+          recordSender,
+          onePerReader,
+          ...(thanks.trim() ? { thanks } : {}),
+          ...(Number(maxReplies) > 0 ? { maxReplies: Number(maxReplies) } : {}),
+          ...(closes ? { closesAt: new Date(`${closes}T23:59:59`).getTime() } : {}),
+        },
+      });
+      onDone();
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
+  return (
+    <div className="space-y-2 rounded-md border border-line bg-surface p-3 text-xs">
+      {lists.length === 0 ? (
+        <p className="text-muted">لا قوائم في مساحة هذا المنشور. أنشئ قائمة بالأعمدة التي تريد أن يجيب عنها القارئ، أو اختر «نموذج ملاحظات».</p>
+      ) : (
+        <>
+          <label className="flex items-center gap-2">
+            <span className="text-muted">الردود إلى:</span>
+            <select className="input h-8 w-auto text-xs" value={listId} onChange={(e) => setListId(e.target.value)}>
+              <option value="">اختر قائمة…</option>
+              {lists.map((l) => (
+                <option key={l._id} value={l._id}>
+                  {l.title}
+                </option>
+              ))}
+            </select>
+          </label>
+          {list && (
+            <ul className="space-y-1">
+              {list.columns.map((c) => (
+                <li key={c.key} className="flex items-center gap-3">
+                  <label className="flex min-w-0 flex-1 items-center gap-2">
+                    <input type="checkbox" checked={!!fields[c.key]?.on} onChange={(e) => setFields((f) => ({ ...f, [c.key]: { on: e.target.checked, required: !!f[c.key]?.required } }))} />
+                    {c.name}
+                  </label>
+                  <label className={`flex items-center gap-1 ${fields[c.key]?.on ? "" : "opacity-40"}`}>
+                    <input type="checkbox" disabled={!fields[c.key]?.on} checked={!!fields[c.key]?.required} onChange={(e) => setFields((f) => ({ ...f, [c.key]: { on: true, required: e.target.checked } }))} />
+                    مطلوب
+                  </label>
+                </li>
+              ))}
+            </ul>
+          )}
+          <input className="input h-8 w-full text-xs" value={thanks} maxLength={500} onChange={(e) => setThanks(e.target.value)} placeholder="رسالة بعد الإرسال (اختياري)" />
+          <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={onePerReader} onChange={(e) => setOne(e.target.checked)} /> رد واحد لكل شخص
+            </label>
+            <label className="flex items-center gap-1.5">
+              <input type="checkbox" checked={recordSender} onChange={(e) => setSender(e.target.checked)} /> سجّل اسم المرسل
+            </label>
+            <label className="flex items-center gap-1.5">
+              حد الردود <input className="input h-7 w-20 text-xs" inputMode="numeric" value={maxReplies} onChange={(e) => setMax(e.target.value.replace(/\D/g, ""))} placeholder="—" />
+            </label>
+            <label className="flex items-center gap-1.5">
+              يُغلق في <input type="date" className="input h-7 w-auto text-xs" value={closes} onChange={(e) => setCloses(e.target.value)} />
+            </label>
+          </div>
+        </>
+      )}
+      <div className="flex gap-2">
+        <button className="btn-primary h-8 text-xs" disabled={!listId} onClick={() => void save()}>
+          احفظ النموذج
+        </button>
+        <button className="btn-ghost h-8 text-xs" onClick={onDone}>
+          إلغاء
+        </button>
+      </div>
+      {error && <p className="text-negative">{error}</p>}
+    </div>
+  );
+}
 
 const AUDIENCE: Record<Pub["audience"], string> = { space: "أعضاء المساحة", workspace: "كل الموظفين" };
 const run = (p: Promise<unknown>) => p.catch((e) => void tell(errorText(e)));
@@ -61,6 +204,7 @@ function PubRow({ p, showTitle }: { p: Pub; showTitle?: boolean }) {
           <CopyLink url={p.url} />
         </div>
       )}
+      {(p.mine ?? true) && <FormSettings p={p} />}
       {(p.mine ?? true) && (
         <div className="flex flex-wrap gap-2">
           {stale && (
@@ -170,7 +314,7 @@ export function PublishedPage() {
           )}
           {data.mine.length === 0 ? (
             <EmptyState icon="globe" title="لم تنشر شيئاً بعد">
-              افتح أي مخرج (صفحة، مستند، جدول) واختر «انشر…» من قائمته، ليصير له رابط ترسله لزملائك.
+              افتح أي مخرج (صفحة، مستند، جدول) واختر «انشر برابط…» من قائمته، ليصير له رابط ترسله لزملائك.
             </EmptyState>
           ) : (
             <ul className="card divide-y divide-rule px-4">

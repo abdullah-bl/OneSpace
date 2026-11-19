@@ -15,6 +15,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan, Denied, requireActive, roleAllows, spaceRoleOf } from "./access";
 import { writeAudit } from "./audit";
+import { appendFromForm, cleanListCells, ensureColumn, listPeople } from "./lists";
 
 type Ctx = QueryCtx | MutationCtx;
 type Audience = "space" | "workspace";
@@ -50,6 +51,9 @@ export function appOrigin(): string | null {
     return null;
   }
 }
+
+ /** The token the page's form posts: derived from the session, so it needs no extra storage per page load. */
+const formTokenOf = (session: string) => hashToken(`form:${session}`);
 
 const OFF = "النشر غير مفعّل على هذا الخادم: يحتاج PUBLISH_ORIGIN و APP_ORIGIN بنطاقين مختلفين.";
 
@@ -110,7 +114,17 @@ function shape(p: Doc<"publications">, current: number | null, origin: string | 
     createdAt: p.createdAt,
     updatedAt: p.updatedAt,
     url: origin ? `${origin}/p/${p.slug}` : null,
+    form: p.form
+      ? { listId: p.form.listId, fields: p.form.fields, replies: p.form.replies, thanks: p.form.thanks ?? "", closesAt: p.form.closesAt ?? null, maxReplies: p.form.maxReplies ?? null, onePerReader: p.form.onePerReader, recordSender: !!p.form.senderKey }
+      : null,
   };
+}
+
+/** The form's list title, for the publish box («يرسل الردود إلى …»). */
+async function withListTitle<T extends { form: { listId: string } | null }>(ctx: Ctx, row: T) {
+  if (!row.form) return { ...row, listTitle: null as string | null };
+  const list = await ctx.db.get(row.form.listId as Id<"lists">);
+  return { ...row, listTitle: list?.title ?? null };
 }
 
 // ---------------------------------------------------------------- queries
@@ -125,7 +139,7 @@ export const forArtifact = query({
     const rows = (await ctx.db.query("publications").withIndex("by_artifact", (q) => q.eq("artifactId", art._id)).collect()).filter((p) => p.state !== "revoked");
     const origin = publishOrigin();
     const out = [];
-    for (const p of rows) if (p.createdBy === me.userId || (await manages(ctx, me.userId, p)) || p.state === "live") out.push({ ...shape(p, art.currentVersion, origin, space.kind === "personal"), mine: await manages(ctx, me.userId, p) });
+    for (const p of rows) if (p.createdBy === me.userId || (await manages(ctx, me.userId, p)) || p.state === "live") out.push(await withListTitle(ctx, { ...shape(p, art.currentVersion, origin, space.kind === "personal"), mine: await manages(ctx, me.userId, p) }));
     return {
       enabled: !!origin && !!appOrigin(),
       canPublish: roleAllows(role, "write"),
@@ -151,7 +165,7 @@ export const mine = query({
       return s ? (s.kind === "personal" ? "مساحتي" : s.name) : "";
     };
     const mineOut = [];
-    for (const p of own) if (p.state !== "revoked") mineOut.push({ ...shape(p, await current(p), origin, (await spaceName(p)) === "مساحتي"), spaceName: await spaceName(p) });
+    for (const p of own) if (p.state !== "revoked") mineOut.push(await withListTitle(ctx, { ...shape(p, await current(p), origin, (await spaceName(p)) === "مساحتي"), spaceName: await spaceName(p) }));
     // Pending publications in spaces I manage.
     const pending = [];
     for (const m of await ctx.db.query("spaceMembers").withIndex("by_user", (q) => q.eq("userId", me.userId)).collect()) {
@@ -285,7 +299,7 @@ export const redeemTicket = internalMutation({
     const p = await ctx.db.get(t.publicationId);
     if (!p || p.slug !== slug || !(await readerMay(ctx, t.userId, p))) return null;
     const session = newToken();
-    await ctx.db.insert("publicationSessions", { tokenHash: hashToken(session), publicationId: p._id, userId: t.userId, expiresAt: Date.now() + SESSION_TTL_MS });
+    await ctx.db.insert("publicationSessions", { tokenHash: hashToken(session), formTokenHash: hashToken(formTokenOf(session)), publicationId: p._id, userId: t.userId, expiresAt: Date.now() + SESSION_TTL_MS });
     return { session, maxAge: Math.floor(SESSION_TTL_MS / 1000) };
   },
 });
@@ -303,7 +317,7 @@ export const pageForSession = internalMutation({
     if (!ver || !art) return null;
     await ctx.db.patch(p._id, { views: p.views + 1 });
     const space = await ctx.db.get(p.spaceId);
-    return { title: p.title, kind: art.kind, content: ver.content, spaceName: space?.kind === "personal" ? "" : (space?.name ?? "") };
+    return { title: p.title, kind: art.kind, content: ver.content, spaceName: space?.kind === "personal" ? "" : (space?.name ?? ""), form: await formView(ctx, p, s.userId, formTokenOf(session)) };
   },
 });
 
@@ -313,5 +327,174 @@ export const purgeTickets = internalMutation({
     const now = Date.now();
     for (const t of await ctx.db.query("publicationTickets").withIndex("by_expiry", (q) => q.lt("expiresAt", now)).take(500)) await ctx.db.delete(t._id);
     for (const t of await ctx.db.query("publicationSessions").withIndex("by_expiry", (q) => q.lt("expiresAt", now)).take(500)) await ctx.db.delete(t._id);
+  },
+});
+
+// ---------------------------------------------------------------- forms (plans/11 step 2)
+
+const THANKS_MAX = 500;
+const REPLIES_PER_MINUTE = 10;
+const DEFAULT_THANKS = "وصل ردك. شكراً لك.";
+
+type FormState = "open" | "closed" | "full" | "answered";
+
+/** Why a form takes no reply now (closed, full, already answered), or "open". */
+async function formState(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">): Promise<FormState> {
+  const f = p.form!;
+  if (f.closesAt && f.closesAt < Date.now()) return "closed";
+  if (f.maxReplies && f.replies >= f.maxReplies) return "full";
+  if (f.onePerReader && (await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", userId)).first())) return "answered";
+  return "open";
+}
+
+/** What the content origin renders under the page: the fields (from the list's columns), the state, the token. */
+async function formView(ctx: Ctx, p: Doc<"publications">, userId: Id<"users">, token: string) {
+  if (!p.form) return null;
+  const list = await ctx.db.get(p.form.listId);
+  if (!list) return null;
+  const fields = p.form.fields
+    .map((f) => ({ ...list.columns.find((c) => c.key === f.key), required: f.required }))
+    .filter((c): c is (typeof list.columns)[number] & { required: boolean } => !!c.key && c.type !== "person");
+  return { fields, state: await formState(ctx, p, userId), token, thanks: p.form.thanks || DEFAULT_THANKS };
+}
+
+/** The lists a publication's form may write to: those of its own space. */
+export const formOptions = query({
+  args: { publicationId: v.string() },
+  handler: async (ctx, { publicationId }) => {
+    const me = await requireActive(ctx);
+    const p = await pubOf(ctx, publicationId);
+    if (!(await manages(ctx, me.userId, p))) throw new Denied();
+    const lists = await ctx.db.query("lists").withIndex("by_space", (q) => q.eq("spaceId", p.spaceId)).order("desc").collect();
+    return lists.map((l) => ({ _id: l._id, title: l.title, columns: l.columns.filter((c) => c.type !== "person").map((c) => ({ key: c.key, name: c.name, type: c.type })) }));
+  },
+});
+
+const formInput = v.object({
+  listId: v.string(),
+  fields: v.array(v.object({ key: v.string(), required: v.boolean() })),
+  recordSender: v.boolean(),
+  thanks: v.optional(v.string()),
+  closesAt: v.optional(v.number()),
+  maxReplies: v.optional(v.number()),
+  onePerReader: v.boolean(),
+});
+
+/** Attach, change or remove (form: null) a publication's form. The list must be in its space, and writable by me. */
+export const setForm = mutation({
+  args: { publicationId: v.string(), form: v.union(formInput, v.null()) },
+  handler: async (ctx, { publicationId, form }) => {
+    const me = await requireActive(ctx);
+    const p = await pubOf(ctx, publicationId);
+    if (p.state === "revoked" || !(await manages(ctx, me.userId, p))) throw new Denied();
+    if (!form) {
+      await ctx.db.patch(p._id, { form: undefined, updatedAt: Date.now() });
+      await writeAudit(ctx, { userId: me.userId, action: "publish.form", resourceType: "publication", resourceId: p._id, spaceId: p.spaceId, detail: { removed: true } });
+      return;
+    }
+    await ctx.db.patch(p._id, { form: await cleanForm(ctx, me.userId, p, form), updatedAt: Date.now() });
+    await writeAudit(ctx, { userId: me.userId, action: "publish.form", resourceType: "publication", resourceId: p._id, spaceId: p.spaceId, detail: { listId: form.listId, fields: form.fields.length } });
+  },
+});
+
+type FormInput = { listId: string; fields: { key: string; required: boolean }[]; recordSender: boolean; thanks?: string; closesAt?: number; maxReplies?: number; onePerReader: boolean };
+
+async function cleanForm(ctx: MutationCtx, userId: Id<"users">, p: Doc<"publications">, form: FormInput) {
+  const lid = ctx.db.normalizeId("lists", form.listId);
+  const list = lid ? await ctx.db.get(lid) : null;
+  if (!list || list.spaceId !== p.spaceId) throw new OneBaseError("اختر قائمة من مساحة المنشور نفسها");
+  await assertCan(ctx, userId, list.spaceId, "write");
+  const seen = new Set<string>();
+  const fields = form.fields.filter((f) => {
+    const col = list.columns.find((c) => c.key === f.key);
+    if (!col || col.type === "person" || seen.has(f.key)) return false;
+    seen.add(f.key);
+    return true;
+  });
+  if (!fields.length) throw new OneBaseError("اختر حقلاً واحداً على الأقل");
+  const senderKey = form.recordSender ? await ensureColumn(ctx, list, "المرسل", "person") : undefined;
+  return {
+    listId: list._id,
+    fields,
+    ...(senderKey ? { senderKey } : {}),
+    ...(form.thanks?.trim() ? { thanks: form.thanks.trim().slice(0, THANKS_MAX) } : {}),
+    ...(form.closesAt ? { closesAt: form.closesAt } : {}),
+    ...(form.maxReplies && form.maxReplies > 0 ? { maxReplies: Math.min(Math.round(form.maxReplies), 100_000) } : {}),
+    onePerReader: form.onePerReader,
+    replies: p.form?.listId === list._id ? p.form.replies : 0,
+  };
+}
+
+/** «نموذج ملاحظات»: a new list (التقييم 1–5, التعليق, المرسل) in the page's space, attached as its form. */
+export const addFeedbackForm = mutation({
+  args: { publicationId: v.string() },
+  handler: async (ctx, { publicationId }) => {
+    const me = await requireActive(ctx);
+    const p = await pubOf(ctx, publicationId);
+    if (p.state === "revoked" || !(await manages(ctx, me.userId, p))) throw new Denied();
+    await assertCan(ctx, me.userId, p.spaceId, "write");
+    const now = Date.now();
+    const listId = await ctx.db.insert("lists", {
+      spaceId: p.spaceId,
+      ownerId: me.userId,
+      title: `ملاحظات: ${p.title}`.slice(0, 120),
+      description: "ردود نموذج الملاحظات المنشور مع الصفحة.",
+      columns: [
+        { key: "c1", name: "التقييم", type: "select", options: ["5 ممتاز", "4 جيد جداً", "3 جيد", "2 مقبول", "1 ضعيف"] },
+        { key: "c2", name: "التعليق", type: "text" },
+        { key: "c3", name: "المرسل", type: "person" },
+      ],
+      view: "table",
+      nextKey: 4,
+      rowCount: 0,
+      createdAt: now,
+      updatedAt: now,
+    });
+    await writeAudit(ctx, { userId: me.userId, action: "list.create", resourceType: "list", resourceId: listId, spaceId: p.spaceId, detail: { via: "feedback-form" } });
+    await ctx.db.patch(p._id, {
+      form: { listId, fields: [{ key: "c1", required: true }, { key: "c2", required: false }], senderKey: "c3", thanks: "شكراً على ملاحظاتك.", onePerReader: true, replies: 0 },
+      updatedAt: now,
+    });
+    await writeAudit(ctx, { userId: me.userId, action: "publish.form", resourceType: "publication", resourceId: p._id, spaceId: p.spaceId, detail: { listId, preset: "feedback" } });
+    return listId;
+  },
+});
+
+/**
+ * POST /f/<slug> (publicationsHttp.ts): the reader of an open page sends the form. The token comes from
+ * the page (bound to the reader's session); access, the form's limits and each cell are checked here.
+ * Returns an error code for the page to explain, or null when the row was added.
+ */
+export const submitForm = internalMutation({
+  args: { slug: v.string(), token: v.string(), values: v.record(v.string(), v.string()) },
+  handler: async (ctx, { slug, token, values }): Promise<string | null> => {
+    const s = await ctx.db.query("publicationSessions").withIndex("by_form_hash", (q) => q.eq("formTokenHash", hashToken(token))).unique();
+    if (!s || s.expiresAt < Date.now()) return "expired";
+    const p = await ctx.db.get(s.publicationId);
+    if (!p || p.slug !== slug || !p.form || !(await readerMay(ctx, s.userId, p))) return "expired";
+    const state = await formState(ctx, p, s.userId);
+    if (state !== "open") return state;
+    const recent = await ctx.db.query("formReplies").withIndex("by_pub_user", (q) => q.eq("publicationId", p._id).eq("userId", s.userId).gt("at", Date.now() - 60_000)).collect();
+    if (recent.length >= REPLIES_PER_MINUTE) return "busy";
+    const list = await ctx.db.get(p.form.listId);
+    if (!list) return "expired";
+    const cells: Record<string, unknown> = {};
+    for (const f of p.form.fields) {
+      const col = list.columns.find((c) => c.key === f.key);
+      if (!col || col.type === "person") continue;
+      const raw = (values[f.key] ?? "").trim();
+      if (f.required && !raw && col.type !== "check") return "required";
+      cells[f.key] = col.type === "check" ? raw === "1" : raw || null;
+    }
+    try {
+      // Same checks as the list page (types, options, masking); the reader needs no access to the list's space.
+      cleanListCells(list.columns, cells, await listPeople(ctx, (await ctx.db.get(list.spaceId))!), false);
+    } catch {
+      return "invalid";
+    }
+    const rowId = await appendFromForm(ctx, list._id, cells, s.userId, p.form.senderKey);
+    await ctx.db.insert("formReplies", { publicationId: p._id, userId: s.userId, rowId, at: Date.now() });
+    await ctx.db.patch(p._id, { form: { ...p.form, replies: p.form.replies + 1 } });
+    return null;
   },
 });

@@ -205,7 +205,7 @@ export function ListPage({ listId, go }: { listId: string; go: (p: string) => vo
   const { list, people, canWrite } = data;
   const save = (rowId: string, key: string, v: Cell) => void run(updateRow({ rowId, cells: { [key]: v } }));
   const statusCol = list.columns.find((c) => c.type === "status") ?? list.columns.find((c) => c.type === "select");
-  const done = statusCol ? data.rows.filter((r) => DONE_RE.test(String(r.cells[statusCol.key] ?? ""))).length : null;
+  const done = statusCol?.type === "status" ? data.rows.filter((r) => DONE_RE.test(String(r.cells[statusCol.key] ?? ""))).length : null;
   const firstText = list.columns.find((c) => c.type === "text") ?? list.columns[0]!;
 
   return (

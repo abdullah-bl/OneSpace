@@ -205,6 +205,10 @@ async function insertList(
 
 async function deleteList(ctx: MutationCtx, userId: Id<"users">, list: Doc<"lists">, via?: string) {
   for (const r of await rowsOf(ctx, list._id)) await ctx.db.delete(r._id);
+  // A published page whose form wrote to this list loses the form (plans/11); the page stays.
+  for (const p of await ctx.db.query("publications").withIndex("by_space", (q) => q.eq("spaceId", list.spaceId)).collect()) {
+    if (p.form?.listId === list._id) await ctx.db.patch(p._id, { form: undefined, updatedAt: Date.now() });
+  }
   await ctx.db.delete(list._id);
   await writeAudit(ctx, { userId, action: "list.delete", resourceType: "list", resourceId: list._id, spaceId: list.spaceId, detail: { title: list.title, via: via ?? null } });
 }
@@ -251,6 +255,36 @@ async function applyChanges(ctx: MutationCtx, userId: Id<"users">, list: Doc<"li
   return { added, restore };
 }
 
+/**
+ * A form reply (publications.ts): one row added as `userId`, who may not be able to write in the
+ * list's space. The caller has checked the reader and the form; cells only of the form's columns.
+ */
+export async function appendFromForm(ctx: MutationCtx, listId: Id<"lists">, cells: Record<string, unknown>, userId: Id<"users">, senderKey?: string) {
+  const list = await ctx.db.get(listId);
+  if (!list) throw new OneBaseError("القائمة المرتبطة بالنموذج حُذفت");
+  const space = await ctx.db.get(list.spaceId);
+  if (!space) throw new OneBaseError("القائمة المرتبطة بالنموذج حُذفت");
+  const rowId = (await applyChanges(ctx, userId, list, space, { add: [cells] }, false)).added[0]!;
+  // The sender may be someone outside the list's space (a workspace page): set as is, not checked
+  // against the space's people like a typed person cell.
+  if (senderKey && list.columns.some((c) => c.key === senderKey && c.type === "person")) {
+    const row = await ctx.db.get(rowId as Id<"listRows">);
+    if (row) await ctx.db.patch(row._id, { cells: { ...row.cells, [senderKey]: userId } });
+  }
+  return rowId;
+}
+
+/** Adds a column (the form's «المرسل») if the list has none of that name and type; returns its key. */
+export async function ensureColumn(ctx: MutationCtx, list: Doc<"lists">, name: string, type: ColumnType) {
+  const hit = list.columns.find((c) => c.name === name && c.type === type);
+  if (hit) return hit.key;
+  const { columns, nextKey } = cleanColumns([...list.columns, { name: list.columns.some((c) => c.name === name) ? `${name} (النموذج)` : name, type }], list.nextKey);
+  await touch(ctx, list, { columns, nextKey });
+  return columns.at(-1)!.key;
+}
+
+export { cleanCells as cleanListCells, peopleOf as listPeople };
+
 // ---------------------------------------------------------------- queries
 
 export const forSpace = query({
@@ -279,6 +313,23 @@ export const recent = query({
   },
 });
 
+/** The space's people, plus anyone a person cell names who isn't one of them (a form's sender). */
+async function withSenders(ctx: Ctx, people: { userId: string; name: string }[], list: Doc<"lists">, rows: Doc<"listRows">[]) {
+  const known = new Set(people.map((p) => p.userId));
+  const keys = list.columns.filter((c) => c.type === "person").map((c) => c.key);
+  const out = [...people];
+  for (const r of rows)
+    for (const k of keys) {
+      const id = r.cells[k];
+      if (typeof id !== "string" || known.has(id)) continue;
+      known.add(id);
+      const nid = ctx.db.normalizeId("users", id);
+      const u = nid ? await ctx.db.get(nid) : null;
+      if (u) out.push({ userId: id, name: u.name ?? u.email ?? "" });
+    }
+  return out;
+}
+
 export const get = query({
   args: { listId: v.string() },
   handler: async (ctx, { listId }) => {
@@ -289,7 +340,7 @@ export const get = query({
       list: { _id: list._id, title: list.title, description: list.description ?? "", columns: list.columns, view: list.view, updatedAt: list.updatedAt },
       rows: rows.map((r) => ({ _id: r._id, cells: r.cells, order: r.order })),
       space: { _id: space._id, name: space.kind === "personal" ? "مساحتي" : space.name, personal: space.kind === "personal" },
-      people: await peopleOf(ctx, space),
+      people: await withSenders(ctx, await peopleOf(ctx, space), list, rows),
       canWrite,
       canDelete,
     };

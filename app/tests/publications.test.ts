@@ -161,3 +161,113 @@ describe("the content origin", () => {
     expect((await s.call("mutation", "publications:openTicket", { slug: setup.S_plain.slug }, tok("rdr"))).ok).toBe(false);
   });
 });
+
+// ---------------------------------------------------------------- forms (step 2)
+
+describe("forms → a list", () => {
+  let pub: string;
+  let slug: string;
+  let list: string;
+  let keys: Record<string, string>;
+  const tokenIn = (html: string) => /name="_t" value="([^"]+)"/.exec(html)?.[1] ?? "";
+  const post = (body: Record<string, string>, host = PUB) =>
+    fetch(`${s.url}/f/${slug}`, { method: "POST", redirect: "manual", headers: { "X-Forwarded-Host": host, "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams(body).toString() });
+  async function formFor(a: ActorKey) {
+    const cookie = await openAs(a, slug);
+    const html = await (await page(`/p/${slug}`, cookie)).text();
+    return { cookie, html, token: tokenIn(html) };
+  }
+
+  beforeAll(async () => {
+    const art = must(await s.call("mutation", "artifacts:create", { title: "استبيان", kind: "markdown", content: "# استبيان الدورة", spaceId: f.spaces.S_plain }, tok("mgr"))).artifactId;
+    const r = must(await s.call("mutation", "publications:publish", { artifactId: art, audience: "workspace" }, tok("mgr")));
+    pub = r.id;
+    slug = r.url.split("/p/")[1];
+    list = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_plain, title: "ردود الاستبيان", columns: [{ name: "الاسم", type: "text" }, { name: "العمر", type: "number" }, { name: "المستوى", type: "select", options: ["مبتدئ", "متقدم"] }, { name: "داخلي", type: "text" }] }, tok("mgr")));
+    const cols = must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).list.columns;
+    keys = Object.fromEntries(cols.map((c: any) => [c.name, c.key]));
+    must(await s.call("mutation", "publications:setForm", { publicationId: pub, form: { listId: list, fields: [{ key: keys["الاسم"], required: true }, { key: keys["العمر"], required: false }, { key: keys["المستوى"], required: false }], recordSender: true, onePerReader: true, thanks: "شكراً THX-1" } }, tok("mgr")));
+  });
+
+  test("setForm, addFeedbackForm, formOptions: whoever manages the publication", async () => {
+    for (const a of ACTORS) {
+      const allowed = a === "mgr";
+      expect([a, (await s.call("query", "publications:formOptions", { publicationId: pub }, tok(a))).ok]).toEqual([a, allowed]);
+      if (a !== "mgr") expect([a, (await s.call("mutation", "publications:setForm", { publicationId: pub, form: null }, tok(a))).ok]).toEqual([a, false]);
+      if (a !== "mgr") expect([a, (await s.call("mutation", "publications:addFeedbackForm", { publicationId: pub }, tok(a))).ok]).toEqual([a, false]);
+    }
+    // A list of another space can't take the replies.
+    const other = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_sens, title: "أخرى" }, tok("mgr")));
+    expect((await s.call("mutation", "publications:setForm", { publicationId: pub, form: { listId: other, fields: [], recordSender: false, onePerReader: false } }, tok("mgr"))).ok).toBe(false);
+  });
+
+  test("the page shows the form's fields, posting only to this origin's /f/", async () => {
+    const res = await page(`/p/${slug}`, await openAs("out", slug));
+    const csp = res.headers.get("content-security-policy")!;
+    expect(csp).toContain(`form-action http://${PUB}/f/`);
+    expect(csp).toContain("allow-forms");
+    const html = await res.text();
+    expect(html).toContain(`action="/f/${slug}"`);
+    expect(html).toContain(`name="f_${keys["الاسم"]}"`);
+    expect(html).not.toContain(`name="f_${keys["داخلي"]}"`); // not a form field
+    expect(tokenIn(html).length).toBeGreaterThan(20);
+  });
+
+  test("a reply from someone outside the space becomes a row, with who sent it; once only", async () => {
+    const { token } = await formFor("out");
+    const r = await post({ _t: token, [`f_${keys["الاسم"]}`]: "سارة", [`f_${keys["العمر"]}`]: "٣٠", [`f_${keys["المستوى"]}`]: "متقدم", [`f_${keys["داخلي"]}`]: "حقن" });
+    expect(r.status).toBe(303);
+    expect(r.headers.get("location")).toBe(`/p/${slug}?sent=1`);
+    const g = must(await s.call("query", "lists:get", { listId: list }, tok("mgr")));
+    const sender = g.list.columns.find((c: any) => c.name === "المرسل");
+    const row = g.rows.find((x: any) => x.cells[keys["الاسم"]] === "سارة");
+    expect(row.cells[keys["العمر"]]).toBe(30);
+    expect(row.cells[keys["المستوى"]]).toBe("متقدم");
+    expect(row.cells[keys["داخلي"]]).toBeUndefined();
+    expect(g.people.find((p: any) => p.userId === row.cells[sender.key])?.name).toBe("موظف out");
+    // The list's space doesn't widen: out still can't read the list.
+    expect((await s.call("query", "lists:get", { listId: list }, tok("out"))).ok).toBe(false);
+    // Once per reader.
+    const again = await post({ _t: token, [`f_${keys["الاسم"]}`]: "ثانية" });
+    expect(again.headers.get("location")).toBe(`/p/${slug}?err=answered`);
+    expect(await (await page(`/p/${slug}?sent=1`, (await formFor("out")).cookie)).text()).toContain("THX-1");
+    expect(must(await s.call("query", "publications:mine", {}, tok("mgr"))).mine.find((p: any) => p._id === pub).form.replies).toBe(1);
+  });
+
+  test("required, wrong options, bad tokens and the app's host are refused", async () => {
+    const { token } = await formFor("rdr");
+    expect((await post({ _t: token, [`f_${keys["العمر"]}`]: "5" })).headers.get("location")).toBe(`/p/${slug}?err=required`);
+    expect((await post({ _t: token, [`f_${keys["الاسم"]}`]: "س", [`f_${keys["المستوى"]}`]: "خبير" })).headers.get("location")).toBe(`/p/${slug}?err=invalid`);
+    expect((await post({ _t: "not-a-token", [`f_${keys["الاسم"]}`]: "س" })).headers.get("location")).toBe(`http://${APP}/#/open/${slug}`);
+    expect((await post({ _t: token, [`f_${keys["الاسم"]}`]: "س" }, APP)).status).toBe(404);
+    expect(JSON.stringify(must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).rows)).not.toContain("خبير");
+  });
+
+  test("closing date and reply limit close the form; revoking stops replies", async () => {
+    must(await s.call("mutation", "publications:setForm", { publicationId: pub, form: { listId: list, fields: [{ key: keys["الاسم"], required: true }], recordSender: false, onePerReader: false, maxReplies: 2 } }, tok("mgr")));
+    const { token } = await formFor("mem");
+    expect((await post({ _t: token, [`f_${keys["الاسم"]}`]: "أ" })).headers.get("location")).toBe(`/p/${slug}?sent=1`); // 2nd reply
+    expect((await post({ _t: token, [`f_${keys["الاسم"]}`]: "ب" })).headers.get("location")).toBe(`/p/${slug}?err=full`);
+    must(await s.call("mutation", "publications:setForm", { publicationId: pub, form: { listId: list, fields: [{ key: keys["الاسم"], required: true }], recordSender: false, onePerReader: false, closesAt: Date.now() - 1000 } }, tok("mgr")));
+    expect((await post({ _t: token, [`f_${keys["الاسم"]}`]: "ج" })).headers.get("location")).toBe(`/p/${slug}?err=closed`);
+    must(await s.call("mutation", "publications:revoke", { publicationId: pub }, tok("mgr")));
+    expect((await post({ _t: token, [`f_${keys["الاسم"]}`]: "د" })).headers.get("location")).toBe(`http://${APP}/#/open/${slug}`);
+  });
+
+  test("«نموذج ملاحظات» makes its own list and form", async () => {
+    const art = must(await s.call("mutation", "artifacts:create", { title: "صفحة الدورة", kind: "markdown", content: "x", spaceId: f.spaces.S_plain }, tok("mgr"))).artifactId;
+    const r = must(await s.call("mutation", "publications:publish", { artifactId: art, audience: "space" }, tok("mgr")));
+    const listId = must(await s.call("mutation", "publications:addFeedbackForm", { publicationId: r.id }, tok("mgr")));
+    const l = must(await s.call("query", "lists:get", { listId }, tok("mem")));
+    expect(l.list.title).toBe("ملاحظات: صفحة الدورة");
+    expect(l.list.columns.map((c: any) => c.name)).toEqual(["التقييم", "التعليق", "المرسل"]);
+    const s2 = r.url.split("/p/")[1];
+    const html = await (await page(`/p/${s2}`, await openAs("mem", s2))).text();
+    expect(html).toContain("5 ممتاز");
+    // Deleting the list takes the form off the page; the page stays.
+    must(await s.call("mutation", "lists:remove", { listId }, tok("mgr")));
+    const after = must(await s.call("query", "publications:forArtifact", { artifactId: art }, tok("mgr"))).publications.find((p: any) => p._id === r.id);
+    expect(after.form).toBeNull();
+    expect(after.state).toBe("live");
+  });
+});
