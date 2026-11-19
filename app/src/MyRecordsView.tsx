@@ -75,19 +75,3 @@ export function MyRecordsView() {
     </div>
   );
 }
-
-/** Admin screen cell: national id / employee number of an account. */
-export function IdentifiersCell({ userId, nationalId, employeeNo, onError }: { userId: string; nationalId: string | null; employeeNo: string | null; onError: (m: string) => void }) {
-  const setIdentifiers = useMutation(api.admin.setIdentifiers);
-  const save = (field: "nationalId" | "employeeNo", value: string, old: string | null) => {
-    const v = value.trim();
-    if (v === (old ?? "")) return;
-    setIdentifiers({ userId: userId as any, [field]: v || null } as any).catch((e) => onError(errorText(e)));
-  };
-  return (
-    <div className="flex flex-col gap-1">
-      <input className="input w-32 text-xs" dir="ltr" placeholder="رقم الهوية" defaultValue={nationalId ?? ""} onBlur={(e) => save("nationalId", e.target.value, nationalId)} />
-      <input className="input w-32 text-xs" dir="ltr" placeholder="الرقم الوظيفي" defaultValue={employeeNo ?? ""} onBlur={(e) => save("employeeNo", e.target.value, employeeNo)} />
-    </div>
-  );
-}
