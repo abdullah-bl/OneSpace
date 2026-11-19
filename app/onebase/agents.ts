@@ -50,7 +50,8 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       description: "مساعد لكل شيء: يكتب ويترجم ويلخّص ويجيب، ويرجع إلى ملفاتك ويستشهد بها حين يكون السؤال عنها.",
       instructions:
         "ساعد الموظف في أي طلب: كتابة، صياغة، ترجمة، تلخيص، شرح، أسئلة عامة. حين يسأل عن ملفاته أو أنظمة الإدارة فارجع إلى ملفاته واستشهد بها. إن طلب مخرجاً محفوظاً (ملخصاً، جدولاً، مسودة) فاقترح إنشاءه، وسيؤكده بنفسه.",
-      allowedTools: ["search_documents", "read_file", "create_artifact", "update_artifact", "my_records"],
+      allowedTools: ["search_documents", "read_file", "create_artifact", "update_artifact", "export_document", "my_records"],
+      toolMode: "all",
       dataScope: "all",
       modelRole: "main",
       maxSteps: 4,
@@ -100,7 +101,8 @@ export const STARTER_AGENTS: { key: string; isDefault: boolean; config: AgentCon
       description: "يحلل ملفات البيانات التي تختارها بكود معزول ويعرض النتائج كمخرجات.",
       instructions:
         "أنت وكيل التحليل. اقرأ وصف الملف أولاً، ثم اقترح تشغيل كود Python قصير على الملفات التي اختارها المستخدم فقط. لا ترتّب الأشخاص ولا تقترح أوزاناً: للمفاضلة شاشتها المعتمدة.",
-      allowedTools: ["run_analysis", "create_artifact", "read_file"],
+      allowedTools: ["run_analysis", "create_artifact", "export_document", "read_file"],
+      toolMode: "all",
       dataScope: "all",
       modelRole: "main",
       maxSteps: 5,
@@ -130,7 +132,7 @@ export async function seedStarters(ctx: MutationCtx, by?: Id<"users">): Promise<
       updatedAt: now,
     });
     await ctx.db.insert("agentVersions", { agentId, version: 1, config: s.config, publishedBy: by, publishedAt: now });
-    await writeAudit(ctx, { userId: by, action: "agent.create", resourceType: "agent", resourceId: agentId, detail: { name: s.config.name, version: 1, tools: s.config.allowedTools.join(","), starter: true } });
+    await writeAudit(ctx, { userId: by, action: "agent.create", resourceType: "agent", resourceId: agentId, detail: { name: s.config.name, version: 1, tools: s.config.toolMode === "all" ? "all" : s.config.allowedTools.join(","), starter: true } });
     added++;
   }
   // UX redesign: the starter default agent from before (no `grounding`) becomes a general
@@ -148,6 +150,11 @@ export async function seedStarters(ctx: MutationCtx, by?: Id<"users">): Promise<
 }
 
 /** "open" unless the agent was explicitly made document-only (or predates the setting). */
+/** The tools an agent may use: the whole registry for "all", else its own list (registry order). */
+export function agentTools(cfg: AgentConfig): string[] {
+  return cfg.toolMode === "all" ? Object.keys(registry) : Object.keys(registry).filter((t) => cfg.allowedTools.includes(t));
+}
+
 export function groundingOf(cfg: AgentConfig): "open" | "documents" {
   return cfg.grounding === "open" ? "open" : "documents";
 }
@@ -181,6 +188,7 @@ async function normalizeConfig(ctx: Ctx, workspaceId: Id<"workspaces">, c: Agent
     description: cleanText(c.description, DESCRIPTION_MAX, "الوصف"),
     instructions: cleanText(c.instructions, INSTRUCTIONS_MAX, "التعليمات"),
     allowedTools: Object.keys(registry).filter((t) => tools.includes(t)), // registry order
+    toolMode: c.toolMode === "all" ? "all" : "custom",
     dataScope: c.dataScope,
     modelRole: c.modelRole,
     maxSteps: steps,
@@ -337,7 +345,7 @@ export const available = query({
         name: a.live.name,
         description: a.live.description,
         isDefault: a.isDefault,
-        tools: a.live.allowedTools.map((t) => registry[t]?.label ?? t),
+        tools: agentTools(a.live).map((t) => registry[t]?.label ?? t),
         dataScope: DATA_SCOPE_LABELS[a.live.dataScope],
         grounding: groundingOf(a.live),
       });
@@ -405,7 +413,7 @@ export const create = mutation({
     const cfg = await normalizeConfig(ctx, me.workspace._id, config);
     const now = Date.now();
     const agentId = await ctx.db.insert("agents", { draft: cfg, version: 0, enabled: true, isDefault: false, testQuestions: [], createdBy: me.userId, createdAt: now, updatedAt: now });
-    await writeAudit(ctx, { userId: me.userId, action: "agent.create", resourceType: "agent", resourceId: agentId, detail: { name: cfg.name, version: 0, tools: cfg.allowedTools.join(","), dataScope: cfg.dataScope } });
+    await writeAudit(ctx, { userId: me.userId, action: "agent.create", resourceType: "agent", resourceId: agentId, detail: { name: cfg.name, version: 0, tools: cfg.toolMode === "all" ? "all" : cfg.allowedTools.join(","), dataScope: cfg.dataScope } });
     return agentId;
   },
 });
@@ -422,7 +430,7 @@ export const saveDraft = mutation({
       action: "agent.draft",
       resourceType: "agent",
       resourceId: agent._id,
-      detail: { name: cfg.name, version: agent.version, changes: changedFields(agent.live, cfg), tools: cfg.allowedTools.join(","), dataScope: cfg.dataScope },
+      detail: { name: cfg.name, version: agent.version, changes: changedFields(agent.live, cfg), tools: cfg.toolMode === "all" ? "all" : cfg.allowedTools.join(","), dataScope: cfg.dataScope },
     });
   },
 });
@@ -456,7 +464,7 @@ async function publishConfig(ctx: MutationCtx, me: { userId: Id<"users"> }, agen
       previousVersion: agent.version,
       revertedFrom: revertedFrom ?? null,
       changes: changedFields(agent.live, cfg),
-      tools: cfg.allowedTools.join(","),
+      tools: cfg.toolMode === "all" ? "all" : cfg.allowedTools.join(","),
       dataScope: cfg.dataScope,
     },
   });

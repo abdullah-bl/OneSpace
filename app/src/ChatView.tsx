@@ -8,7 +8,9 @@
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
-import { ArtifactPanel } from "./ArtifactPanel";
+import { ArtifactDock, OutputChip } from "./ArtifactPanel";
+import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
+import { openSkillDraft } from "./SkillsView";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { renderAnswer } from "./markdown";
@@ -16,13 +18,16 @@ import { renderAnswer } from "./markdown";
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
 type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spaceId?: string };
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string };
-type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; artifactIds: string[] };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[] };
+type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
+type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null };
+type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
-let pendingDraft: { spaceId?: string; mentions: Mention[]; text?: string } | null = null;
-export function startChatWith(draft: { spaceId?: string; mentions?: Mention[]; text?: string }) {
-  pendingDraft = { spaceId: draft.spaceId, mentions: draft.mentions ?? [], text: draft.text };
+type SkillRef = { id: string; name: string };
+let pendingDraft: { spaceId?: string; mentions: Mention[]; text?: string; skill?: SkillRef } | null = null;
+export function startChatWith(draft: { spaceId?: string; mentions?: Mention[]; text?: string; skill?: SkillRef }) {
+  pendingDraft = { spaceId: draft.spaceId, mentions: draft.mentions ?? [], text: draft.text, skill: draft.skill };
   window.location.hash = draft.spaceId ? `#/space/${draft.spaceId}/new` : "#/new";
 }
 /** Opens a new chat in the file's space with the file already mentioned. */
@@ -30,18 +35,73 @@ export function askAboutFile(fileId: string, name: string, spaceId?: string) {
   startChatWith({ spaceId, mentions: [{ kind: "file", id: fileId, name, spaceId }] });
 }
 
-const STARTERS = [
+type Starter = { title: string; text?: string; mention?: Mention; skill?: SkillRef; threadId?: string; personal?: boolean };
+
+/** A larger pool than fits on screen: a different few on every visit. */
+const GENERAL: Starter[] = [
   { title: "اكتب خطاباً رسمياً", text: "اكتب خطاباً رسمياً موجهاً إلى " },
   { title: "لخّص ملفاً من ملفاتي", text: "لخّص لي الملف @" },
   { title: "ترجم نصاً", text: "ترجم النص التالي إلى الإنجليزية:\n" },
   { title: "اسأل عن الأنظمة واللوائح", text: "ما الذي تنص عليه سياسة " },
+  { title: "صُغ رداً على بريد", text: "اكتب رداً مهنياً مختصراً على هذا البريد:\n" },
+  { title: "اكتب محضر اجتماع", text: "حوّل هذه الملاحظات إلى محضر اجتماع بالقرارات والمهام والمسؤولين:\n" },
+  { title: "حسّن صياغة نص", text: "حسّن صياغة النص التالي بلغة رسمية واضحة:\n" },
+  { title: "اكتب مذكرة داخلية", text: "اكتب مذكرة داخلية بخصوص " },
+  { title: "حلّل جدول بيانات", text: "حلّل بيانات @" },
+  { title: "جهّز عرضاً تقديمياً", text: "جهّز عرضاً تقديمياً من خمس شرائح عن " },
+  { title: "اكتب تقريراً أسبوعياً", text: "اكتب تقريراً أسبوعياً مختصراً عن الإنجازات والعوائق والخطوات القادمة:\n" },
+  { title: "قارن بين ملفين", text: "قارن بين @" },
 ];
+const BY_TIME: Record<"morning" | "evening", Starter[]> = {
+  morning: [{ title: "رتّب أولويات يومي", text: "ساعدني أرتب أولويات اليوم، هذه مهامي:\n" }],
+  evening: [{ title: "لخّص ما أنجزته اليوم", text: "اكتب ملخصاً لما أنجزته اليوم من هذه النقاط:\n" }],
+};
+
+/** «صباح الخير» until noon, «مساء الخير» after, with the user's first name. */
+export function greeting(name: string | null | undefined, now = new Date()) {
+  const h = now.getHours();
+  const part = h >= 4 && h < 12 ? "صباح الخير" : "مساء الخير";
+  const first = (name ?? "").trim().split(/\s+/)[0];
+  return first && !first.includes("@") ? `${part}، ${first}` : part;
+}
+
+/** Seeded shuffle: stable while the page is open, different on the next visit. */
+function shuffle<T>(xs: T[], seed: number): T[] {
+  const a = [...xs];
+  let x = Math.floor(seed * 2 ** 31) || 1;
+  for (let i = a.length - 1; i > 0; i--) {
+    x = (x * 48271) % 2147483647;
+    const j = x % (i + 1);
+    [a[i], a[j]] = [a[j]!, a[i]!];
+  }
+  return a;
+}
+
+function useStarters(spaceId: string | undefined): Starter[] {
+  const [seed] = useState(() => Math.random());
+  const mine = useQuery(api.home.suggestions, spaceId ? { spaceId } : {});
+  return useMemo(() => {
+    const personal: Starter[] = (mine ?? []).map((s) =>
+      s.kind === "file"
+        ? { title: s.title, text: s.text, mention: { kind: "file", id: s.file.id, name: s.file.name, spaceId: s.file.spaceId }, personal: true }
+        : s.kind === "skill"
+          ? { title: s.title, text: s.text, skill: s.skill, personal: true }
+          : { title: s.title, threadId: s.threadId, personal: true },
+    );
+    const h = new Date().getHours();
+    const general = shuffle([...GENERAL, ...BY_TIME[h >= 4 && h < 12 ? "morning" : "evening"]], seed);
+    // Up to two of the user's own (in a varying order), the rest general.
+    const own = shuffle(personal, seed).slice(0, 2);
+    return [...own, ...general].slice(0, 4);
+  }, [mine, seed]);
+}
 
 export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string | null; spaceId?: string | null; spaces: SpaceInfo[]; go: (path: string) => void }) {
   const data = useQuery(api.chat.messages, threadId ? { threadId } : "skip");
   const createThread = useMutation(api.chat.createThread);
   const send = useMutation(api.chat.send);
   const retry = useMutation(api.chat.retry);
+  const stopTurn = useMutation(api.chat.stop);
   const setAgent = useMutation(api.chat.setAgent);
   const [draft] = useState(() => {
     const d = !threadId ? pendingDraft : null;
@@ -49,6 +109,13 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     return d;
   });
   const [draftAgent, setDraftAgent] = useState<string | null>(null);
+  const [effort, setEffortState] = useState<Effort>(savedEffort);
+  const setEffort = (e: Effort) => {
+    setEffortState(e);
+    try {
+      localStorage.setItem("onespace.effort", e);
+    } catch {}
+  };
   const [error, setError] = useState("");
   const [artifact, setArtifact] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -67,12 +134,12 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
 
-  const submit = async (text: string, mentions: Mention[]) => {
+  const submit = async (text: string, mentions: Mention[], skill?: SkillRef | null) => {
     setError("");
     try {
       let id = threadId;
       if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace } : {}) })) as string;
-      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })) });
+      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })), ...(skill ? { skillId: skill.id } : {}), effort });
       stick.current = true;
       if (!threadId) go(`/chat/${id}`);
       return true;
@@ -93,7 +160,8 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   };
 
   const empty = !threadId;
-  const title = empty ? (space ? `محادثة جديدة في ${space.kind === "personal" ? "مساحتي" : space.name}` : "بماذا أساعدك اليوم؟") : (data?.title ?? "…");
+  const me = useQuery(api.account.me, empty ? {} : "skip");
+  const title = empty ? (space ? `محادثة جديدة في ${space.kind === "personal" ? "مساحتي" : space.name}` : me === undefined ? "\u00a0" : greeting(me?.name)) : (data?.title ?? "…");
 
   return (
     <div className="flex h-full min-h-0">
@@ -114,10 +182,10 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               </a>
             )}
             {data?.scheduled && <span className="shrink-0 rounded px-2 py-0.5 text-xs text-muted bg-raised">مهمة مجدولة</span>}
-            {data?.test && <span className="shrink-0 rounded bg-[#fffbeb] px-2 py-0.5 text-xs text-[#92400e]">اختبار مسودة الوكيل</span>}
+            {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
             <span className="ms-auto" />
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
           </header>
         )}
         <div
@@ -131,73 +199,91 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
           <div className={`mx-auto w-full max-w-[760px] px-4 ${empty ? "flex min-h-full flex-col justify-center py-10" : "space-y-6 pb-6 pt-2"}`}>
             {empty && (
               <div className="mb-6">
-                <h1 className="text-2xl font-medium tracking-tight">{title}</h1>
+                <h1 className="overflow-hidden pb-1 text-[clamp(28px,2.4vw+18px,44px)] leading-tight font-bold tracking-tight"><span key={title} className="block animate-mask">{title}</span></h1>
                 <p className="mt-2 text-muted">
                   {space
                     ? "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
-                    : "اسأل عن أي شيء، أو اطلب كتابة أو ترجمة أو تلخيصاً. حين يكون سؤالك عن ملفاتك يرجع إليها ويذكر المصدر. اكتب @ لتحدد ملفاً أو مساحة."}
+                    : "بماذا أساعدك اليوم؟ اسأل عن أي شيء، أو اطلب كتابة أو ترجمة أو تلخيصاً. اكتب @ لتحدد ملفاً أو مساحة، و/ لمهاراتك."}
                 </p>
               </div>
             )}
-            {data?.agent?.error && <div className="rounded-md bg-[#fffbeb] p-3 text-sm text-[#92400e]">{data.agent.error}</div>}
+            {data?.agent?.error && <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">{data.agent.error}</div>}
             {messages.map((m) => (
-              <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+              <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
-            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} working={false} onSubmit={submit} initial={draft} starters />}
+            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} />}
           </div>
         </div>
         {!empty && (
           <div className="shrink-0 px-4 pb-4">
             <div className="mx-auto w-full max-w-[760px]">
               {error && <p className="mb-2 text-sm text-negative">{error}</p>}
-              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} working={working} onSubmit={submit} />
+              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
             </div>
           </div>
         )}
         {empty && error && <p className="px-4 pb-4 text-center text-sm text-negative">{error}</p>}
       </div>
-      {artifact && (
-        <div className="fixed inset-0 z-30 overflow-y-auto bg-ground p-3 xl:static xl:z-auto xl:w-[480px] xl:shrink-0 xl:border-s xl:border-line xl:bg-surface">
-          <ArtifactPanel key={artifact} artifactId={artifact} spaces={spaces} onClose={() => setArtifact(null)} />
-        </div>
-      )}
+      {artifact && <ArtifactDock key={artifact} artifactId={artifact} spaces={spaces} onClose={() => setArtifact(null)} />}
     </div>
   );
 }
 
-function ThreadMenu({ threadId, title, onDeleted }: { threadId: string; title: string; onDeleted: () => void }) {
+function ThreadMenu({ threadId, title, pinned, onDeleted, go }: { threadId: string; title: string; pinned: boolean; onDeleted: () => void; go: (path: string) => void }) {
   const rename = useMutation(api.chat.rename);
+  const setPinned = useMutation(api.chat.setPinned);
   const del = useMutation(api.chat.deleteThread);
-  const [open, setOpen] = useState(false);
+  const draftSkill = useAction(api.skills.draftFromThread);
+  const [drafting, setDrafting] = useState(false);
   return (
-    <div className="relative">
-      <button className="btn-ghost w-9 px-0" aria-label="خيارات المحادثة" onClick={() => setOpen(!open)}>
-        <Icon name="dots" size={18} />
-      </button>
-      {open && (
-        <div className="absolute end-0 top-10 z-20 w-44 rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" onMouseLeave={() => setOpen(false)}>
-          <button
-            className="block w-full rounded-md px-3 py-2 text-start text-sm hover:bg-active"
-            onClick={() => {
-              setOpen(false);
-              const t = prompt("عنوان المحادثة", title);
-              if (t?.trim()) void rename({ threadId, title: t });
-            }}
-          >
-            إعادة التسمية
-          </button>
-          <button
-            className="block w-full rounded-md px-3 py-2 text-start text-sm text-negative hover:bg-[#ffedea]"
-            onClick={() => {
-              setOpen(false);
-              if (confirm("حذف هذه المحادثة نهائياً؟")) void del({ threadId }).then(onDeleted);
-            }}
-          >
-            حذف المحادثة
-          </button>
-        </div>
-      )}
+    <Menu
+      label={drafting ? "يكتب مسودة المهارة…" : "خيارات المحادثة"}
+      icon={drafting ? "clock" : "dots"}
+      items={[
+        {
+          label: "اصنع مهارة من المحادثة",
+          icon: "bot",
+          hint: "يكتبها الذكاء الاصطناعي",
+          disabled: drafting,
+          onSelect: () => {
+            setDrafting(true);
+            draftSkill({ threadId })
+              .then((d) => openSkillDraft({ ...d, fromThreadId: threadId }, go))
+              .catch((e) => void tell(errorText(e)))
+              .finally(() => setDrafting(false));
+          },
+        },
+        "divider",
+        { label: pinned ? "إلغاء التثبيت" : "تثبيت في الأعلى", icon: "pin", onSelect: () => void setPinned({ threadId, pinned: !pinned }).catch((e) => void tell(errorText(e))) },
+        {
+          label: "إعادة التسمية",
+          icon: "pencil",
+          onSelect: () =>
+            void askText("عنوان المحادثة", title).then((t) => {
+              if (t) void rename({ threadId, title: t });
+            }),
+        },
+        { label: "حذف المحادثة", danger: true, onSelect: () => void ask("حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void del({ threadId }).then(onDeleted); })},
+      ]}
+    />
+  );
+}
+
+function Starters({ spaceId, onPick }: { spaceId?: string; onPick: (s: Starter) => void }) {
+  const starters = useStarters(spaceId);
+  return (
+    <div className="mt-4 grid gap-2 sm:grid-cols-2">
+      {starters.map((s) => (
+        <button
+          key={s.title}
+          className="flex items-center gap-2 rounded-lg border border-line bg-surface px-4 py-3 text-start text-sm hover:border-control hover:bg-sunken animate-fade"
+          onClick={() => onPick(s)}
+        >
+          {s.personal && <Icon name={s.threadId ? "chat" : s.skill ? "bot" : "file"} size={15} className="shrink-0 text-faint" />}
+          <span className="min-w-0 truncate">{s.title}</span>
+        </button>
+      ))}
     </div>
   );
 }
@@ -209,18 +295,35 @@ function Composer(props: {
   space?: SpaceInfo;
   agentId: string | null;
   onAgent?: (id: string | null) => void;
+  effort: Effort;
+  onEffort: (e: Effort) => void;
   working: boolean;
-  onSubmit: (text: string, mentions: Mention[]) => Promise<boolean>;
-  initial?: { mentions: Mention[]; text?: string } | null;
+  onStop?: () => void;
+  onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null) => Promise<boolean>;
+  initial?: { mentions: Mention[]; text?: string; skill?: SkillRef } | null;
   starters?: boolean;
+  go?: (path: string) => void;
 }) {
-  const [text, setText] = useState(props.initial?.text ?? (props.initial?.mentions.length ? props.initial.mentions.map((m) => `@${m.name} `).join("") : ""));
+  // Mentioned files and spaces live in the chips above the text, not in the text itself.
+  const [text, setText] = useState(props.initial?.text ?? "");
   const [mentions, setMentions] = useState<Mention[]>(props.initial?.mentions ?? []);
   const [uploads, setUploads] = useState<{ fileId: string; spaceId: string; name: string }[]>([]);
   const [busy, setBusy] = useState(false);
   const [uploadError, setUploadError] = useState("");
   const [query, setQuery] = useState<string | null>(null);
   const [active, setActive] = useState(0);
+  // "/": my skills. One per message; its "/name" stays in the text.
+  const [slash, setSlash] = useState<string | null>(null);
+  const [skill, setSkill] = useState<SkillRef | null>(props.initial?.skill ?? null);
+  const mySkills = useQuery(api.skills.list, slash !== null || skill ? {} : "skip");
+  const skillItems = useMemo(() => {
+    if (slash === null || !mySkills) return [];
+    const q = slash.toLowerCase();
+    return mySkills.filter((s) => !q || s.name.toLowerCase().includes(q) || s.title.toLowerCase().includes(q)).slice(0, 8);
+  }, [slash, mySkills]);
+  // My level (plans/08 §D): whether «تفكير عميق» is allowed and how many questions are left today.
+  const level = useQuery(api.levels.mine);
+  const left = level && level.dailyQuestions > 0 ? Math.max(0, level.dailyQuestions - level.usedToday) : null;
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
@@ -253,15 +356,49 @@ function Composer(props: {
   }, [text]);
 
   const updateQuery = (value: string, caret: number) => {
-    const m = /(^|\s)@([^\s@]{0,40})$/.exec(value.slice(0, caret));
+    const before = value.slice(0, caret);
+    const m = /(^|\s)@([^\s@]{0,40})$/.exec(before);
     setQuery(m ? m[2]! : null);
+    const sl = /(^|\s)\/([^\s/]{0,40})$/.exec(before);
+    setSlash(!m && sl ? sl[2]! : null);
     setActive(0);
+  };
+
+  /** «إضافة» → «@» / «/»: types the trigger at the caret (with a space before it if needed) and opens its list. */
+  const insertTrigger = (ch: "@" | "/") => {
+    const el = ta.current!;
+    const caret = el.selectionStart ?? text.length;
+    const before = text.slice(0, caret);
+    const ins = (before && !/\s$/.test(before) ? " " : "") + ch;
+    const next = before + ins + text.slice(caret);
+    const at = caret + ins.length;
+    setText(next);
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(at, at);
+      updateQuery(next, at);
+    });
+  };
+
+  const pickSkill = (s: { _id: string; name: string }) => {
+    const el = ta.current!;
+    const caret = el.selectionStart ?? text.length;
+    const before = text.slice(0, caret).replace(/\/([^\s/]{0,40})$/, `/${s.name} `);
+    const next = before + text.slice(caret);
+    setText(next);
+    setSlash(null);
+    setSkill({ id: s._id, name: s.name });
+    requestAnimationFrame(() => {
+      el.focus();
+      el.setSelectionRange(before.length, before.length);
+    });
   };
 
   const pick = (item: Mention) => {
     const el = ta.current!;
     const caret = el.selectionStart ?? text.length;
-    const before = text.slice(0, caret).replace(/@([^\s@]{0,40})$/, `@${item.name} `);
+    // The typed "@query" is replaced by a chip: nothing of it stays in the text.
+    const before = text.slice(0, caret).replace(/(^|\s)@([^\s@]{0,40})$/, "$1");
     const next = before + text.slice(caret);
     setText(next);
     setQuery(null);
@@ -277,14 +414,17 @@ function Composer(props: {
     const q = text.trim();
     if (!q || busy || props.working || pending.length) return;
     setBusy(true);
-    // A mention whose "@name" was deleted from the text no longer counts.
-    const kept = mentions.filter((m) => m.kind !== "agent" && q.includes(`@${m.name}`));
-    const ok = await props.onSubmit(q, kept);
+    // Every chip counts (× on a chip removes it).
+    const kept = mentions.filter((m) => m.kind !== "agent");
+    // Same for the skill: deleting its "/name" from the text drops it.
+    const used = skill && q.includes(`/${skill.name}`) ? skill : null;
+    const ok = await props.onSubmit(q, kept, used);
     setBusy(false);
     if (ok) {
       setText("");
       setMentions([]);
       setUploads([]);
+      setSkill(null);
     }
   };
 
@@ -298,7 +438,6 @@ function Composer(props: {
         const m: Mention = { kind: "file", id: fileId, name: file.name, spaceId: uploadTarget._id };
         setUploads((u) => [...u, { fileId, spaceId: uploadTarget._id, name: file.name }]);
         setMentions((ms) => [...ms, m]);
-        setText((t) => (t && !t.endsWith(" ") && !t.endsWith("\n") ? t + " " : t) + `@${file.name} `);
       } catch (err) {
         setUploadError(errorText(err));
       }
@@ -320,8 +459,50 @@ function Composer(props: {
         {query !== null && items.length > 0 && (
           <MentionList items={items as (Mention & { detail: string })[]} active={active} onPick={pick} />
         )}
-        {visibleMentions.length > 0 && (
+        {slash !== null && mySkills && (
+          <div className="absolute inset-x-2 bottom-full z-20 mb-2 max-h-72 animate-pop overflow-y-auto rounded-lg border border-line bg-surface p-1 shadow-[0_8px_24px_rgba(0,0,0,0.08)]" role="listbox" aria-label="مهاراتي">
+            {skillItems.map((s, i) => (
+              <button
+                key={s._id}
+                role="option"
+                aria-selected={i === active}
+                className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-start text-sm ${i === active ? "bg-active" : "hover:bg-active"}`}
+                onMouseDown={(e) => (e.preventDefault(), pickSkill(s))}
+              >
+                <span className="font-medium text-primary" dir="ltr">
+                  /{s.name}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-muted">{s.title}</span>
+                <span className="max-w-[40%] shrink-0 truncate text-xs text-faint">{s.description}</span>
+              </button>
+            ))}
+            {skillItems.length === 0 && (
+              <a className="flex w-full items-center gap-2 rounded-md px-2 py-2 text-sm text-muted hover:bg-active" href="#/skills">
+                <Icon name="plus" size={14} /> {mySkills.length ? "لا مهارة بهذا الاسم. أنشئ واحدة" : "لا مهارات بعد. أنشئ أول مهارة"}
+              </a>
+            )}
+          </div>
+        )}
+        {(visibleMentions.length > 0 || skill) && (
           <div className="flex flex-wrap gap-1.5 px-3 pt-3">
+            {skill && (
+              <span className="flex h-7 items-center gap-1.5 rounded-md bg-primary-soft ps-2 pe-1 text-xs text-primary">
+                <span className="font-medium" dir="ltr">
+                  /{skill.name}
+                </span>
+                <span>مهارتك</span>
+                <button
+                  className="grid h-5 w-5 place-items-center rounded hover:bg-surface"
+                  aria-label={`إزالة /${skill.name}`}
+                  onClick={() => {
+                    setText((t) => t.replace(`/${skill.name} `, "").replace(`/${skill.name}`, ""));
+                    setSkill(null);
+                  }}
+                >
+                  <Icon name="x" size={12} />
+                </button>
+              </span>
+            )}
             {visibleMentions.map((m) => {
               const up = uploads.find((u) => u.fileId === m.id);
               const st = up ? ingest?.find((x) => x.fileId === m.id) : null;
@@ -336,7 +517,6 @@ function Composer(props: {
                     onClick={() => {
                       setMentions((ms) => ms.filter((x) => x.id !== m.id));
                       setUploads((u) => u.filter((x) => x.fileId !== m.id));
-                      setText((t) => t.replace(`@${m.name} `, "").replace(`@${m.name}`, ""));
                     }}
                   >
                     <Icon name="x" size={12} />
@@ -350,8 +530,8 @@ function Composer(props: {
           ref={ta}
           rows={props.starters ? 3 : 1}
           dir="auto"
-          className="block max-h-60 w-full resize-none bg-transparent px-4 pt-3 focus-visible:outline-none text-[15px] leading-7 outline-none placeholder:text-[#6b6b6b]"
-          placeholder={props.space ? "اكتب رسالتك… (@ لملف من المساحة)" : "اكتب رسالتك… (@ لملف أو مساحة أو وكيل)"}
+          className="block max-h-60 w-full resize-none bg-transparent px-4 pt-3 focus-visible:outline-none text-[15px] leading-7 outline-none placeholder:text-faint"
+          placeholder={props.space ? "اكتب رسالتك… (@ لملف من المساحة، / لمهارة)" : "اكتب رسالتك… (@ لملف أو مساحة، / لمهارة)"}
           aria-label="الرسالة"
           value={text}
           onChange={(e) => {
@@ -360,6 +540,13 @@ function Composer(props: {
           }}
           onClick={(e) => updateQuery(text, e.currentTarget.selectionStart)}
           onKeyDown={(e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "u" && uploadTarget) return e.preventDefault(), fileInput.current?.click();
+            if (slash !== null && skillItems.length) {
+              if (e.key === "ArrowDown") return e.preventDefault(), setActive((a) => (a + 1) % skillItems.length);
+              if (e.key === "ArrowUp") return e.preventDefault(), setActive((a) => (a - 1 + skillItems.length) % skillItems.length);
+              if (e.key === "Enter" || e.key === "Tab") return e.preventDefault(), pickSkill(skillItems[active]!);
+              if (e.key === "Escape") return e.preventDefault(), setSlash(null);
+            }
             if (query !== null && items.length) {
               if (e.key === "ArrowDown") return e.preventDefault(), setActive((a) => (a + 1) % items.length);
               if (e.key === "ArrowUp") return e.preventDefault(), setActive((a) => (a - 1 + items.length) % items.length);
@@ -373,9 +560,22 @@ function Composer(props: {
           }}
         />
         <div className="flex items-center gap-1 px-2 pb-2">
-          <button className="btn-ghost w-9 px-0" title={uploadTarget ? `إرفاق ملف (يُحفظ في ${uploadTarget.kind === "personal" ? "مساحتي" : uploadTarget.name})` : "إرفاق ملف"} aria-label="إرفاق ملف" onClick={() => fileInput.current?.click()} disabled={!uploadTarget}>
-            <Icon name="clip" size={18} />
-          </button>
+          <Popover label="إضافة" trigger={<Icon name="plus" size={18} />} triggerClass="btn-ghost w-9 rounded-lg px-0">
+            {(close) => (
+              <>
+                <PopoverItem
+                  icon="clip"
+                  title="إرفاق ملفات أو صور"
+                  description={uploadTarget ? `تُحفظ في ${uploadTarget.kind === "personal" ? "مساحتي" : uploadTarget.name}` : "لا تملك مساحة تُحفظ فيها"}
+                  hint="Ctrl+U"
+                  disabled={!uploadTarget}
+                  onSelect={() => (close(), fileInput.current?.click())}
+                />
+                <PopoverItem icon="at" title="إشارة إلى ملف أو مساحة" description="ليجيب منها وحدها" hint="@" onSelect={() => (close(), insertTrigger("@"))} />
+                <PopoverItem icon="bot" title="استخدام مهارة" description="تعليماتك المحفوظة لهذا الطلب" hint="/" onSelect={() => (close(), insertTrigger("/"))} />
+              </>
+            )}
+          </Popover>
           <input
             ref={fileInput}
             type="file"
@@ -387,49 +587,35 @@ function Composer(props: {
               void attach(list);
             }}
           />
-          <button
-            className="btn-ghost w-9 px-0"
-            aria-label="إشارة إلى ملف أو مساحة"
-            title="إشارة (@)"
-            onClick={() => {
-              const el = ta.current!;
-              const next = text + (text && !/\s$/.test(text) ? " @" : "@");
-              setText(next);
-              setQuery("");
-              requestAnimationFrame(() => (el.focus(), el.setSelectionRange(next.length, next.length)));
-            }}
-          >
-            <Icon name="at" size={18} />
-          </button>
-          {props.onAgent && <AgentPicker value={props.agentId} onChange={props.onAgent} />}
-          <span className="ms-auto text-xs text-muted">{pending.length ? "ينتظر تجهيز الملف…" : ""}</span>
-          <button className="btn-primary w-9 rounded-lg px-0" aria-label="إرسال" disabled={busy || props.working || !text.trim() || pending.length > 0} onClick={() => void submit()}>
-            <Icon name="send" size={18} />
-          </button>
+          <EffortPicker value={props.effort} onChange={props.onEffort} level={level} />
+          {/* The agent is chosen per question; a picker shows only on a chat pinned to one (to unpin it). */}
+          {props.onAgent && props.agentId && <AgentPicker value={props.agentId} onChange={props.onAgent} />}
+          <span className="ms-auto text-xs text-muted">{pending.length ? "ينتظر تجهيز الملف…" : left !== null && left <= 10 ? (left > 0 ? `باقي ${left} من أسئلة اليوم` : `بلغت حدّ اليوم في مستوى «${level!.name}»`) : ""}</span>
+          {props.working && props.onStop ? (
+            <button className="btn-secondary w-9 animate-pop rounded-lg px-0" aria-label="إيقاف" title="إيقاف الإجابة" onClick={props.onStop}>
+              <Icon name="stop" size={16} />
+            </button>
+          ) : (
+            <button className="btn-primary w-9 rounded-lg px-0" aria-label="إرسال" disabled={busy || props.working || !text.trim() || pending.length > 0} onClick={() => void submit()}>
+              <Icon name="send" size={18} />
+            </button>
+          )}
         </div>
       </div>
       {uploadError && <p className="mt-2 text-sm text-negative">{uploadError}</p>}
-      {props.starters && (
-        <div className="mt-4 grid gap-2 sm:grid-cols-2">
-          {STARTERS.map((s) => (
-            <button
-              key={s.title}
-              className="rounded-lg border border-line bg-surface px-4 py-3 text-start text-sm hover:border-control hover:bg-[#fbfbfa]"
-              onClick={() => {
-                setText(s.text);
-                requestAnimationFrame(() => {
-                  const el = ta.current!;
-                  el.focus();
-                  el.setSelectionRange(s.text.length, s.text.length);
-                  updateQuery(s.text, s.text.length);
-                });
-              }}
-            >
-              {s.title}
-            </button>
-          ))}
-        </div>
-      )}
+      {props.starters && <Starters spaceId={props.space?._id} onPick={(s) => {
+        if (s.threadId) return props.go?.(`/chat/${s.threadId}`);
+        const t = s.text ?? "";
+        setText(t);
+        if (s.mention) setMentions((ms) => (ms.some((m) => m.id === s.mention!.id) ? ms : [...ms, s.mention!]));
+        if (s.skill) setSkill(s.skill);
+        requestAnimationFrame(() => {
+          const el = ta.current!;
+          el.focus();
+          el.setSelectionRange(t.length, t.length);
+          if (!s.mention) updateQuery(t, t.length);
+        });
+      }} />}
     </div>
   );
 }
@@ -460,16 +646,72 @@ function MentionList({ items, active, onPick }: { items: (Mention & { detail: st
 }
 
 /** A quiet agent choice: the default first. */
+type Effort = "auto" | "fast" | "deep";
+const EFFORTS: { value: Effort; label: string; hint: string }[] = [
+  { value: "auto", label: "تلقائي", hint: "يقرر المساعد متى يفكّر قبل الإجابة بحسب الطلب" },
+  { value: "fast", label: "سريع", hint: "يجيب مباشرة دون تفكير مسبق" },
+  { value: "deep", label: "تفكير عميق", hint: "يفكّر قبل كل إجابة: أدق للتحليل والمقارنة، وأبطأ" },
+];
+function savedEffort(): Effort {
+  try {
+    const v = localStorage.getItem("onespace.effort");
+    return v === "fast" || v === "deep" ? v : "auto";
+  } catch {
+    return "auto";
+  }
+}
+
+/** Thinking level (like Claude's): «تلقائي» by default, remembered on this device. */
+function EffortPicker({ value, onChange, level }: { value: Effort; onChange: (e: Effort) => void; level?: { name: string; deep: boolean; model: string } }) {
+  // A level without thinking runs «تفكير عميق» as «تلقائي» without it (the server enforces this too).
+  const noDeep = level ? !level.deep : false;
+  if (noDeep && value === "deep") value = "auto";
+  const cur = EFFORTS.find((e) => e.value === value) ?? EFFORTS[0]!;
+  return (
+    <Popover
+      label="مستوى التفكير"
+      align="start"
+      width="w-72"
+      triggerClass={`flex h-9 items-center gap-1.5 rounded-lg px-2.5 text-xs transition-colors hover:bg-active ${value === "deep" ? "text-primary" : "text-muted"}`}
+      trigger={
+        <>
+          <Icon name="bulb" size={16} />
+          <span className={value === "deep" ? "" : "text-ink"}>{cur.label}</span>
+          <Icon name="down" size={12} />
+        </>
+      }
+    >
+      {(close) => (
+        <>
+          <div className="px-2.5 pb-1 pt-1.5 text-xs font-medium text-muted">مستوى التفكير</div>
+          {EFFORTS.map((e) => (
+            <PopoverItem
+              key={e.value}
+              title={e.label}
+              description={e.value === "deep" && noDeep ? `غير متاح في مستوى «${level!.name}»` : e.hint}
+              checked={e.value === value}
+              disabled={e.value === "deep" && noDeep}
+              onSelect={() => (onChange(e.value), close())}
+            />
+          ))}
+        </>
+      )}
+    </Popover>
+  );
+}
+
 function AgentPicker({ value, onChange }: { value: string | null; onChange: (id: string | null) => void }) {
   const agents = useQuery(api.agents.available);
   if (!agents?.length) return null;
-  const current = agents.find((a) => a._id === value) ?? agents.find((a) => a.isDefault);
+  // No pick = «تلقائي»: the router chooses the agent for each question (plans/07 §C). A pick pins it.
+  const current = agents.find((a) => a._id === value);
   return (
-    <label className="relative flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-active" title={current?.description ?? ""}>
+    <label className="relative flex h-9 items-center gap-1 rounded-md px-2 text-xs text-muted hover:bg-active" title={current?.description ?? "يختار المساعد الوكيل المناسب لنوع كل طلب"}>
       <Icon name="bot" size={16} />
-      <select className="cursor-pointer appearance-none bg-transparent pe-4 text-xs text-ink outline-none" aria-label="الوكيل" value={current && !current.isDefault ? current._id : ""} onChange={(e) => onChange(e.target.value || null)}>
+      <select className="cursor-pointer appearance-none bg-transparent pe-4 text-xs text-ink outline-none" aria-label="الوكيل" value={current ? current._id : ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">تلقائي</option>
         {agents.map((a) => (
-          <option key={a._id} value={a.isDefault ? "" : a._id}>
+          <option key={a._id} value={a._id}>
             {a.name}
           </option>
         ))}
@@ -481,13 +723,33 @@ function AgentPicker({ value, onChange }: { value: string | null; onChange: (id:
 
 // ---------------------------------------------------------------- messages
 
-function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { state: string; label: string | null; streamId: string | null; error: string | null; ahead: number }; onRetry: () => void }) {
+const secs = (ms: number | null) => (ms === null ? "" : ms < 1000 ? `${ms} م.ث` : `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} ث`);
+
+/** The step timeline (plans/07 §D): what the assistant did, in order, with times. */
+function StepList({ steps }: { steps: Step[] }) {
+  return (
+    <ol className="space-y-1 border-s-2 border-line ps-3">
+      {steps.map((st, i) => (
+        <li key={i} className="flex animate-fade items-center gap-2 text-xs">
+          <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full ${st.state === "failed" ? "bg-negative-soft text-negative" : st.state === "running" ? "bg-primary-soft text-primary" : "bg-positive-soft text-positive"}`}>
+            {st.state === "running" ? <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" /> : <Icon name={st.state === "failed" ? "x" : "check"} size={10} />}
+          </span>
+          <span className={st.state === "running" ? "text-ink" : "text-muted"}>{st.label.replace(/…$/, "")}</span>
+          {st.detail && <span className="truncate text-faint">{st.detail}</span>}
+          {st.ms !== null && <span className="meta num ms-auto">{secs(st.ms)}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { state: string; label: string | null; streamId: string | null; error: string | null; ahead: number; steps?: Step[] }; onRetry: () => void }) {
   const stream = useQuery(api.chat.stream, turn.streamId && turn.state === "running" ? { threadId, streamId: turn.streamId } : "skip");
   if (turn.state === "failed")
     return (
-      <div className="flex items-center gap-3 rounded-md bg-[#ffedea] px-3 py-2 text-sm text-[#831c1e]">
-        <span className="flex-1">تعذّر إكمال الإجابة: {turn.error}</span>
-        <button className="btn-ghost h-8 text-[#831c1e]" onClick={onRetry}>
+      <div className={`flex items-center gap-3 rounded-md px-3 py-2 text-sm ${turn.error === "أوقفتَ الإجابة قبل أن تبدأ" ? "bg-sunken text-muted" : "bg-negative-soft text-negative"}`}>
+        <span className="flex-1">{turn.error === "أوقفتَ الإجابة قبل أن تبدأ" ? turn.error : `تعذّر إكمال الإجابة: ${turn.error}`}</span>
+        <button className="btn-ghost h-8 text-negative" onClick={onRetry}>
           <Icon name="retry" size={14} /> أعد المحاولة
         </button>
       </div>
@@ -495,14 +757,24 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
   if (turn.state === "queued") return <p className="text-sm text-muted">في الانتظار{turn.ahead > 0 ? `، أمامك ${turn.ahead}` : ""}…</p>;
   return (
     <div>
+      {turn.steps && turn.steps.length > 0 && !stream?.text && (
+        <div className="mb-2">
+          <StepList steps={turn.steps} />
+        </div>
+      )}
       {stream?.text ? <div className="md caret" dangerouslySetInnerHTML={{ __html: renderAnswer(stream.text, new Set()) }} /> : null}
-      <p className="mt-1 text-xs text-muted">{turn.label ?? "…"}</p>
+      <p className="mt-1 flex items-center gap-1.5 text-xs text-muted">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-primary" />
+        {turn.label ?? "…"}
+      </p>
     </div>
   );
 }
 
-function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onOpenArtifact: (id: string) => void }) {
+function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
   const feedback = useMutation(api.chat.feedback);
+  const [showSteps, setShowSteps] = useState(false);
+  const [showParts, setShowParts] = useState(false);
   const requestDownload = useMutation(api.files.requestDownload);
   const [error, setError] = useState("");
   const [copied, setCopied] = useState(false);
@@ -512,8 +784,18 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
 
   if (m.role === "user")
     return (
-      <div className="flex justify-start">
-        <div className="max-w-[85%] whitespace-pre-wrap rounded-lg bg-[#ebeae6] px-4 py-2.5 text-[15px] leading-7" dir="auto">
+      <div className="flex animate-rise flex-col items-start gap-1.5">
+        {m.attached?.length ? (
+          <div className="flex max-w-[85%] flex-wrap gap-1.5">
+            {m.attached.map((a, i) => (
+              <span key={i} className="flex h-7 max-w-[260px] items-center gap-1.5 rounded-md border border-line bg-surface px-2 text-xs text-muted">
+                <Icon name={a.kind === "file" ? "file" : "folder"} size={13} />
+                <span className="truncate">{a.name}</span>
+              </span>
+            ))}
+          </div>
+        ) : null}
+        <div className="max-w-[85%] whitespace-pre-wrap rounded-2xl rounded-ss-md bg-raised px-4 py-2.5 text-[15px] leading-7" dir="auto">
           {m.text}
         </div>
       </div>
@@ -533,7 +815,7 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
   const sourceFiles = [...new Map(m.citations.map((c) => [c.fileId, c])).values()];
 
   return (
-    <div className="group space-y-3">
+    <div className="animate-rise group space-y-3">
       <div
         className="md"
         dir="auto"
@@ -556,7 +838,7 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
           {m.citations.map((c) => (
             <li key={c.n}>
               <button className="flex w-full items-start gap-2 rounded-md px-2 py-1.5 text-start text-sm hover:bg-active" onClick={() => void open(c)} title={c.quote}>
-                <span className="cite-num mt-0.5 grid h-[18px] min-w-[18px] place-items-center rounded bg-[#e8eef8] px-1 text-[11px] font-semibold text-data num">{c.n}</span>
+                <span className="cite-num mt-0.5 grid h-[18px] min-w-[18px] place-items-center rounded bg-primary-soft px-1 text-[11px] font-bold text-data num">{c.n}</span>
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{c.fileName}{c.page ? ` · ص ${c.page}` : ""}</span>
                   <span className="line-clamp-2 text-xs text-muted">{c.quote.split("\n").slice(1).join(" ")}</span>
@@ -578,9 +860,75 @@ function MessageView({ m, isLast, onRetry, onOpenArtifact }: { m: Msg; isLast: b
           </button>
         )}
         {copied && <span>نُسخ</span>}
+        <span className="ms-auto flex items-center gap-1">
+          {(m.parts?.length ?? 0) > 0 && (
+            <button className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowParts(!showParts)} aria-expanded={showParts} title="قُسّم الطلب على عدة وكلاء ثم جُمعت نتائجهم">
+              <Icon name="users" size={14} />
+              {m.parts!.length} وكلاء
+            </button>
+          )}
+          {m.steps?.length > 0 && (
+            <button className="flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowSteps(!showSteps)} aria-expanded={showSteps}>
+              <Icon name="tasks" size={14} />
+              {m.steps.length} {m.steps.length === 1 ? "خطوة" : "خطوات"}
+              {m.ms ? <span className="num text-faint">· {secs(m.ms)}</span> : null}
+            </button>
+          )}
+          {m.userSkill && (
+            <span className="badge-primary" dir="ltr" title="مهارتك المطبّقة على هذا الطلب">
+              /{m.userSkill}
+            </span>
+          )}
+          {m.skill && <SkillChip skill={m.skill} onReask={isLast ? onReask : undefined} />}
+        </span>
       </div>
+      {showSteps && m.steps?.length > 0 && <StepList steps={m.steps} />}
+      {showParts && (m.parts?.length ?? 0) > 0 && <PartList parts={m.parts!} />}
       {error && <p className="text-xs text-negative">{error}</p>}
     </div>
+  );
+}
+
+/** The parts a split request was worked in (plans/08 §A): each agent's own result, collapsed. */
+function PartList({ parts }: { parts: Part[] }) {
+  return (
+    <div className="space-y-2">
+      {parts.map((p, i) => (
+        <details key={i} className="animate-fade rounded-lg border border-line bg-surface">
+          <summary className="flex cursor-pointer items-center gap-2 px-3 py-2 text-sm">
+            <span className={`grid h-5 w-5 shrink-0 place-items-center rounded-full text-xs ${p.ok ? "bg-positive-soft text-positive" : "bg-negative-soft text-negative"}`}>{i + 1}</span>
+            <span className="min-w-0 flex-1 truncate">{p.goal}</span>
+            <span className="badge shrink-0">
+              <Icon name="bot" size={12} /> {p.agent}
+            </span>
+            <span className="meta num shrink-0">{secs(p.ms)}</span>
+          </summary>
+          <div className="md border-t border-rule px-3 py-2 text-sm" dangerouslySetInnerHTML={{ __html: renderAnswer(p.text, new Set()) }} />
+        </details>
+      ))}
+    </div>
+  );
+}
+
+/** Which agent answered; on the last answer, a menu to answer again with another one (pins it). */
+function SkillChip({ skill, onReask }: { skill: { agentId: string; name: string; routed: boolean }; onReask?: (agentId: string) => void }) {
+  const agents = useQuery(api.agents.available, onReask ? {} : "skip");
+  const label = `${skill.name}${skill.routed ? " · تلقائي" : ""}`;
+  if (!onReask || !agents || agents.length < 2)
+    return (
+      <span className="badge" title={skill.routed ? "اختار المساعد هذا الوكيل لهذا الطلب" : "الوكيل المثبّت لهذه المحادثة"}>
+        <Icon name="bot" size={12} /> {label}
+      </span>
+    );
+  return (
+    <Menu
+      label="الوكيل"
+      icon="bot"
+      text={label}
+      items={agents
+        .filter((a) => a._id !== skill.agentId)
+        .map((a) => ({ label: `أعد الإجابة بوكيل «${a.name}»`, hint: a.isDefault ? "الافتراضية" : undefined, onSelect: () => onReask(a._id) }))}
+    />
   );
 }
 
@@ -593,12 +941,13 @@ function IconButton({ label, icon, onClick, on }: { label: string; icon: "copy" 
 }
 
 const PROPOSAL_STATE: Record<string, { label: string; tone: string }> = {
-  pending: { label: "بانتظار تأكيدك", tone: "bg-[#fffbeb] text-[#92400e]" },
+  pending: { label: "بانتظار تأكيدك", tone: "bg-warning-soft text-warning" },
   running: { label: "يُنفَّذ…", tone: "bg-raised text-ink" },
-  executed: { label: "نُفّذ", tone: "bg-[#dcfae5] text-[#04250e]" },
-  failed: { label: "تعذّر التنفيذ", tone: "bg-[#ffedea] text-[#831c1e]" },
+  executed: { label: "نُفّذ", tone: "bg-positive-soft text-positive" },
+  failed: { label: "تعذّر التنفيذ", tone: "bg-negative-soft text-negative" },
   cancelled: { label: "أُلغي", tone: "bg-raised text-muted" },
   expired: { label: "انتهت صلاحيته", tone: "bg-raised text-muted" },
+  undone: { label: "تُراجع عنه", tone: "bg-raised text-muted" },
 };
 
 function proposalSummary(p: Proposal): string[] {
@@ -606,6 +955,7 @@ function proposalSummary(p: Proposal): string[] {
   const out: string[] = [];
   if (a.title) out.push(`العنوان: ${a.title}`);
   if (a.kind) out.push(`النوع: ${a.kind}`);
+  if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
   if (Array.isArray(a.fileIds)) out.push(`الملفات: ${a.fileIds.length}`);
   if (a.templateId) out.push(`القالب: ${a.templateId}`);
   if (a.recordId) out.push(`السجل: ${a.recordId}`);
@@ -616,6 +966,8 @@ function proposalSummary(p: Proposal): string[] {
 function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id: string) => void }) {
   const confirm = useAction(api.chat.confirmProposal);
   const cancel = useMutation(api.chat.cancelProposal);
+  const undo = useMutation(api.chat.undo);
+  const [kept, setKept] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const st = PROPOSAL_STATE[p.state] ?? { label: p.state, tone: "bg-raised" };
@@ -634,7 +986,9 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
     <div className="rounded-lg border border-line bg-surface p-3 text-sm">
       <div className="flex flex-wrap items-center gap-2">
         <span className="font-medium">{p.label.replace(/…$/, "")}</span>
-        <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{st.label}</span>
+        <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : st.label}</span>
+        {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
+        {p.tier === 3 && p.state === "pending" && <span className="badge-warning">حسّاس أو رسمي</span>}
         {p.state === "pending" && <span className="ms-auto text-xs text-muted num">حتى {new Date(p.expiresAt).toLocaleString("ar-SA-u-nu-latn", { dateStyle: "short", timeStyle: "short" })}</span>}
       </div>
       {proposalSummary(p).length > 0 && (
@@ -650,8 +1004,25 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           {JSON.stringify(p.args, null, 2)}
         </pre>
       </details>
-      {p.result && <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>}
+      {p.state === "executed" && p.display ? (
+        <p className="mt-1 text-sm text-ink">{p.display}</p>
+      ) : p.result &&
+        (p.state === "executed" ? (
+          <details className="mt-1 text-xs text-muted">
+            <summary className="cursor-pointer">الناتج</summary>
+            <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
+              {p.result}
+            </pre>
+          </details>
+        ) : (
+          <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
+        ))}
       <div className="mt-2 flex flex-wrap gap-2">
+        {p.auto && p.state === "executed" && (
+          <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
+            <Icon name="retry" size={14} /> تراجع
+          </button>
+        )}
         {p.state === "pending" && (
           <>
             <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
@@ -663,12 +1034,11 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           </>
         )}
         {p.artifactIds.map((id) => (
-          <button key={id} className="btn-secondary h-8" onClick={() => onOpenArtifact(id)}>
-            <Icon name="panel" size={14} /> افتح المخرج
-          </button>
+          <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
         ))}
       </div>
       {error && <p className="mt-1 text-xs text-negative">{error}</p>}
+      {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
     </div>
   );
 }
@@ -680,7 +1050,7 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
   return (
     <div className="mx-auto w-full max-w-[760px] px-4 py-6 lg:py-9">
       <div className="flex items-center gap-3">
-        <h1 className="text-2xl font-medium">المحادثات</h1>
+        <h1 className="page-title">المحادثات</h1>
         <button className="btn-primary ms-auto" onClick={() => go("/new")}>
           <Icon name="plus" /> محادثة جديدة
         </button>
@@ -695,7 +1065,8 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
         {threads?.length === 0 && <li className="rounded-lg border border-dashed border-control p-4 text-sm text-muted">{q ? "لا محادثات بهذا العنوان." : "لم تبدأ أي محادثة بعد."}</li>}
         {threads?.map((t) => (
           <li key={t.threadId}>
-            <a href={`#/chat/${t.threadId}`} className="flex min-h-[60px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-[#fbfbfa]">
+            <a href={`#/chat/${t.threadId}`} className="flex min-h-[60px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-sunken">
+              {t.pinned && <Icon name="pin" size={14} className="shrink-0 text-primary" aria-label="مثبّتة" />}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px]">{t.title}</span>
                 <span className="block truncate text-xs text-muted">
@@ -724,7 +1095,7 @@ export function Page({ title, sub, actions, children }: { title: string; sub?: R
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6 lg:px-8 lg:py-9">
       <div className="flex flex-wrap items-center gap-3">
-        <h1 className="text-2xl font-medium">{title}</h1>
+        <h1 className="page-title">{title}</h1>
         <span className="ms-auto flex gap-2">{actions}</span>
       </div>
       {sub && <p className="mt-1 text-muted">{sub}</p>}

@@ -18,7 +18,7 @@ import type { AppTool, ToolContext, ToolResult } from "./types";
 export type RunAnalysisArgs = { code: string; fileIds: string[]; targetSpaceId?: string; timeoutSeconds?: number };
 
 /** Server-side limits for one run; the runner clamps them again to its own ceilings. */
-export const RUN_LIMITS = { timeoutMs: 60_000, memoryMb: 1024, cpus: 1, pids: 64, outputMb: 20 };
+export const RUN_LIMITS = { timeoutMs: 120_000, memoryMb: 2048, cpus: 2, pids: 64, outputMb: 20 };
 const MAX_INPUT_BYTES = 100 * 1024 * 1024;
 /** At most this many outputs per run also become artifacts (the rest stay files only). */
 const MAX_ARTIFACTS = 20;
@@ -134,10 +134,14 @@ export function summarize(r: AnalysisOutcome): string {
   if (r.error) lines.push(`خطأ: ${r.error}`);
   if (r.exitCode !== null && r.exitCode !== 0) lines.push(`رمز الخروج: ${r.exitCode}`);
   lines.push(`المدخلات: ${r.inputs.map((i) => i.name).join("، ") || "لا شيء"}`);
-  if (r.stdout.trim()) lines.push("المخرج النصي:", clip(r.stdout.trim(), 4000));
-  if (!r.ok && r.stderr.trim()) lines.push("الأخطاء:", clip(r.stderr.trim().split("\n").slice(-30).join("\n"), 3000));
+  if (r.stdout.trim()) lines.push("المخرج النصي:", clip(r.stdout.trim(), 20_000));
+  if (!r.ok && r.stderr.trim()) lines.push("الأخطاء:", clip(r.stderr.trim().split("\n").slice(-30).join("\n"), 6000));
   if (r.outputs.length) lines.push(`ملفات المخرجات (حُفظت في ${r.targetName}):`, ...r.outputs.map((o) => `- ${o.name} (fileId: ${o.fileId}, ${o.size} بايت)`));
+  else if (r.ok) lines.push("لم يُحفظ أي ملف في هذا التشغيل (لم يُكتب شيء في /output).");
   if (r.artifactIds.length) lines.push(`مخرجات معروضة في اللوحة الجانبية: ${r.artifactIds.map((id) => `artifactId=${id}`).join("، ")}`);
+  // The model can't see the images it made; without this it guesses (wrongly) that Arabic failed.
+  if (r.outputs.some((o) => /\.(png|jpe?g|svg|pdf)$/i.test(o.name)))
+    lines.push("ملاحظة: الخطوط العربية وربط الحروف واتجاه النص تُضبط تلقائياً في هذه البيئة، فالنصوص العربية في الرسوم تظهر صحيحة. لا تقل إنها لا تظهر أو تحتاج إصلاحاً.");
   return lines.join("\n");
 }
 
@@ -145,10 +149,14 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
   name: "run_analysis",
   label: "يشغّل التحليل في بيئة معزولة…",
   description:
-    "Runs Python 3 code (pandas, numpy, matplotlib, openpyxl; Arabic fonts; `import onespace` for onespace.ar() / onespace.arabic_plots()) " +
-    "in an isolated sandbox with no network. The chosen files are available read-only under /input/<file name>. " +
+    "Runs Python 3 code (pandas, numpy, scipy, matplotlib, seaborn, scikit-learn, statsmodels, openpyxl, xlsxwriter, pypdf, tabulate, hijridate) " +
+    "in an isolated sandbox with no network. Arabic text in charts works as is: write Arabic titles and labels directly; fonts, letter joining " +
+    "and right-to-left order are handled automatically (don't set fonts or reshape it yourself). The chosen files are available read-only under /input/<file name>. " +
     "Write result files (charts, tables) to /output/; they are saved as files in the target space, and CSV/XLSX tables, .md, .html, .txt and images " +
-    "also open in the side panel (their ids come back as artifactIds). Print a short summary to stdout. " +
+    "also open in the side panel (their ids come back as artifactIds); every table in them gets a search box and sortable columns automatically, " +
+    "so a searchable web page of a spreadsheet is: read it with pandas and write df.to_html(index=False) (with a title and short summary) to /output/<name>.html. Print a short summary to stdout. " +
+    "Do the whole job in ONE run (read, process, save the outputs): each run outside the user's personal space waits for their «نفّذ», so don't run a separate look-at-the-data step first; " +
+    "pandas tells you the columns at run time. " +
     "Only files the user can read can be used. Never use this tool to rank or score people: ranking has its own approved criteria.",
   parameters: {
     type: "object",
@@ -156,14 +164,20 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
       code: { type: "string", description: "Python 3 code to run." },
       fileIds: { type: "array", items: { type: "string" }, maxItems: 20, description: "Ids of the files to place in /input." },
       targetSpaceId: { type: "string", description: "Space to save /output files in: the inputs' space or the user's personal space (inputs from several spaces: personal; a sensitive space: that space). Default: the inputs' space if writable, else the personal space." },
-      timeoutSeconds: { type: "number", minimum: 1, maximum: 60 },
+      timeoutSeconds: { type: "number", minimum: 1, maximum: 120 },
     },
     required: ["code", "fileIds"],
     additionalProperties: false,
   },
   requiresConfirmation: true,
+  answerAfterRun: true,
   async run(t: ToolContext, args: RunAnalysisArgs): Promise<ToolResult> {
     const r = await executeAnalysis(t, args);
-    return { content: summarize(r), artifactIds: r.artifactIds, spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])] };
+    return {
+      content: summarize(r),
+      artifactIds: r.artifactIds,
+      spaceIds: [...new Set([...r.inputSpaceIds, r.targetSpaceId])],
+      undo: { deleteFiles: r.outputs.map((o) => o.fileId), deleteArtifacts: r.artifactIds },
+    };
   },
 };

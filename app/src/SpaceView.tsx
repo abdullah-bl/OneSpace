@@ -10,6 +10,7 @@ import { api, badge, errorText, formatDate, formatSize, ROLE_LABELS, spaceName, 
 import { Icon } from "./icons";
 import { AuditTable } from "./AuditView";
 import { STATUS, TaskBoard } from "./TasksView";
+import { Menu, type MenuItem, ask } from "./ui";
 import { SpaceInstructions } from "./SpaceInstructions";
 import { OutputsTab } from "./ArtifactPanel";
 import { RecordsTab } from "./RecordsView";
@@ -24,8 +25,8 @@ export function SpacesPage({ spaces }: { spaces: SpaceInfo[] }) {
     const b = badge(s);
     return (
       <li key={s._id}>
-        <a href={`#/space/${s._id}`} className="flex min-h-[64px] items-center gap-3 border-b border-rule px-2 py-3 hover:bg-[#fbfbfa]">
-          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-[#ebeae6] text-[#3d3d3d]">
+        <a href={`#/space/${s._id}`} className="flex min-h-[64px] items-center gap-3 border-b border-rule px-2 py-3 hover:bg-sunken">
+          <span className="grid h-9 w-9 shrink-0 place-items-center rounded-md bg-raised text-ink">
             <Icon name={b.icon} size={16} />
           </span>
           <span className="min-w-0 flex-1">
@@ -44,7 +45,7 @@ export function SpacesPage({ spaces }: { spaces: SpaceInfo[] }) {
     <Page title="المساحات" sub="كل مساحة مشروع: تعليمات وملفات يعرفها المساعد، ومحادثاتك فيها، ومهامها.">
       <div className="max-w-[760px]">
         <ul>{personal.map(row)}</ul>
-        <h2 className="mt-8 text-base font-medium">المساحات المشتركة</h2>
+        <h2 className="mt-8 section-title">المساحات المشتركة</h2>
         <p className="text-sm text-muted num">{shared.length ? `${shared.length} مساحة` : "لم تُضف إلى أي مساحة مشتركة بعد. يضيفك مدير المساحة."}</p>
         <ul className="mt-2">{shared.map(row)}</ul>
       </div>
@@ -72,26 +73,41 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
   const b = badge(space);
   return (
     <div className="mx-auto w-full max-w-[1100px] px-4 py-6 lg:px-8 lg:py-9">
-      <header className="flex flex-wrap items-center gap-x-3 gap-y-2">
-        <h1 className="text-2xl font-medium">{spaceName(space)}</h1>
-        <span className="flex items-center gap-1 rounded bg-[#ebeae6] px-2 py-0.5 text-xs text-[#3d3d3d]">
-          <Icon name={b.icon} size={12} /> {b.label}
+      <header className="flex flex-wrap items-start gap-4">
+        <span className={`grid h-12 w-12 shrink-0 place-items-center rounded-xl ${space.kind === "personal" ? "bg-primary-soft text-primary" : "bg-active text-ink"}`}>
+          <Icon name={space.kind === "personal" ? "user" : "folder"} size={22} />
         </span>
-        {space.sensitive && <span className="rounded bg-[#fffbeb] px-2 py-0.5 text-xs text-[#92400e]">حسّاسة: كل فتح وتنزيل يُسجَّل</span>}
-        <span className="text-xs text-muted">دورك: {ROLE_LABELS[space.myRole] ?? space.myRole}</span>
-        <button className="btn-primary ms-auto" onClick={() => startChatWith({ spaceId: space._id })}>
-          <Icon name="plus" /> محادثة في المساحة
-        </button>
+        <div className="min-w-0 flex-1">
+          <h1 className="page-title">{spaceName(space)}</h1>
+          <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+            <span className="inline-flex items-center gap-1">
+              <Icon name={b.icon} size={13} /> {b.label}
+            </span>
+            <span aria-hidden="true">·</span>
+            <span>{ROLE_LABELS[space.myRole] ?? space.myRole}</span>
+            {space.kind === "personal" && (
+              <>
+                <span aria-hidden="true">·</span>
+                <span>لا يراها أحد غيرك</span>
+              </>
+            )}
+            {space.sensitive && <span className="badge-warning">حسّاسة: كل فتح وتنزيل يُسجَّل</span>}
+          </div>
+        </div>
+        {current !== "overview" && (
+          <button className="btn-primary" onClick={() => startChatWith({ spaceId: space._id })}>
+            <Icon name="plus" /> محادثة في المساحة
+          </button>
+        )}
       </header>
-      {space.kind === "personal" && <p className="mt-1 text-muted">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. المشاركة بنقل الملف أو نسخه إلى مساحة مشتركة.</p>}
-      <nav className="mt-5 flex gap-1 overflow-x-auto border-b border-line" aria-label="أقسام المساحة">
+      <nav className="tabs mt-5" aria-label="أقسام المساحة">
         {tabs
           .filter((t) => t.show)
           .map((t) => (
             <a
               key={t.id}
               href={`#/space/${space._id}${t.id === "overview" ? "" : "/" + t.id}`}
-              className={`-mb-px shrink-0 border-b-2 px-3 py-2 text-sm ${current === t.id ? "border-ink font-medium text-ink" : "border-transparent text-muted hover:text-ink"}`}
+              className={current === t.id ? "tab-active" : "tab"}
               aria-current={current === t.id ? "page" : undefined}
             >
               {t.label}
@@ -112,7 +128,10 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
   );
 }
 
-/** The project page: my chats here on the main column; the space's knowledge and tasks beside them. */
+const fileIcon = (name: string) => (/\.(csv|xlsx?|json)$/i.test(name) ? "table" : /\.(png|jpe?g|gif|webp|svg)$/i.test(name) ? "eye" : "file");
+const CHATS_SHOWN = 8;
+
+/** The project page: start or continue a chat here; the space's knowledge and tasks beside it. */
 function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean; go: (p: string) => void }) {
   const threads = useQuery(api.chat.spaceThreads, { spaceId: space._id });
   const files = useQuery(api.files.list, { spaceId: space._id as any });
@@ -120,70 +139,135 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
   const info = useQuery(api.spaces.get, { spaceId: space._id as any });
   const tasks = useQuery(api.tasks.board, hasTasks ? { spaceId: space._id as any } : "skip");
   const members = useQuery(api.spaces.members, space.kind === "shared" ? { spaceId: space._id as any } : "skip");
+  const [allChats, setAllChats] = useState(false);
   const openTasks = (tasks ?? []).filter((t: any) => t.status !== "done");
+  const ready = (files ?? []).filter((f) => (ingest?.find((x) => x.fileId === f._id)?.state ?? "ready") === "ready");
+  // Quick starts from what's in the space: its newest ready files, and a whole-space summary.
+  const quick = [
+    ...(ready.length > 1 ? [{ label: "ما الجديد في ملفات المساحة؟", text: "ما أهم ما في ملفات هذه المساحة؟ لخّصه في نقاط مع المصادر." }] : []),
+    ...ready
+      .filter((f) => fileIcon(f.name) !== "eye")
+      .slice(0, 2)
+      .map((f) => (fileIcon(f.name) === "table" ? { label: `حلّل ${f.name}`, text: "حلّل بيانات هذا الملف وأعطني أهم الأرقام والملاحظات ", file: f } : { label: `لخّص ${f.name}`, text: "لخّص هذا الملف وأبرز أهم ما فيه ", file: f })),
+  ];
+  const shownChats = allChats ? threads : threads?.slice(0, CHATS_SHOWN);
   return (
-    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <section>
+    <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <section className="min-w-0">
         <button
-          className="flex w-full items-center gap-3 rounded-lg border border-control bg-surface px-4 py-3.5 text-start text-muted hover:border-ink"
+          className="group flex w-full items-center gap-3 rounded-xl border border-control bg-surface px-4 py-4 text-start shadow-[0_2px_10px_rgba(0,0,0,0.04)] transition-colors hover:border-ink"
           onClick={() => startChatWith({ spaceId: space._id })}
         >
-          <Icon name="chat" size={18} />
-          <span className="flex-1">ابدأ محادثة تعرف تعليمات هذه المساحة وملفاتها…</span>
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-primary text-white">
+          <Icon name="chat" size={18} className="text-muted" />
+          <span className="flex-1 text-muted">{space.kind === "personal" ? "اسأل عن ملفاتك أو اطلب أي شيء…" : "ابدأ محادثة تعرف تعليمات المساحة وملفاتها…"}</span>
+          <span className="grid h-9 w-9 place-items-center rounded-lg bg-primary text-white transition-transform group-hover:scale-105">
             <Icon name="send" size={16} />
           </span>
         </button>
-        <h2 className="mt-7 text-base font-medium">محادثاتك في المساحة</h2>
-        <p className="text-xs text-muted num">{threads ? `${threads.length} محادثة · لا يراها غيرك` : " "}</p>
-        <ul className="mt-2">
-          {threads?.length === 0 && <li className="rounded-lg border border-dashed border-control p-4 text-sm text-muted">لا محادثات بعد. ابدأ أول محادثة من الحقل أعلاه.</li>}
-          {threads?.map((t) => (
-            <li key={t.threadId}>
-              <a href={`#/chat/${t.threadId}`} className="flex min-h-[56px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-[#fbfbfa]">
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate">{t.title}</span>
-                  {t.scheduled && <span className="block text-xs text-muted">مهمة مجدولة</span>}
-                </span>
-                <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>
-              </a>
-            </li>
-          ))}
-        </ul>
+        {quick.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2">
+            {quick.map((q) => (
+              <button
+                key={q.label}
+                className="flex h-8 max-w-full items-center gap-1.5 rounded-full border border-line px-3 text-sm text-muted transition-colors hover:border-control hover:text-ink"
+                onClick={() =>
+                  startChatWith({
+                    spaceId: space._id,
+                    text: q.text.trim(),
+                    mentions: "file" in q && q.file ? [{ kind: "file", id: q.file._id, name: q.file.name, spaceId: space._id }] : [],
+                  })
+                }
+              >
+                <Icon name={"file" in q && q.file ? fileIcon(q.file.name) : "search"} size={13} />
+                <span className="truncate">{q.label}</span>
+              </button>
+            ))}
+          </div>
+        )}
+
+        <div className="mt-8 flex items-baseline gap-2">
+          <h2 className="section-title">محادثاتك هنا</h2>
+          {threads && <span className="meta num">{threads.length}</span>}
+          <span className="meta ms-auto inline-flex items-center gap-1">
+            <Icon name="lock" size={12} /> لا يراها غيرك
+          </span>
+        </div>
+        {threads?.length === 0 && (
+          <p className="mt-3 rounded-xl border border-dashed border-control p-5 text-center text-sm text-muted">لا محادثات بعد. كل محادثة تبدؤها هنا تعرف {space.kind === "personal" ? "ملفاتك" : "تعليمات المساحة وملفاتها"}.</p>
+        )}
+        {!!threads?.length && (
+          <ul className="card mt-3 divide-y divide-rule overflow-hidden">
+            {shownChats!.map((t) => (
+              <li key={t.threadId}>
+                <a href={`#/chat/${t.threadId}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sunken">
+                  <Icon name={t.scheduled ? "clock" : "chat"} size={16} className="shrink-0 text-faint" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate">{t.title}</span>
+                    {t.scheduled && <span className="block text-xs text-muted">مهمة مجدولة</span>}
+                  </span>
+                  <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>
+                </a>
+              </li>
+            ))}
+          </ul>
+        )}
+        {threads && threads.length > CHATS_SHOWN && (
+          <button className="btn-ghost mt-2 text-sm text-muted" onClick={() => setAllChats(!allChats)}>
+            {allChats ? "أقل" : `عرض الكل (${threads.length})`}
+          </button>
+        )}
       </section>
+
       <aside className="space-y-4">
-        <Panel title="التعليمات" action={space.kind === "shared" && space.canManage ? undefined : null}>
-          {space.kind === "shared" ? (
+        {space.kind === "shared" ? (
+          <Panel title="التعليمات" hint="يقرؤها المساعد في كل محادثة هنا">
             <SpaceInstructions space={space} />
-          ) : (
-            <p className="text-sm text-muted">تعليمات المساحة للمساحات المشتركة، ويكتبها مديرها.</p>
-          )}
-          {info?.instructions === null && space.kind === "shared" && !space.canManage && <p className="text-sm text-muted">لا تعليمات لهذه المساحة.</p>}
-        </Panel>
+            {info?.instructions === null && !space.canManage && <p className="text-sm text-muted">لا تعليمات لهذه المساحة.</p>}
+          </Panel>
+        ) : (
+          <section className="rounded-xl bg-sunken p-4 text-sm">
+            <div className="flex items-center gap-2 font-medium">
+              <Icon name="lock" size={15} /> مساحتك الخاصة
+            </div>
+            <p className="mt-1.5 leading-6 text-muted">لا يراها أحد غيرك، بمن فيهم مدير مساحة العمل. ما يُنشئه المساعد لك يُحفظ هنا. للمشاركة انقل الملف أو انسخه إلى مساحة مشتركة.</p>
+          </section>
+        )}
         <Panel
           title="الملفات"
           count={files?.length}
           action={
-            <a href={`#/space/${space._id}/files`} className="text-xs text-muted hover:text-ink">
-              {space.canWrite ? "رفع وإدارة" : "عرض الكل"}
+            <a href={`#/space/${space._id}/files`} className="btn-ghost h-7 px-2 text-xs">
+              {space.canWrite ? (
+                <>
+                  <Icon name="plus" size={13} /> رفع
+                </>
+              ) : (
+                "الكل"
+              )}
             </a>
           }
         >
-          {files?.length === 0 && <p className="text-sm text-muted">لا ملفات بعد{space.canWrite ? ". ارفع ملفات من «رفع وإدارة» ليعرفها المساعد." : "."}</p>}
-          <ul>
+          {files?.length === 0 && <p className="text-sm text-muted">لا ملفات بعد{space.canWrite ? ". ارفع ملفات ليعرفها المساعد." : "."}</p>}
+          <ul className="-mx-2">
             {files?.slice(0, 6).map((f) => {
               const st = ingest?.find((x) => x.fileId === f._id);
+              const pending = st && st.state !== "ready";
               return (
-                <li key={f._id} className="flex h-9 items-center gap-2 text-sm">
-                  <Icon name="file" size={14} className="text-muted" />
-                  <span className="min-w-0 flex-1 truncate" title={f.name}>
-                    {f.name}
+                <li key={f._id} className="group flex items-center gap-2.5 rounded-lg px-2 py-1.5 hover:bg-sunken">
+                  <span className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-active text-muted">
+                    <Icon name={fileIcon(f.name)} size={15} />
                   </span>
-                  {st && st.state !== "ready" ? (
-                    <span className="shrink-0 text-xs text-muted">{st.label}</span>
-                  ) : (
-                    <button className="shrink-0 rounded px-1.5 py-0.5 text-xs text-muted hover:bg-active hover:text-ink" onClick={() => askAboutFile(f._id, f.name, space._id)}>
-                      اسأل عنه
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm" title={f.name}>
+                      {f.name}
+                    </span>
+                    <span className="block text-[11px] text-faint num">
+                      {pending ? st!.label : `${formatSize(f.size)} · ${relTime(f.updatedAt)}`}
+                    </span>
+                  </span>
+                  {!pending && (
+                    <button className="btn-ghost h-7 shrink-0 px-2 text-xs opacity-0 transition-opacity focus:opacity-100 group-hover:opacity-100" onClick={() => askAboutFile(f._id, f.name, space._id)} aria-label={`اسأل عن ${f.name}`}>
+                      <Icon name="chat" size={13} /> اسأل
                     </button>
                   )}
                 </li>
@@ -191,8 +275,8 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
             })}
           </ul>
           {files && files.length > 6 && (
-            <a href={`#/space/${space._id}/files`} className="mt-1 block text-xs text-muted hover:text-ink num">
-              و{files.length - 6} ملفات أخرى
+            <a href={`#/space/${space._id}/files`} className="mt-2 block text-xs text-muted hover:text-ink num">
+              عرض الكل ({files.length})
             </a>
           )}
         </Panel>
@@ -201,18 +285,18 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
             title="المهام المفتوحة"
             count={tasks ? openTasks.length : undefined}
             action={
-              <a href={`#/space/${space._id}/tasks`} className="text-xs text-muted hover:text-ink">
+              <a href={`#/space/${space._id}/tasks`} className="btn-ghost h-7 px-2 text-xs">
                 اللوحة
               </a>
             }
           >
             {tasks && openTasks.length === 0 && <p className="text-sm text-muted">لا مهام مفتوحة.</p>}
-            <ul>
+            <ul className="-mx-2">
               {openTasks.slice(0, 5).map((t: any) => (
                 <li key={t._id}>
-                  <button className="flex h-9 w-full items-center gap-2 text-start text-sm hover:text-ink" onClick={() => go(`/tasks/${t._id}`)}>
+                  <button className="flex w-full items-center gap-2 rounded-lg px-2 py-2 text-start text-sm hover:bg-sunken" onClick={() => go(`/tasks/${t._id}`)}>
                     <span className="min-w-0 flex-1 truncate">{t.title}</span>
-                    <span className="shrink-0 text-xs text-muted">{STATUS[t.status]?.label}</span>
+                    <span className={`shrink-0 rounded-full px-2 py-0.5 text-[11px] ${STATUS[t.status]?.tone ?? ""}`}>{STATUS[t.status]?.label}</span>
                   </button>
                 </li>
               ))}
@@ -220,10 +304,19 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           </Panel>
         )}
         {members && members.length > 0 && (
-          <Panel title="الأعضاء" count={members.length}>
+          <Panel
+            title="الأعضاء"
+            count={members.length}
+            action={
+              <a href={`#/space/${space._id}/members`} className="btn-ghost h-7 px-2 text-xs">
+                الكل
+              </a>
+            }
+          >
             <ul className="flex flex-wrap gap-1.5">
               {members.slice(0, 12).map((m) => (
-                <li key={m.userId} className="rounded bg-[#ebeae6] px-2 py-0.5 text-xs" title={ROLE_LABELS[m.role]}>
+                <li key={m.userId} className="flex items-center gap-1.5 rounded-full bg-sunken py-0.5 pe-2.5 ps-0.5 text-xs" title={ROLE_LABELS[m.role]}>
+                  <span className="grid h-5 w-5 place-items-center rounded-full bg-active text-[10px]">{(m.name ?? m.email ?? "؟").charAt(0)}</span>
                   {m.name ?? m.email}
                 </li>
               ))}
@@ -235,12 +328,17 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
   );
 }
 
-function Panel({ title, count, action, children }: { title: string; count?: number; action?: ReactNode; children: ReactNode }) {
+function Panel({ title, hint, count, action, children }: { title: string; hint?: string; count?: number; action?: ReactNode; children: ReactNode }) {
   return (
     <section className="card p-4">
-      <div className="mb-2 flex items-center gap-2">
-        <h2 className="text-sm font-medium">{title}</h2>
-        {count !== undefined && <span className="text-xs text-muted num">{count}</span>}
+      <div className="mb-3 flex items-center gap-2">
+        <div className="min-w-0">
+          <h2 className="text-sm font-medium">
+            {title}
+            {count !== undefined && <span className="ms-1.5 text-xs font-normal text-muted num">{count}</span>}
+          </h2>
+          {hint && <p className="text-[11px] text-faint">{hint}</p>}
+        </div>
         <span className="ms-auto">{action}</span>
       </div>
       {children}
@@ -290,7 +388,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
           <button className="btn-primary" disabled={!!busy} onClick={() => input.current?.click()}>
             رفع ملفات
           </button>
-          {busy && <span className="text-xs text-neutral-500">جارٍ التنفيذ…</span>}
+          {busy && <span className="text-xs text-muted">جارٍ التنفيذ…</span>}
           <input
             ref={input}
             type="file"
@@ -324,27 +422,27 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
           />
         </div>
       )}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <div className="card overflow-hidden">
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
+      {/* No overflow-hidden: each row's ⋯ menu must be able to open past the card. */}
+      <div className="card">
         <table className="w-full">
-          <thead className="bg-neutral-50">
+          <thead className="border-b border-line">
             <tr>
               <th className="th">الاسم</th>
-              <th className="th">الحجم</th>
-              <th className="th">النسخة</th>
-              <th className="th">آخر تعديل</th>
-              <th className="th"></th>
+              <th className="th hidden sm:table-cell">الحجم</th>
+              <th className="th hidden md:table-cell">آخر تعديل</th>
+              <th className="th w-px"></th>
             </tr>
           </thead>
           <tbody>
             {files === undefined && (
               <tr>
-                <td className="td text-neutral-400" colSpan={5}>جارٍ التحميل…</td>
+                <td className="td text-faint" colSpan={4}>جارٍ التحميل…</td>
               </tr>
             )}
             {files?.length === 0 && (
               <tr>
-                <td className="td text-neutral-400" colSpan={5}>لا ملفات بعد</td>
+                <td className="td text-faint" colSpan={4}>لا ملفات بعد</td>
               </tr>
             )}
             {files?.map((f) => (
@@ -362,7 +460,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
                 }}
                 onTransfer={() => setTransfer({ fileId: f._id, name: f.name })}
                 onDelete={() => {
-                  if (confirm(`حذف "${f.name}" وكل نسخه؟ لا يمكن التراجع.`)) void run("delete", () => remove({ fileId: f._id as any }));
+                  void ask(`حذف "${f.name}" وكل نسخه؟ لا يمكن التراجع.`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run("delete", () => remove({ fileId: f._id as any })); })
                 }}
               />
             ))}
@@ -387,49 +485,68 @@ function FileRow(props: {
 }) {
   const { f, space } = props;
   const versions = useQuery(api.files.versions, props.showVersions ? { fileId: f._id as any } : "skip");
+  const previewable = /^(image\/|application\/pdf|text\/plain)/.test(f.mime);
+  const ready = props.ingest?.state === "ready";
+  const icon = /\.(csv|xlsx?|json)$/i.test(f.name) ? "table" : f.mime.startsWith("image/") ? "eye" : "file";
+  const items: MenuItem[] = [
+    ...(previewable ? [{ label: "فتح", icon: "eye" as const, onSelect: () => props.onDownload(undefined, true) }] : []),
+    { label: "تنزيل", icon: "download", onSelect: () => props.onDownload() },
+    ...(f.version > 1 ? [{ label: props.showVersions ? "إخفاء النسخ السابقة" : `النسخ السابقة (${f.version})`, icon: "clock" as const, onSelect: props.onToggleVersions }] : []),
+    ...(space.canWrite ? [{ label: "رفع نسخة جديدة", icon: "retry" as const, onSelect: props.onNewVersion }] : []),
+    { label: "نقل أو نسخ إلى مساحة", icon: "folder", onSelect: props.onTransfer },
+    ...(space.canWrite ? (["divider", { label: "حذف", icon: "x", danger: true, onSelect: props.onDelete }] as MenuItem[]) : []),
+  ];
   return (
     <>
-      <tr className="border-t border-neutral-100">
-        <td className="td font-semibold">
-          {f.name}
-          <IngestBadge fileId={f._id} ingest={props.ingest} canWrite={space.canWrite} />
-        </td>
-        <td className="td text-neutral-500">{formatSize(f.size)}</td>
+      <tr className="group border-t border-rule transition-colors first:border-t-0 hover:bg-sunken">
         <td className="td">
-          <button className="text-neutral-900 underline-offset-2 hover:underline" onClick={props.onToggleVersions}>
-            {f.version}
-          </button>
+          <div className="flex min-w-0 items-center gap-3">
+            <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-active text-muted">
+              <Icon name={icon} size={16} />
+            </span>
+            <div className="min-w-0">
+              <button className="block max-w-full truncate text-start font-medium hover:underline" title={previewable ? "فتح" : "تنزيل"} onClick={() => props.onDownload(undefined, previewable)}>
+                {f.name}
+              </button>
+              <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
+                <IngestBadge fileId={f._id} ingest={props.ingest} canWrite={space.canWrite} />
+                {f.version > 1 && (
+                  <button className="badge hover:bg-active" onClick={props.onToggleVersions} title="النسخ السابقة">
+                    النسخة {f.version}
+                  </button>
+                )}
+                <span className="num sm:hidden">{formatSize(f.size)}</span>
+              </div>
+            </div>
+          </div>
         </td>
-        <td className="td text-neutral-500">
-          {formatDate(f.updatedAt)}
-          {f.uploadedByName && <span className="block text-xs">{f.uploadedByName}</span>}
+        <td className="td hidden text-sm text-muted num sm:table-cell">{formatSize(f.size)}</td>
+        <td className="td hidden text-sm text-muted md:table-cell" title={formatDate(f.updatedAt)}>
+          <span className="num">{relTime(f.updatedAt)}</span>
+          {f.uploadedByName && <span className="block text-xs text-faint">{f.uploadedByName}</span>}
         </td>
         <td className="td">
-          <div className="flex flex-wrap justify-end gap-1">
-            {props.ingest?.state === "ready" && (
-              <button className="btn-ghost" title="محادثة جديدة عن هذا الملف" onClick={() => askAboutFile(f._id, f.name, space._id)}>اسأل عنه</button>
+          <div className="flex items-center justify-end gap-1">
+            {ready && (
+              <button className="btn-ghost h-8 px-2.5 text-sm" title="محادثة جديدة عن هذا الملف" onClick={() => askAboutFile(f._id, f.name, space._id)}>
+                <Icon name="chat" size={15} /> اسأل
+              </button>
             )}
-            <button className="btn-ghost" onClick={() => props.onDownload()}>تنزيل</button>
-            {/^(image\/|application\/pdf|text\/plain)/.test(f.mime) && (
-              <button className="btn-ghost" onClick={() => props.onDownload(undefined, true)}>فتح</button>
-            )}
-            {space.canWrite && <button className="btn-ghost" onClick={props.onNewVersion}>نسخة جديدة</button>}
-            <button className="btn-ghost" onClick={props.onTransfer}>نقل / نسخ</button>
-            {space.canWrite && <button className="btn-danger" onClick={props.onDelete}>حذف</button>}
+            <Menu label={`خيارات ${f.name}`} items={items} />
           </div>
         </td>
       </tr>
       {props.showVersions && (
-        <tr className="bg-neutral-50">
-          <td className="td" colSpan={5}>
+        <tr className="bg-sunken">
+          <td className="td" colSpan={4}>
             <div className="space-y-1">
               {versions?.map((v) => (
                 <div key={v.version} className="flex items-center gap-3 text-xs">
-                  <span className="font-semibold">نسخة {v.version}</span>
+                  <span className="font-bold">نسخة {v.version}</span>
                   <span>{v.name}</span>
-                  <span className="text-neutral-500">{formatSize(v.size)}</span>
-                  <span className="text-neutral-500">{formatDate(v.uploadedAt)}</span>
-                  <button className="text-neutral-900 hover:underline" onClick={() => props.onDownload(v.version)}>تنزيل</button>
+                  <span className="text-muted">{formatSize(v.size)}</span>
+                  <span className="text-muted">{formatDate(v.uploadedAt)}</span>
+                  <button className="text-ink hover:underline" onClick={() => props.onDownload(v.version)}>تنزيل</button>
                 </div>
               ))}
             </div>
@@ -465,9 +582,9 @@ function TransferDialog({ file, from, spaces, onClose }: { file: { fileId: strin
   return (
     <div className="fixed inset-0 z-10 flex items-center justify-center bg-black/30 p-4" onClick={onClose}>
       <div className="card w-full max-w-md space-y-3 p-5" onClick={(e) => e.stopPropagation()}>
-        <h2 className="font-semibold">نقل أو نسخ "{file.name}"</h2>
+        <h2 className="section-title">نقل أو نسخ "{file.name}"</h2>
         {targets.length === 0 ? (
-          <p className="text-sm text-neutral-500">لا توجد مساحة أخرى تملك صلاحية الكتابة فيها.</p>
+          <p className="text-sm text-muted">لا توجد مساحة أخرى تملك صلاحية الكتابة فيها.</p>
         ) : (
           <>
             <select className="input w-full" value={to} onChange={(e) => setTo(e.target.value)}>
@@ -477,11 +594,11 @@ function TransferDialog({ file, from, spaces, onClose }: { file: { fileId: strin
                 </option>
               ))}
             </select>
-            <p className="rounded-lg bg-neutral-100 p-2 text-sm text-neutral-900">بعد النقل أو النسخ سيرى الملف: {audience}</p>
-            {from.sensitive && <p className="rounded-lg bg-amber-50 p-2 text-sm text-amber-900">الملف في مساحة حسّاسة: إخراجه منها لمديرها فقط، ويُسجَّل.</p>}
+            <p className="rounded-lg bg-raised p-2 text-sm text-ink">بعد النقل أو النسخ سيرى الملف: {audience}</p>
+            {from.sensitive && <p className="rounded-lg bg-warning-soft p-2 text-sm text-warning">الملف في مساحة حسّاسة: إخراجه منها لمديرها فقط، ويُسجَّل.</p>}
           </>
         )}
-        {error && <p className="text-sm text-red-700">{error}</p>}
+        {error && <p className="text-sm text-negative">{error}</p>}
         <div className="flex justify-end gap-2">
           <button className="btn-ghost" onClick={onClose}>إلغاء</button>
           {targets.length > 0 && from.canWrite && <button className="btn-ghost" onClick={() => act(move)}>نقل</button>}
@@ -511,7 +628,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
   };
   return (
     <div className="space-y-3">
-      {space.everyone && <p className="text-sm text-neutral-500">مساحة للجميع: كل موظفي مساحة العمل يقرؤونها. الأعضاء المسمَّون أدناه يكتبون حسب أدوارهم.</p>}
+      {space.everyone && <p className="text-sm text-muted">مساحة للجميع: كل موظفي مساحة العمل يقرؤونها. الأعضاء المسمَّون أدناه يكتبون حسب أدوارهم.</p>}
       {space.canManage && (
         <div className="card flex flex-wrap items-center gap-2 p-3">
           <select className="input" value={pick} onChange={(e) => setPick(e.target.value)}>
@@ -532,13 +649,13 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
           </button>
         </div>
       )}
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-      <div className="card divide-y divide-neutral-100">
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
+      <div className="card divide-y divide-rule">
         {members?.map((m) => (
           <div key={m.userId} className="flex items-center gap-3 p-3 text-sm">
             <div className="flex-1">
-              <div className="font-semibold">{m.name ?? m.email}</div>
-              <div className="text-xs text-neutral-500" dir="ltr">{m.email}</div>
+              <div className="font-bold">{m.name ?? m.email}</div>
+              <div className="text-xs text-muted" dir="ltr">{m.email}</div>
             </div>
             {space.canManage ? (
               <>
@@ -547,12 +664,12 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
                   <option value="member">عضو</option>
                   <option value="reader">قارئ</option>
                 </select>
-                <button className="btn-danger" onClick={() => confirm(`إزالة ${m.name ?? m.email} من المساحة؟ يفقد الوصول فوراً.`) && run(() => remove({ spaceId: space._id as any, userId: m.userId as any }))}>
+                <button className="btn-danger" onClick={() => void ask(`إزالة ${m.name ?? m.email} من المساحة؟ يفقد الوصول فوراً.`, { danger: true, confirmLabel: "إزالة" }).then((ok) => { if (ok) void run(() => remove({ spaceId: space._id as any, userId: m.userId as any })); })}>
                   إزالة
                 </button>
               </>
             ) : (
-              <span className="text-xs text-neutral-500">{ROLE_LABELS[m.role]}</span>
+              <span className="text-xs text-muted">{ROLE_LABELS[m.role]}</span>
             )}
           </div>
         ))}
@@ -566,16 +683,19 @@ function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { 
   const retry = useMutation(api.ingest.retry);
   if (!ingest) return null;
   const color =
-    ingest.state === "ready" ? "bg-emerald-50 text-emerald-700" : ingest.state === "failed" ? "bg-red-50 text-red-700" : ingest.state === "skipped" ? "bg-neutral-100 text-neutral-500" : "bg-neutral-100 text-neutral-800";
+    ingest.state === "ready" ? "bg-positive-soft text-positive" : ingest.state === "failed" ? "bg-negative-soft text-negative" : ingest.state === "skipped" ? "bg-raised text-muted" : "bg-raised text-ink";
   return (
-    <span className="ms-2 inline-flex items-center gap-1 align-middle text-[11px] font-normal">
-      <span className={`rounded px-1.5 ${color}`} title={ingest.error ?? ingest.note ?? ""}>
-        {ingest.label}
-      </span>
-      {ingest.ocr && <span className="rounded bg-amber-50 px-1.5 text-amber-700" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
-      {ingest.state === "failed" && ingest.error && <span className="text-red-600">{ingest.error}</span>}
+    <span className="inline-flex items-center gap-1 align-middle text-[11px] font-normal">
+      {/* "Ready" is the normal state: only the other states are worth a badge. */}
+      {ingest.state !== "ready" && (
+        <span className={`rounded px-1.5 ${color}`} title={ingest.error ?? ingest.note ?? ""}>
+          {ingest.label}
+        </span>
+      )}
+      {ingest.ocr && <span className="rounded bg-warning-soft px-1.5 text-warning" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
+      {ingest.state === "failed" && ingest.error && <span className="text-negative">{ingest.error}</span>}
       {ingest.state === "failed" && canWrite && (
-        <button className="text-neutral-900 hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
+        <button className="text-ink hover:underline" onClick={() => void retry({ fileId: fileId as any })}>
           إعادة المحاولة
         </button>
       )}

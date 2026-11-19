@@ -1,16 +1,22 @@
-// Workspace admin: agents (Phase 6). An agent is instructions + tools picked from the code
-// registry + a data scope + who may use it. Edits go to a draft; "جرّب الوكيل" runs the draft on
-// test questions (as the admin); "انشر" makes it the next version. Every change is audited and any
+// Workspace admin: agents (Phase 6, redesigned). An agent is a role: when it's used (the router reads
+// that), how it works (instructions), how it answers (open / documents only), and where it looks.
+// Tools are «كل الأدوات» by default: a tool never grants access by itself (it runs as the employee,
+// writes to shared places wait for «نفّذ», and the employee's level caps tools), so hand-picking
+// is only for agents that must not do something. Edits go to a draft; «جرّب» runs the draft on test
+// questions as the admin; «انشر» makes it the next version. Every change is audited and any
 // earlier version can be published again.
 
-import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "onebase/react";
+import { useEffect, useState, type ReactNode } from "react";
+import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
+import { Icon } from "./icons";
+import { Menu, type MenuItem, ask } from "./ui";
 
 type Config = {
   name: string;
   description: string;
   instructions: string;
+  toolMode?: "all" | "custom";
   allowedTools: string[];
   dataScope: "everyone" | "member" | "all";
   modelRole: "main" | "fast";
@@ -23,7 +29,8 @@ const EMPTY: Config = {
   name: "",
   description: "",
   instructions: "",
-  allowedTools: ["search_documents", "read_file"],
+  toolMode: "all",
+  allowedTools: [],
   dataScope: "all",
   modelRole: "main",
   maxSteps: 4,
@@ -31,11 +38,13 @@ const EMPTY: Config = {
   grounding: "open",
 };
 
-const SCOPES: Record<Config["dataScope"], string> = {
-  everyone: "مساحات «للجميع» فقط",
-  member: "المساحات التي المستخدم عضو فيها",
-  all: "ما يختاره المستخدم من مساحاته",
-};
+const SCOPES: { value: Config["dataScope"]; title: string; detail: string }[] = [
+  { value: "all", title: "ما يقرؤه الموظف", detail: "كل ما يملك قراءته، ويضيّقه بالإشارة @ إلى ملف أو مساحة" },
+  { value: "member", title: "مساحاته فقط", detail: "مساحته الخاصة والمساحات التي هو عضو فيها" },
+  { value: "everyone", title: "المنشور للجميع فقط", detail: "مساحات «للجميع» مثل الأنظمة واللوائح" },
+];
+
+type AgentRow = NonNullable<ReturnType<typeof useQuery<typeof api.agents.list>>>[number];
 
 export function AgentsView(_props: { spaces: SpaceInfo[] }) {
   const agents = useQuery(api.agents.list);
@@ -43,71 +52,140 @@ export function AgentsView(_props: { spaces: SpaceInfo[] }) {
   const [selected, setSelected] = useState<string | "new" | null>(null);
   const [error, setError] = useState("");
   const current = agents?.find((a) => a._id === selected) ?? null;
-
-  useEffect(() => {
-    if (selected === null && agents?.length) setSelected(agents[0]!._id);
-  }, [agents, selected]);
+  const open = selected === "new" || !!current;
 
   return (
-    <div className="mx-auto flex max-w-6xl flex-col gap-4 lg:flex-row">
-      <aside className="shrink-0 space-y-2 lg:w-64">
-        <h1 className="text-xl font-semibold">الوكلاء</h1>
-        <p className="text-xs text-neutral-500">كل وكيل يعمل بهوية المستخدم وصلاحياته، ولا يوسّعها. تختار أدواته من الموجود في النظام.</p>
-        <button className="btn-primary w-full justify-center" onClick={() => setSelected("new")}>
-          ＋ وكيل جديد
-        </button>
-        <div className="card p-1">
-          {agents?.map((a) => {
-            const cfg = a.draft ?? a.live;
-            return (
-              <button key={a._id} className={`block w-full rounded-lg px-2 py-1.5 text-start text-sm ${selected === a._id ? "bg-neutral-100" : "hover:bg-neutral-100"}`} onClick={() => setSelected(a._id)}>
-                <div className="flex items-center gap-1">
-                  <span className="truncate font-semibold">{(a.live ?? cfg)?.name}</span>
-                  {a.isDefault && <span className="rounded bg-neutral-100 px-1 text-[10px] text-neutral-900">افتراضي</span>}
-                </div>
-                <div className="flex gap-1 text-[11px] text-neutral-500">
-                  <span>{a.version ? `النسخة ${a.version}` : "لم يُنشر"}</span>
-                  {a.draft && <span className="text-amber-700">· مسودة</span>}
-                  {!a.enabled && <span className="text-red-700">· معطّل</span>}
-                </div>
-              </button>
-            );
-          })}
+    <div className="@container">
+      <header className="mb-6 flex flex-wrap items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h1 className="page-title">الوكلاء</h1>
+          <p className="mt-1.5 max-w-2xl text-sm text-muted">يختار المساعد الوكيل المناسب لكل طلب تلقائياً من «متى يُستخدم». كل وكيل يعمل بصلاحيات الموظف نفسه ولا يوسّعها.</p>
         </div>
-        {agents && !["default", "policies", "grades", "analysis"].every((k) => agents.some((a) => a.key === k)) && (
-          <button className="btn-ghost w-full justify-center text-xs" onClick={() => void seed({}).catch((e) => setError(errorText(e)))}>
-            أضف الوكلاء المبدئيين
-          </button>
-        )}
-      </aside>
-      <section className="min-w-0 flex-1 space-y-4">
-        {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-        {selected === "new" && <Editor key="new" agent={null} onCreated={(id) => setSelected(id)} />}
-        {current && <Editor key={current._id} agent={current} onCreated={() => {}} />}
-      </section>
+        <button className="btn-primary" onClick={() => setSelected("new")}>
+          <Icon name="plus" /> وكيل جديد
+        </button>
+      </header>
+      {error && <p className="alert-negative mb-4">{error}</p>}
+
+      <div className="flex flex-col gap-5 @4xl:flex-row @4xl:items-start">
+        {/* The list: always beside the editor on wide screens; on narrow ones, until an agent is opened. */}
+        <aside className={`shrink-0 @4xl:sticky @4xl:top-6 @4xl:block @4xl:w-72 ${open ? "hidden" : ""}`}>
+          <ul className="card divide-y divide-rule overflow-hidden">
+            {agents?.map((a) => {
+              const cfg = (a.live ?? a.draft) as Config | null;
+              const on = selected === a._id;
+              return (
+                <li key={a._id}>
+                  <button onClick={() => setSelected(a._id)} aria-current={on ? "true" : undefined} className={`flex w-full items-start gap-3 px-3 py-3 text-start transition-colors ${on ? "bg-primary-soft" : "hover:bg-active"}`}>
+                    <span className={`grid h-8 w-8 shrink-0 place-items-center rounded-lg ${on ? "bg-primary text-white" : "bg-active text-muted"}`}>
+                      <Icon name="bot" size={16} />
+                    </span>
+                    <span className="min-w-0 flex-1">
+                      <span className="flex items-center gap-1.5">
+                        <span className="truncate text-sm font-medium">{cfg?.name}</span>
+                        {a.isDefault && <span className="badge-primary">افتراضي</span>}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-muted">{cfg?.description || "—"}</span>
+                      <span className="mt-1 flex flex-wrap gap-1">
+                        {a.version ? <span className="badge">النسخة {a.version}</span> : <span className="badge-warning">لم يُنشر</span>}
+                        {a.draft && a.version > 0 && <span className="badge-warning">مسودة</span>}
+                        {!a.enabled && <span className="badge-negative">معطّل</span>}
+                      </span>
+                    </span>
+                  </button>
+                </li>
+              );
+            })}
+          </ul>
+          {agents && !["default", "policies", "grades", "analysis"].every((k) => agents.some((a) => a.key === k)) && (
+            <button className="btn-ghost mt-2 w-full justify-center text-xs" onClick={() => void seed({}).catch((e) => setError(errorText(e)))}>
+              أضف الوكلاء المبدئيين
+            </button>
+          )}
+        </aside>
+
+        <section className={`min-w-0 flex-1 ${open ? "" : "hidden @4xl:block"}`}>
+          {open && (
+            <button className="btn-ghost mb-2 h-8 px-2 text-sm @4xl:hidden" onClick={() => setSelected(null)}>
+              <Icon name="next" size={14} /> كل الوكلاء
+            </button>
+          )}
+          {selected === "new" && <Editor key="new" agent={null} onCreated={(id) => setSelected(id)} />}
+          {current && <Editor key={current._id} agent={current} onCreated={() => {}} />}
+          {!open && (
+            <div className="grid min-h-64 place-items-center rounded-xl border border-dashed border-line p-8 text-center text-sm text-muted">
+              <div>
+                <Icon name="bot" size={22} className="mx-auto mb-2 text-faint" />
+                اختر وكيلاً لتعديله، أو أنشئ وكيلاً جديداً.
+              </div>
+            </div>
+          )}
+        </section>
+      </div>
     </div>
   );
 }
 
-type AgentRow = NonNullable<ReturnType<typeof useQuery<typeof api.agents.list>>>[number];
+/** A titled block of the editor. */
+function Section({ title, hint, children, aside }: { title: string; hint?: ReactNode; children: ReactNode; aside?: ReactNode }) {
+  return (
+    <section className="space-y-3 border-t border-rule py-5 first:border-t-0 first:pt-0">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1">
+          <h3 className="font-medium">{title}</h3>
+          {hint && <p className="mt-0.5 text-xs leading-5 text-muted">{hint}</p>}
+        </div>
+        {aside}
+      </div>
+      {children}
+    </section>
+  );
+}
+
+/** Two or three mutually exclusive choices shown as cards. */
+function Choice<T extends string>({ value, options, onChange }: { value: T; options: { value: T; title: string; detail: string; badge?: string }[]; onChange: (v: T) => void }) {
+  return (
+    <div className={`grid gap-2 ${options.length === 3 ? "@2xl:grid-cols-3" : "@lg:grid-cols-2"}`} role="radiogroup">
+      {options.map((o) => {
+        const on = o.value === value;
+        return (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={on}
+            onClick={() => onChange(o.value)}
+            className={`rounded-xl border p-3 text-start transition-colors ${on ? "border-primary bg-primary-soft" : "border-line hover:border-control"}`}
+          >
+            <span className="flex items-center gap-2 text-sm font-medium">
+              <span className={`grid h-4 w-4 shrink-0 place-items-center rounded-full border ${on ? "border-primary" : "border-control"}`}>{on && <span className="h-2 w-2 rounded-full bg-primary" />}</span>
+              {o.title}
+              {o.badge && <span className="badge-positive ms-auto">{o.badge}</span>}
+            </span>
+            <span className="mt-1 block ps-6 text-xs leading-5 text-muted">{o.detail}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
 
 function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: string) => void }) {
-  const tools = useQuery(api.agents.toolRegistry);
-  const sharedSpaces = useQuery(api.admin.spaces);
+  const [tab, setTab] = useState<"setup" | "test" | "versions">("setup");
   const create = useMutation(api.agents.create);
   const saveDraft = useMutation(api.agents.saveDraft);
   const discard = useMutation(api.agents.discardDraft);
   const publish = useMutation(api.agents.publish);
   const setEnabled = useMutation(api.agents.setEnabled);
   const setDefault = useMutation(api.agents.setDefault);
-  const [form, setForm] = useState<Config>(() => ((agent?.draft ?? agent?.live ?? EMPTY) as Config));
+  const initial = () => ({ ...EMPTY, ...((agent?.draft ?? agent?.live ?? EMPTY) as Config), toolMode: ((agent?.draft ?? agent?.live) as Config | undefined)?.toolMode ?? (agent ? "custom" : "all") });
+  const [form, setForm] = useState<Config>(initial);
   const [error, setError] = useState("");
   const [note, setNote] = useState("");
   const [busy, setBusy] = useState(false);
-  const base = (agent?.draft ?? agent?.live ?? EMPTY) as Config;
-  const dirty = JSON.stringify(form) !== JSON.stringify(base);
+  const dirty = JSON.stringify(form) !== JSON.stringify(initial());
 
-  useEffect(() => setForm((agent?.draft ?? agent?.live ?? EMPTY) as Config), [agent?._id, agent?.version, JSON.stringify(agent?.draft ?? null)]);
+  useEffect(() => setForm(initial()), [agent?._id, agent?.version, JSON.stringify(agent?.draft ?? null)]);
 
   const run = async (fn: () => Promise<unknown>, done?: string) => {
     setBusy(true);
@@ -123,156 +201,287 @@ function Editor({ agent, onCreated }: { agent: AgentRow | null; onCreated: (id: 
     }
   };
   const set = <K extends keyof Config>(k: K, v: Config[K]) => setForm((f) => ({ ...f, [k]: v }));
-  const toggleTool = (name: string) => set("allowedTools", form.allowedTools.includes(name) ? form.allowedTools.filter((t) => t !== name) : [...form.allowedTools, name]);
-  const toggleSpace = (id: string) =>
-    set("visibility", { kind: "spaces", spaceIds: form.visibility.spaceIds.includes(id) ? form.visibility.spaceIds.filter((s) => s !== id) : [...form.visibility.spaceIds, id] });
+  const name = agent ? ((agent.live ?? agent.draft) as Config | null)?.name : "وكيل جديد";
+
+  const actions: MenuItem[] = [];
+  if (agent) {
+    if (!agent.isDefault && agent.live && agent.enabled) actions.push({ label: "اجعله الافتراضي", icon: "check", onSelect: () => void run(() => setDefault({ agentId: agent._id }), "صار الوكيل الافتراضي") });
+    if (agent.draft && agent.live) actions.push({ label: "تجاهل المسودة", icon: "retry", onSelect: () => void ask("تجاهل المسودة والعودة للنسخة المنشورة؟", { danger: true, confirmLabel: "تجاهل" }).then((ok) => { if (ok) void run(() => discard({ agentId: agent._id })); })});
+    if (!agent.isDefault) actions.push({ label: agent.enabled ? "تعطيل الوكيل" : "تفعيل الوكيل", icon: agent.enabled ? "pause" : "play", danger: agent.enabled, onSelect: () => void run(() => setEnabled({ agentId: agent._id, enabled: !agent.enabled })) });
+  }
 
   return (
-    <>
-      <div className="card space-y-4 p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <h2 className="text-lg font-semibold">{agent ? (agent.live ?? agent.draft)?.name : "وكيل جديد"}</h2>
-          {agent && <span className="text-xs text-neutral-500">{agent.version ? `المنشور: النسخة ${agent.version}` : "لم يُنشر بعد (لا يراه الموظفون)"}</span>}
-          {agent?.draft && <span className="rounded-full bg-amber-50 px-2 py-0.5 text-xs text-amber-800">مسودة غير منشورة</span>}
-          {agent && (
-            <span className="ms-auto flex gap-2">
-              {!agent.isDefault && agent.live && agent.enabled && (
-                <button className="btn-ghost text-xs" disabled={busy} onClick={() => void run(() => setDefault({ agentId: agent._id }), "صار الوكيل الافتراضي")}>
-                  اجعله الافتراضي
-                </button>
-              )}
-              {!agent.isDefault && (
-                <button className={agent.enabled ? "btn-danger text-xs" : "btn-primary text-xs"} disabled={busy} onClick={() => void run(() => setEnabled({ agentId: agent._id, enabled: !agent.enabled }))}>
-                  {agent.enabled ? "تعطيل" : "تفعيل"}
-                </button>
-              )}
-            </span>
+    <div className="card @container">
+      <div className="space-y-3 px-5 pt-5">
+        <div className="flex items-start gap-3">
+          <div className="min-w-0 flex-1">
+            <h2 className="text-xl font-bold">{name}</h2>
+            <p className="mt-1 text-xs text-muted">
+              {!agent ? "يُحفظ كمسودة لا يراها الموظفون حتى تنشره." : agent.version ? `يستخدم الموظفون النسخة ${agent.version}${agent.draft ? "، وعندك مسودة لم تُنشر" : ""}.` : "لم يُنشر بعد، فلا يراه الموظفون."}
+            </p>
+          </div>
+          {agent && agent.draft && (
+            <button
+              className="btn-primary shrink-0"
+              disabled={busy || dirty}
+              title={dirty ? "احفظ المسودة أولاً" : ""}
+              onClick={() =>
+                void ask(agent.version ? "نشر المسودة؟ يستخدمها الموظفون من سؤالهم التالي." : "نشر الوكيل؟ يصبح متاحاً للموظفين من سؤالهم التالي.", { confirmLabel: "انشر" }).then((ok) => {
+                  if (ok) void run(() => publish({ agentId: agent._id }), "نُشرت نسخة جديدة");
+                })
+              }
+            >
+              {agent.version ? "انشر المسودة" : "انشر"}
+            </button>
           )}
+          {actions.length > 0 && <Menu label="خيارات الوكيل" items={actions} />}
         </div>
-        {agent?.live && agent.draft && <p className="text-xs text-neutral-500">الموظفون يستخدمون النسخة المنشورة حتى تنشر المسودة.</p>}
-
-        <div className="grid gap-3 sm:grid-cols-2">
-          <label className="space-y-1 text-sm">
-            <span className="text-neutral-600">الاسم</span>
-            <input className="input w-full" value={form.name} maxLength={80} onChange={(e) => set("name", e.target.value)} />
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-neutral-600">الوصف (يراه الموظف في القائمة)</span>
-            <input className="input w-full" value={form.description} maxLength={500} onChange={(e) => set("description", e.target.value)} />
-          </label>
-        </div>
-        <label className="block space-y-1 text-sm">
-          <span className="text-neutral-600">التعليمات</span>
-          <textarea className="input min-h-[8rem] w-full" value={form.instructions} maxLength={8000} onChange={(e) => set("instructions", e.target.value)} />
-          <span className="block text-xs text-neutral-400">تُضاف بعد قواعد النظام الثابتة (الاستشهاد، الامتناع، تجاهل الأوامر داخل الملفات). لا تمنح أي صلاحية: الأدوات تفحص صلاحية الموظف بنفسها.</span>
-        </label>
-
-        <div className="space-y-1 text-sm">
-          <span className="text-neutral-600">الأدوات المسموحة ({form.allowedTools.length})</span>
-          <div className="grid gap-1 sm:grid-cols-2">
-            {tools?.map((t) => (
-              <label key={t.name} className="flex items-start gap-2 rounded-lg border border-neutral-200 p-2" title={t.description}>
-                <input type="checkbox" checked={form.allowedTools.includes(t.name)} onChange={() => toggleTool(t.name)} />
-                <span>
-                  <span className="font-semibold">{t.label.replace(/…$/, "")}</span> <span className="text-xs text-neutral-400" dir="ltr">{t.name}</span>
-                  {t.requiresConfirmation && <span className="ms-1 rounded bg-amber-50 px-1 text-[10px] text-amber-800">يحتاج «نفّذ»</span>}
-                </span>
-              </label>
+        {agent && (
+          <nav className="tabs">
+            {(
+              [
+                ["setup", "الإعداد"],
+                ["test", "التجربة"],
+                ["versions", "النسخ"],
+              ] as const
+            ).map(([k, label]) => (
+              <button key={k} className={tab === k ? "tab-active" : "tab"} onClick={() => setTab(k)}>
+                {label}
+              </button>
             ))}
+          </nav>
+        )}
+      </div>
+
+      {tab === "setup" && (
+        <>
+          <div className="px-5 pt-5">
+            <AiDraft form={form} onDraft={(d) => setForm((f) => ({ ...f, ...d, modelRole: f.modelRole ?? "main" }))} onError={setError} onNote={setNote} />
+            <Section title="الأساس">
+              <label className="block text-sm">
+                <span className="label">الاسم</span>
+                <input className="input w-full" value={form.name} maxLength={80} onChange={(e) => set("name", e.target.value)} placeholder="محلل العقود" />
+              </label>
+              <label className="block text-sm">
+                <span className="label">متى يُستخدم</span>
+                <textarea className="textarea w-full" rows={2} dir="auto" value={form.description} maxLength={500} onChange={(e) => set("description", e.target.value)} placeholder="حين يطلب الموظف مراجعة عقد أو استخراج مدده وغراماته" />
+                <span className="mt-1 block text-xs text-faint">يقرؤه المساعد ليختار هذا الوكيل تلقائياً، فاكتبه جملة واضحة عن نوع الطلبات.</span>
+              </label>
+            </Section>
+
+            <Section title="التعليمات" hint="كيف يعمل وكيف يكتب. تُضاف بعد قواعد النظام الثابتة (الاستشهاد، والامتناع، وتجاهل الأوامر داخل الملفات)، ولا تمنح أي صلاحية.">
+              <textarea className="textarea min-h-44 w-full leading-7" dir="auto" value={form.instructions} maxLength={8000} onChange={(e) => set("instructions", e.target.value)} placeholder="أنت… ابدأ بـ… اذكر المصدر… لا تفعل…" />
+            </Section>
+
+            <Section title="الأدوات" hint="الأدوات لا توسّع الصلاحيات: تعمل بصلاحيات الموظف، وما يكتب في مكان مشترك ينتظر «نفّذ»، ومستوى الموظف يحدد ما يتاح له.">
+              <Choice
+                value={form.toolMode ?? "custom"}
+                onChange={(v) => set("toolMode", v)}
+                options={[
+                  { value: "all", title: "كل الأدوات", detail: "يستخدم ما يحتاجه الطلب، ويشمل ما يُضاف للنظام لاحقاً.", badge: "موصى به" },
+                  { value: "custom", title: "أدوات محددة", detail: "لوكيل يجب ألا يفعل أشياء بعينها، مثل وكيل للأنظمة لا ينشئ ملفات." },
+                ]}
+              />
+              <ToolList form={form} onChange={(tools) => set("allowedTools", tools)} />
+            </Section>
+
+            <Section title="طريقة الإجابة">
+              <Choice
+                value={form.grounding ?? "documents"}
+                onChange={(v) => set("grounding", v)}
+                options={[
+                  { value: "open", title: "مساعد عام", detail: "يجيب عن أي سؤال، ويرجع إلى المستندات ويستشهد بها حين يتعلق السؤال بها." },
+                  { value: "documents", title: "من المستندات فقط", detail: "لا يجيب إلا بما في المستندات، ويعتذر إن لم يجده. للأنظمة والسياسات." },
+                ]}
+              />
+            </Section>
+
+            <Section title="أين يبحث" hint="ضمن ما يملك الموظف قراءته دائماً.">
+              <Choice value={form.dataScope} onChange={(v) => set("dataScope", v)} options={SCOPES.map((s) => ({ value: s.value, title: s.title, detail: s.detail }))} />
+            </Section>
+
+            <Advanced form={form} set={set} />
           </div>
-          {!form.allowedTools.includes("search_documents") && <p className="text-xs text-neutral-400">بلا أداة البحث لا يبحث الوكيل في المستندات قبل الإجابة.</p>}
+
+          <div className="sticky bottom-0 z-10 flex flex-wrap items-center gap-2 rounded-b-[inherit] border-t border-line bg-surface/95 px-5 py-3 backdrop-blur">
+            {error ? <p className="min-w-0 flex-1 text-sm text-negative">{error}</p> : note ? <p className="min-w-0 flex-1 text-sm text-positive">{note}</p> : <p className="min-w-0 flex-1 text-xs text-muted">{dirty ? "تغييرات غير محفوظة" : agent?.draft ? "المسودة محفوظة، جرّبها ثم انشرها." : "لا تغييرات"}</p>}
+            {!agent ? (
+              <button className="btn-primary" disabled={busy || !form.name.trim()} onClick={() => void run(async () => onCreated((await create({ config: form as any })) as string), "حُفظ كمسودة. جرّبه ثم انشره.")}>
+                حفظ كمسودة
+              </button>
+            ) : (
+              <>
+                <button className="btn-secondary" disabled={busy || !dirty} onClick={() => void run(() => saveDraft({ agentId: agent._id, config: form as any }), "حُفظت المسودة")}>
+                  حفظ المسودة
+                </button>
+                <button
+                  className="btn-primary"
+                  disabled={busy || (!dirty && !agent.draft)}
+                  title={!dirty && !agent.draft ? "لا تغييرات لنشرها" : ""}
+                  onClick={() =>
+                    void ask("حفظ التغييرات ونشرها؟ يستخدمها الموظفون من سؤالهم التالي.", { confirmLabel: "احفظ وانشر" }).then((ok) => {
+                      if (ok)
+                        void run(async () => {
+                          if (dirty) await saveDraft({ agentId: agent._id, config: form as any });
+                          await publish({ agentId: agent._id });
+                        }, "نُشرت نسخة جديدة");
+                    })
+                  }
+                >
+                  احفظ وانشر
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+      {agent && tab === "test" && (
+        <div className="p-5">
+          <TestPanel agent={agent} />
         </div>
+      )}
+      {agent && tab === "versions" && (
+        <div className="p-5">
+          <History agentId={agent._id} />
+        </div>
+      )}
+    </div>
+  );
+}
 
-        <label className="block space-y-1 text-sm">
-          <span className="text-neutral-600">طريقة الإجابة</span>
-          <select className="input w-full" value={form.grounding ?? "documents"} onChange={(e) => set("grounding", e.target.value as Config["grounding"])}>
-            <option value="open">مساعد عام: يجيب عن أي سؤال، ويرجع إلى المستندات ويستشهد بها حين يتعلق السؤال بها</option>
-            <option value="documents">من المستندات فقط: لا يجيب إلا بما في المستندات، ويعتذر إن لم يجده</option>
-          </select>
-        </label>
+/** «صمّم / حسّن بالذكاء الاصطناعي»: fills the form only; nothing is saved or published. */
+function AiDraft({ form, onDraft, onError, onNote }: { form: Config; onDraft: (d: Partial<Config>) => void; onError: (e: string) => void; onNote: (n: string) => void }) {
+  const draftWithAI = useAction(api.agentDrafts.draftWithAI);
+  const [goal, setGoal] = useState("");
+  const [busy, setBusy] = useState(false);
+  const improving = !!form.instructions.trim();
+  const go = async () => {
+    setBusy(true);
+    onError("");
+    try {
+      const d = await draftWithAI({ goal, ...(improving ? { current: { name: form.name, description: form.description, instructions: form.instructions, allowedTools: form.toolMode === "all" ? [] : form.allowedTools } } : {}) });
+      onDraft(d as Partial<Config>);
+      setGoal("");
+      onNote("عُبّئت الحقول بمسودة من الذكاء الاصطناعي. راجعها ثم احفظها وجرّبها قبل النشر.");
+    } catch (e) {
+      onError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="mb-5 flex items-center gap-2 rounded-xl border border-line bg-sunken p-1.5 ps-3 focus-within:border-primary">
+      <Icon name="bot" size={17} className="shrink-0 text-primary" />
+      <input
+        className="h-9 min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-faint"
+        value={goal}
+        dir="auto"
+        onChange={(e) => setGoal(e.target.value)}
+        onKeyDown={(e) => e.key === "Enter" && (goal.trim() || improving) && !busy && void go()}
+        placeholder={improving ? "حسّن بالذكاء الاصطناعي: ما الذي تريد تغييره؟ (اختياري)" : "صف الوكيل ويكتبه الذكاء الاصطناعي: يراجع عقود المشتريات ويستخرج المدد والغرامات"}
+        aria-label="وصف للذكاء الاصطناعي"
+      />
+      <button className="btn-primary shrink-0" disabled={busy || (!goal.trim() && !improving)} onClick={() => void go()}>
+        {busy ? "يكتب…" : improving ? "حسّن" : "صمّم"}
+      </button>
+    </div>
+  );
+}
 
-        <div className="grid gap-3 sm:grid-cols-3">
-          <label className="space-y-1 text-sm">
-            <span className="text-neutral-600">نطاق البيانات</span>
-            <select className="input w-full" value={form.dataScope} onChange={(e) => set("dataScope", e.target.value as Config["dataScope"])}>
-              {Object.entries(SCOPES).map(([k, label]) => (
-                <option key={k} value={k}>
-                  {label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-neutral-600">النموذج</span>
+/** The registry, grouped: reads run directly, writes are proposed or run by tier. */
+function ToolList({ form, onChange }: { form: Config; onChange: (tools: string[]) => void }) {
+  const tools = useQuery(api.agents.toolRegistry);
+  if (!tools) return null;
+  const all = (form.toolMode ?? "custom") === "all";
+  const groups = [
+    { title: "قراءة وبحث", hint: "تعمل مباشرة", items: tools.filter((t) => !t.requiresConfirmation) },
+    { title: "إنشاء وتنفيذ", hint: "في مساحة الموظف الخاصة تُنفَّذ مع إمكان التراجع، وفي المشتركة تنتظر «نفّذ»", items: tools.filter((t) => t.requiresConfirmation) },
+  ];
+  const on = (n: string) => all || form.allowedTools.includes(n);
+  return (
+    <div className={`grid gap-3 @2xl:grid-cols-2 ${all ? "opacity-60" : ""}`}>
+      {groups.map((g) => (
+        <div key={g.title} className="rounded-xl border border-line">
+          <div className="border-b border-rule px-3 py-2">
+            <div className="text-xs font-medium">{g.title}</div>
+            <div className="text-[11px] leading-4 text-faint">{g.hint}</div>
+          </div>
+          <ul className="divide-y divide-rule">
+            {g.items.map((t) => (
+              <li key={t.name}>
+                <label className={`flex items-center gap-2.5 px-3 py-2 text-sm ${all ? "" : "cursor-pointer hover:bg-sunken"}`} title={t.description}>
+                  <input
+                    type="checkbox"
+                    disabled={all}
+                    checked={on(t.name)}
+                    onChange={() => onChange(form.allowedTools.includes(t.name) ? form.allowedTools.filter((x) => x !== t.name) : [...form.allowedTools, t.name])}
+                  />
+                  <span className="min-w-0">{t.label.replace(/…$/, "")}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function Advanced({ form, set }: { form: Config; set: <K extends keyof Config>(k: K, v: Config[K]) => void }) {
+  const sharedSpaces = useQuery(api.admin.spaces);
+  const toggleSpace = (id: string) =>
+    set("visibility", { kind: "spaces", spaceIds: form.visibility.spaceIds.includes(id) ? form.visibility.spaceIds.filter((s) => s !== id) : [...form.visibility.spaceIds, id] });
+  return (
+    <details className="group border-t border-rule py-5">
+      <summary className="flex cursor-pointer list-none items-center gap-2 font-medium">
+        <Icon name="down" size={14} className="text-muted transition-transform group-open:rotate-180" />
+        إعدادات متقدمة
+        <span className="meta font-normal">
+          {form.modelRole === "main" ? "النموذج الرئيس" : "النموذج السريع"} · {form.maxSteps} جولات · {form.visibility.kind === "workspace" ? "لكل مساحة العمل" : `${form.visibility.spaceIds.length} مساحات`}
+        </span>
+      </summary>
+      <div className="mt-4 space-y-4">
+        <div className="grid gap-3 @lg:grid-cols-2">
+          <label className="text-sm">
+            <span className="label">النموذج</span>
             <select className="input w-full" value={form.modelRole} onChange={(e) => set("modelRole", e.target.value as Config["modelRole"])}>
-              <option value="main">الرئيسي</option>
-              <option value="fast">السريع</option>
+              <option value="main">الرئيس (أدق)</option>
+              <option value="fast">السريع (أخف)</option>
             </select>
           </label>
-          <label className="space-y-1 text-sm">
-            <span className="text-neutral-600">أقصى عدد خطوات</span>
-            <input className="input w-full" type="number" min={1} max={8} value={form.maxSteps} onChange={(e) => set("maxSteps", Number(e.target.value))} />
+          <label className="text-sm">
+            <span className="label">أقصى جولات الأدوات للإجابة</span>
+            <input className="input num w-full" type="number" min={1} max={8} value={form.maxSteps} onChange={(e) => set("maxSteps", Number(e.target.value))} />
           </label>
         </div>
-
-        <div className="space-y-1 text-sm">
-          <span className="text-neutral-600">من يستخدمه</span>
-          <div className="flex gap-4">
-            <label className="flex items-center gap-1">
-              <input type="radio" checked={form.visibility.kind === "workspace"} onChange={() => set("visibility", { kind: "workspace", spaceIds: [] })} /> كل مساحة العمل
-            </label>
-            <label className="flex items-center gap-1">
-              <input type="radio" checked={form.visibility.kind === "spaces"} onChange={() => set("visibility", { kind: "spaces", spaceIds: form.visibility.spaceIds })} /> أعضاء مساحات محددة
-            </label>
-          </div>
+        <div className="space-y-2 text-sm">
+          <span className="label">من يمكن أن يُختار له</span>
+          <Choice
+            value={form.visibility.kind}
+            onChange={(k) => set("visibility", { kind: k, spaceIds: k === "workspace" ? [] : form.visibility.spaceIds })}
+            options={[
+              { value: "workspace", title: "كل مساحة العمل", detail: "أي موظف" },
+              { value: "spaces", title: "أعضاء مساحات محددة", detail: "من يقرأ إحدى المساحات المختارة" },
+            ]}
+          />
           {form.visibility.kind === "spaces" && (
             <div className="flex flex-wrap gap-2">
               {sharedSpaces?.map((sp) => (
-                <label key={sp._id} className="flex items-center gap-1 rounded-full border border-neutral-200 px-2 py-0.5 text-xs">
-                  <input type="checkbox" checked={form.visibility.spaceIds.includes(sp._id)} onChange={() => toggleSpace(sp._id)} />
+                <label key={sp._id} className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${form.visibility.spaceIds.includes(sp._id) ? "border-primary bg-primary-soft" : "border-line"}`}>
+                  <input type="checkbox" className="sr-only" checked={form.visibility.spaceIds.includes(sp._id)} onChange={() => toggleSpace(sp._id)} />
+                  {form.visibility.spaceIds.includes(sp._id) && <Icon name="check" size={12} />}
                   {sp.name}
                 </label>
               ))}
             </div>
           )}
         </div>
-
-        {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
-        {note && <p className="rounded-lg bg-emerald-50 p-2 text-sm text-emerald-800">{note}</p>}
-        <div className="flex flex-wrap gap-2 border-t border-neutral-100 pt-3">
-          {!agent ? (
-            <button className="btn-primary" disabled={busy || !form.name.trim()} onClick={() => void run(async () => onCreated((await create({ config: form as any })) as string), "حُفظ كمسودة. جرّبه ثم انشره.")}>
-              حفظ كمسودة
-            </button>
-          ) : (
-            <>
-              <button className="btn-ghost border border-neutral-200" disabled={busy || !dirty} onClick={() => void run(() => saveDraft({ agentId: agent._id, config: form as any }), "حُفظت المسودة")}>
-                حفظ المسودة
-              </button>
-              <button
-                className="btn-primary"
-                disabled={busy || dirty || !agent.draft}
-                title={dirty ? "احفظ المسودة أولاً" : ""}
-                onClick={() => confirm("نشر المسودة؟ يستخدمها الموظفون من سؤالهم التالي.") && void run(() => publish({ agentId: agent._id }), "نُشرت نسخة جديدة")}
-              >
-                انشر
-              </button>
-              {agent.draft && agent.live && (
-                <button className="btn-ghost" disabled={busy} onClick={() => confirm("تجاهل المسودة والعودة للنسخة المنشورة؟") && void run(() => discard({ agentId: agent._id }))}>
-                  تجاهل المسودة
-                </button>
-              )}
-            </>
-          )}
-        </div>
       </div>
-      {agent && <TestPanel agent={agent} />}
-      {agent && <History agentId={agent._id} />}
-    </>
+    </details>
   );
 }
 
-/** "جرّب الوكيل": the draft (or the published version if there is no draft) on the admin's questions. */
+/** «التجربة»: the draft (or the published version if there is no draft) on the admin's questions. */
 function TestPanel({ agent }: { agent: AgentRow }) {
   const results = useQuery(api.agents.testResults, { agentId: agent._id });
   const setQuestions = useMutation(api.agents.setTestQuestions);
@@ -282,40 +491,46 @@ function TestPanel({ agent }: { agent: AgentRow }) {
   const saved = text.split("\n").map((q) => q.trim()).filter(Boolean);
   const dirty = JSON.stringify(saved) !== JSON.stringify(agent.testQuestions);
   return (
-    <div className="card space-y-3 p-4">
-      <div className="flex items-center gap-2">
-        <h3 className="font-semibold">جرّب الوكيل</h3>
-        <span className="text-xs text-neutral-500">{agent.draft ? "يجرّب المسودة غير المنشورة" : "يجرّب النسخة المنشورة"} بصلاحياتك أنت</span>
-      </div>
-      <textarea className="input min-h-[5rem] w-full" placeholder="سؤال اختبار في كل سطر (حتى 10)" value={text} onChange={(e) => setText(e.target.value)} />
+    <div className="space-y-4">
+      <p className="text-sm text-muted">{agent.draft ? "يجرّب المسودة غير المنشورة" : "يجرّب النسخة المنشورة"} بصلاحياتك أنت. سؤال في كل سطر (حتى 10).</p>
+      <textarea className="textarea min-h-28 w-full" dir="auto" placeholder="ما مدة إجازة الأمومة؟" value={text} onChange={(e) => setText(e.target.value)} />
       <div className="flex gap-2">
-        <button className="btn-ghost border border-neutral-200" disabled={!dirty} onClick={() => void setQuestions({ agentId: agent._id, questions: saved }).catch((e) => setError(errorText(e)))}>
+        <button className="btn-secondary" disabled={!dirty} onClick={() => void setQuestions({ agentId: agent._id, questions: saved }).catch((e) => setError(errorText(e)))}>
           حفظ الأسئلة
         </button>
         <button
           className="btn-primary"
           disabled={dirty || !agent.testQuestions.length}
+          title={dirty ? "احفظ الأسئلة أولاً" : ""}
           onClick={() => {
             setError("");
             void runTests({ agentId: agent._id }).catch((e) => setError(errorText(e)));
           }}
         >
-          جرّب الوكيل
+          <Icon name="play" size={14} /> جرّب
         </button>
       </div>
-      {error && <p className="text-sm text-red-700">{error}</p>}
+      {error && <p className="alert-negative">{error}</p>}
       <div className="space-y-2">
         {results?.map((r) => (
-          <div key={r.threadId} className="rounded-lg border border-neutral-200 p-2 text-sm">
-            <div className="flex items-center gap-2 text-xs text-neutral-500">
-              <span>{formatDate(r.at)}</span>
-              <span>{r.state === "done" ? "" : r.state === "failed" ? "" : ""}</span>
-              {r.toolRuns.length > 0 && <span title={r.toolRuns.map((t) => `${t.name}: ${t.summary}`).join("\n")}>{r.toolRuns.map((t) => `${t.name}${t.ok ? "" : " (رُفضت)"}`).join("، ")}</span>}
+          <div key={r.threadId} className="rounded-xl border border-line p-3 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="font-medium">{r.question}</span>
+              <span className="meta ms-auto">{formatDate(r.at)}</span>
             </div>
-            <div className="font-semibold">{r.question}</div>
-            {r.answer && <div className="whitespace-pre-wrap text-neutral-700">{r.answer}</div>}
-            {r.error && <div className="text-red-700">{r.error}</div>}
-            {r.citations.length > 0 && <div className="text-xs text-neutral-400">المصادر: {r.citations.map((c) => `[${c.n}] ${c.fileName}`).join("، ")}</div>}
+            {r.toolRuns.length > 0 && (
+              <div className="mt-1.5 flex flex-wrap gap-1">
+                {r.toolRuns.map((t, i) => (
+                  <span key={i} className={t.ok ? "badge" : "badge-negative"} title={t.summary}>
+                    {t.name}
+                    {t.ok ? "" : " · رُفضت"}
+                  </span>
+                ))}
+              </div>
+            )}
+            {r.answer && <div className="mt-2 whitespace-pre-wrap leading-7 text-muted">{r.answer}</div>}
+            {r.error && <div className="mt-2 text-negative">{r.error}</div>}
+            {r.citations.length > 0 && <div className="meta mt-2">المصادر: {r.citations.map((c) => `[${c.n}] ${c.fileName}`).join("، ")}</div>}
           </div>
         ))}
       </div>
@@ -327,47 +542,37 @@ function History({ agentId }: { agentId: string }) {
   const versions = useQuery(api.agents.versions, { agentId });
   const revert = useMutation(api.agents.revert);
   const [error, setError] = useState("");
-  if (!versions?.length) return null;
+  if (!versions) return null;
+  if (!versions.length) return <p className="text-sm text-muted">لم يُنشر بعد.</p>;
   return (
-    <div className="card space-y-2 p-4">
-      <h3 className="font-semibold">النسخ المنشورة</h3>
-      {error && <p className="text-sm text-red-700">{error}</p>}
-      <table className="w-full text-sm">
-        <thead className="bg-neutral-50">
-          <tr>
-            <th className="th">النسخة</th>
-            <th className="th">نُشرت</th>
-            <th className="th">بواسطة</th>
-            <th className="th">الأدوات</th>
-            <th className="th"></th>
-          </tr>
-        </thead>
-        <tbody>
-          {versions.map((v) => (
-            <tr key={v.version} className="border-t border-neutral-100">
-              <td className="td">
-                {v.version}
-                {v.current && <span className="ms-1 rounded bg-neutral-100 px-1 text-[10px] text-neutral-900">الحالية</span>}
-                {v.revertedFrom !== null && <span className="ms-1 text-xs text-neutral-400">(من {v.revertedFrom})</span>}
-              </td>
-              <td className="td text-xs">{formatDate(v.publishedAt)}</td>
-              <td className="td text-xs">{v.publishedBy ?? "—"}</td>
-              <td className="td text-xs" dir="ltr">{v.config.allowedTools.join(", ")}</td>
-              <td className="td">
+    <div className="space-y-2">
+      {error && <p className="alert-negative">{error}</p>}
+      <ol className="space-y-2">
+        {versions.map((v) => {
+          const cfg = v.config as Config;
+          return (
+            <li key={v.version} className="rounded-xl border border-line p-3 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-medium">النسخة {v.version}</span>
+                {v.current && <span className="badge-primary">الحالية</span>}
+                {v.revertedFrom !== null && <span className="meta">(من النسخة {v.revertedFrom})</span>}
+                <span className="meta">
+                  {formatDate(v.publishedAt)} · {v.publishedBy ?? "—"} · {cfg.toolMode === "all" ? "كل الأدوات" : `${cfg.allowedTools.length} أدوات`}
+                </span>
                 {!v.current && (
-                  <button className="btn-ghost text-xs" onClick={() => confirm(`نشر محتوى النسخة ${v.version} كنسخة جديدة؟`) && void revert({ agentId, version: v.version }).catch((e) => setError(errorText(e)))}>
+                  <button className="btn-ghost ms-auto text-xs" onClick={() => void ask(`نشر محتوى النسخة ${v.version} كنسخة جديدة؟`).then((ok) => { if (ok) void revert({ agentId, version: v.version }).catch((e) => setError(errorText(e))); })}>
                     استرجع
                   </button>
                 )}
-                <details className="text-xs text-neutral-400">
-                  <summary className="cursor-pointer">التعليمات</summary>
-                  <pre className="whitespace-pre-wrap">{v.config.instructions || "—"}</pre>
-                </details>
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+              </div>
+              <details className="mt-1">
+                <summary className="meta cursor-pointer">التعليمات</summary>
+                <pre className="mt-1 whitespace-pre-wrap font-[inherit] text-xs leading-6 text-muted">{cfg.instructions || "—"}</pre>
+              </details>
+            </li>
+          );
+        })}
+      </ol>
     </div>
   );
 }

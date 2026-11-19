@@ -76,7 +76,7 @@ onespace.arabic_plots(); plt.bar(df["item"], df["price"]); plt.title(onespace.ar
       expect(run.inputs[0]).toMatchObject({ fileId: csvPlain, name: "عروض.csv" });
       expect(run.inputs[0].sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(run.outputs.length).toBe(2);
-      expect(run.limits).toMatchObject({ memoryMb: 1024, pids: 64 });
+      expect(run.limits).toMatchObject({ memoryMb: 2048, cpus: 2, pids: 64 });
       expect(run.exit).toMatchObject({ code: 0, timedOut: false, oomKilled: false });
       expect((await audit("sandbox.export", f.ids.mem!)).some((a: any) => a.resourceId === csvPlain)).toBe(true);
       expect((await audit("sandbox.run", f.ids.mem!)).some((a: any) => a.detail.runId === run._id)).toBe(true);

@@ -6,4 +6,6 @@ crons.interval("purge expired download tickets", { minutes: 30 }, internal.files
 crons.interval("purge expired document tickets", { minutes: 30 }, internal.documents.purgeTickets);
 // Scheduled tasks (schedules.ts): fire what is due, as its creator, every minute.
 crons.interval("run scheduled tasks", { minutes: 1 }, internal.schedules.tick, {});
+// Folder sync (folderSync.ts): copy due folders into their spaces. Does nothing without SYNC_ROOT.
+crons.interval("sync folders", { minutes: 5 }, internal.folderSync.tick, {});
 export default crons;

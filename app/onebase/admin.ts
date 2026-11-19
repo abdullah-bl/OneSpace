@@ -245,3 +245,35 @@ export const updateSpace = mutation({
     });
   },
 });
+
+/** The admin console's first page: counts and what needs a look. */
+export const overview = query({
+  args: {},
+  handler: async (ctx) => {
+    const me = await requireAdmin(ctx);
+    let active = 0;
+    let pending = 0;
+    for (const u of await ctx.db.query("users").collect()) {
+      const s = statusOf(u);
+      if (s === "pending") pending++;
+      else if (s === "active" && (await ctx.components.workspace.role({ teamId: me.workspace.teamId, userId: u._id }))) active++;
+    }
+    const spaces = await ctx.db.query("spaces").withIndex("by_workspace_kind", (q) => q.eq("workspaceId", me.workspace._id).eq("kind", "shared")).collect();
+    const agents = await ctx.db.query("agents").collect();
+    const sources = await ctx.db.query("dataSources").collect();
+    const providers = await ctx.db.query("aiProviders").collect();
+    const levels = await ctx.db.query("levels").collect();
+    const dayAgo = Date.now() - 24 * 3600 * 1000;
+    const turns = await ctx.db.query("turns").order("desc").take(5000);
+    const today = turns.filter((t) => t.queuedAt > dayAgo);
+    return {
+      users: { active, pending },
+      spaces: { total: spaces.length, sensitive: spaces.filter((s) => s.sensitive).length },
+      agents: { total: agents.length, live: agents.filter((a) => a.live && a.enabled).length, drafts: agents.filter((a) => a.draft).map((a) => ({ _id: a._id, name: (a.draft ?? a.live)?.name ?? "—", unpublished: !a.live })) },
+      sources: { total: sources.length, failing: sources.filter((s) => s.enabled && s.lastCheck && !s.lastCheck.ok).map((s) => ({ _id: s._id, name: s.name })) },
+      providers: { total: providers.length, failing: providers.filter((p) => p.enabled && p.lastCheck && !p.lastCheck.ok).map((p) => ({ _id: p._id, name: p.name })) },
+      levels: { total: levels.length, defaultName: levels.find((l) => l.isDefault)?.name ?? null },
+      activity: { questions24h: today.length, failed24h: today.filter((t) => t.state === "failed").length, people24h: new Set(today.map((t) => t.userId)).size },
+    };
+  },
+});

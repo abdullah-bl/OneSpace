@@ -51,7 +51,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     secret,
     host: env.SANDBOX_HOST ?? "127.0.0.1",
     port: num(env.SANDBOX_PORT, 8787),
-    image: env.SANDBOX_IMAGE ?? "onespace-sandbox:1",
+    image: env.SANDBOX_IMAGE ?? "onespace-sandbox:3",
     runtime,
     workdir: env.SANDBOX_WORKDIR ?? join(tmpdir(), "onespace-sandbox"),
     maxConcurrency: Math.floor(num(env.SANDBOX_MAX_CONCURRENCY, 2)),

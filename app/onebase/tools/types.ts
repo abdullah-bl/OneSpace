@@ -27,8 +27,12 @@ export type Citation = {
 };
 
 export type ToolResult = {
-  /** Text handed back to the model. */
+  /** Text handed back to the model (may carry ids and details meant for it only). */
   content: string;
+  /** What the user sees on the action card after «نفّذ». Without it the card shows the raw output folded. */
+  display?: string;
+  /** How «تراجع» reverses an action that ran without asking (tier 1, onebase/tiers.ts). */
+  undo?: { deleteArtifacts?: string[]; deleteFiles?: string[]; restore?: { artifactId: string; version: number } };
   citations?: Citation[];
   /** Artifacts created or updated by the tool (shown in the side panel). */
   artifactIds?: string[];
@@ -46,5 +50,7 @@ export type AppTool<Args = any> = {
   parameters: Record<string, unknown>;
   /** Write tools: the agent proposes, the user presses "نفّذ" before run() is called. */
   requiresConfirmation?: boolean;
+  /** Its output is data for the model, not an answer: after "نفّذ" the agent writes the reply from it. */
+  answerAfterRun?: boolean;
   run(t: ToolContext, args: Args): Promise<ToolResult>;
 };

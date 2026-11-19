@@ -286,6 +286,27 @@ export default defineSchema({
   // Phase 6: agents, their versions, write-tool proposals (see agentsSchema.ts).
   ...agentsTables,
 
+  // Per-employee levels (plans/08 §D): what models, thinking, tools, sub-agents and how many
+  // questions a day an employee gets. One level per person: their own, else the default, else
+  // no limits (lib/levels.ts). Enforced on the server when a question is queued and run.
+  levels: defineTable({
+    name: v.string(),
+    description: v.string(),
+    model: v.union(v.literal("main"), v.literal("fast")), // fast = the small model only
+    deep: v.boolean(), // «تفكير عميق» allowed
+    tools: v.optional(v.array(v.string())), // allowed tools (none = all the agent has)
+    sources: v.optional(v.array(v.id("dataSources"))), // allowed data sources (none = all the employee may see)
+    spaceIds: v.optional(v.array(v.id("spaces"))), // team level: members of these shared spaces get it (unless they have their own)
+    subagents: v.number(), // max parts a request may be split into (0 = no splitting)
+    dailyQuestions: v.number(), // 0 = unlimited
+    isDefault: v.boolean(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_default", ["isDefault"]),
+  levelAssignments: defineTable({ userId: v.id("users"), levelId: v.id("levels"), by: v.id("users"), at: v.number() })
+    .index("by_user", ["userId"])
+    .index("by_level", ["levelId"]),
+
   // ---- Phase 2: RAG and chat ----
 
   // Ingestion details per file (files.ingest holds the state the file list shows).
@@ -334,6 +355,7 @@ export default defineSchema({
     agentId: v.optional(v.string()), // Phase 6: the picked agent (none = the default agent)
     taskId: v.optional(v.string()), // Phase 6: opened from a task ("اعمل عليها مع الوكيل")
     test: v.optional(v.boolean()), // an admin's "جرّب الوكيل" run: hidden from the chat list
+    pinnedAt: v.optional(v.number()), // pinned to the top of my chat list (newest pin first)
     agentDraft: v.optional(v.boolean()), // test runs use the agent's unpublished draft
     // UX redesign: a chat started inside a space belongs to it (listed on the space page, scoped
     // to it, with its instructions and file list as context). Still private to its owner.
@@ -365,12 +387,34 @@ export default defineSchema({
     ms: v.optional(v.number()),
     agentId: v.optional(v.string()),
     agentVersion: v.optional(v.number()),
+    // What the model needs to know about this message but the user shouldn't read (ids, details):
+    // appended to the message in the model's history only (chat.turnContext).
+    modelNote: v.optional(v.string()),
+    parts: v.optional(v.array(v.object({ agent: v.string(), goal: v.string(), text: v.string(), ok: v.boolean(), ms: v.number() }))), // sub-agents' work this answer was merged from (plans/08 §A)
+    routed: v.optional(v.boolean()), // answered by an agent the router chose
+    skillName: v.optional(v.string()), // the asker's "/name" skill applied to this answer
+    steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))),
   })
     .index("by_message", ["messageId"])
     .index("by_thread", ["threadId"])
     .index("by_feedback", ["feedback"]),
 
   // One row per question: queued (waiting for a GPU slot) → running → done | failed.
+  // The user's own skills (plans/07, "/" in the chat box): named instructions they write, or let
+  // the AI draft from a finished chat, and apply to a question with /name. Private to their owner.
+  skills: defineTable({
+    ownerId: v.id("users"),
+    name: v.string(), // the /name: letters, digits, - and _ (unique per owner)
+    title: v.string(),
+    description: v.string(), // when to use it
+    instructions: v.string(),
+    source: v.union(v.literal("manual"), v.literal("chat")),
+    fromThreadId: v.optional(v.string()),
+    uses: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }).index("by_owner", ["ownerId", "name"]),
+
   turns: defineTable({
     threadId: v.string(),
     userId: v.id("users"),
@@ -384,12 +428,20 @@ export default defineSchema({
     // @mentions in the question: files/spaces that narrow this turn's scope (never widen it).
     mentions: v.optional(v.array(v.object({ kind: v.union(v.literal("file"), v.literal("space")), id: v.string() }))),
     scheduleId: v.optional(v.string()), // a scheduled run (schedules.ts)
+    afterProposal: v.optional(v.id("proposals")), // answers the request from a confirmed run's output
+    routed: v.optional(v.boolean()), // the agent was chosen by the router for this question (plans/07 §C)
+    stopRequested: v.optional(v.boolean()), // «إيقاف»: the running turn ends with what it has written so far
+    skillId: v.optional(v.id("skills")), // "/name": the asker's own skill applied to this question
+    effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))), // thinking level picked in the composer (none = auto)
+    userMessageId: v.optional(v.string()), // the question's own message: its attached files show on it
+    steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),
   })
     .index("by_thread", ["threadId", "queuedAt"])
-    .index("by_state", ["state", "queuedAt"]),
+    .index("by_state", ["state", "queuedAt"])
+    .index("by_user", ["userId", "queuedAt"]),
 
   // ---- UX redesign: mentions inbox and scheduled tasks ----
 
@@ -439,4 +491,61 @@ export default defineSchema({
     .index("by_due", ["enabled", "nextRunAt"]),
 
   aiSettings: defineTable({ key: v.string(), value: v.any(), updatedAt: v.number() }).index("by_key", ["key"]),
+
+  // AI model servers an admin added (providers.ts). OpenAI-compatible: /models, /chat/completions.
+  // The API key never leaves the server (queries return only whether one is set). Which provider
+  // and model play the main / fast / vision roles is aiSettings "roles"; unset roles use the env.
+  aiProviders: defineTable({
+    name: v.string(),
+    baseUrl: v.string(),
+    apiKey: v.optional(v.string()),
+    enabled: v.boolean(),
+    models: v.array(v.string()), // from the last successful check
+    lastCheck: v.optional(v.object({ ok: v.boolean(), at: v.number(), error: v.optional(v.string()) })),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
+
+  // Folder sync (folderSync.ts): a folder on the server (e.g. a mounted network share, under
+  // SYNC_ROOT) copied into a shared space on a schedule. New files are added, changed ones get a new
+  // version; nothing is ever deleted from the space. syncedFiles remembers what came from where.
+  folderSyncs: defineTable({
+    spaceId: v.id("spaces"),
+    path: v.string(), // relative to SYNC_ROOT
+    extensions: v.array(v.string()), // lower-case, no dot; empty = the usual document types
+    recursive: v.boolean(),
+    intervalMinutes: v.number(),
+    enabled: v.boolean(),
+    createdBy: v.id("users"), // files are added as this person (must be able to write the space)
+    nextRunAt: v.number(),
+    running: v.optional(v.boolean()),
+    lastRun: v.optional(v.object({ at: v.number(), added: v.number(), updated: v.number(), unchanged: v.number(), skipped: v.number(), error: v.optional(v.string()) })),
+    createdAt: v.number(),
+  }).index("by_due", ["enabled", "nextRunAt"]),
+  syncedFiles: defineTable({ syncId: v.id("folderSyncs"), relPath: v.string(), fileId: v.id("files"), size: v.number(), mtime: v.number(), sha256: v.string() }).index("by_sync_path", ["syncId", "relPath"]),
+
+  // External data sources (dataSources.ts): databases, systems' REST APIs and search engines an
+  // admin connected. Read only; the secret part of `config` never leaves the server. Agents reach
+  // them through the query_source tool, limited by the source's visibility and the employee's level.
+  dataSources: defineTable({
+    name: v.string(),
+    kind: v.union(v.literal("postgres"), v.literal("mysql"), v.literal("sqlite"), v.literal("http"), v.literal("search"), v.literal("mcp")),
+    description: v.string(), // what it holds, for the model and for people
+    config: v.object({
+      url: v.string(), // connection string or base URL (may hold a password: secret)
+      headerName: v.optional(v.string()), // http: e.g. Authorization
+      headerValue: v.optional(v.string()), // secret
+      paths: v.optional(v.array(v.string())), // http: allowed path prefixes (empty = any under the base URL)
+      tools: v.optional(v.array(v.string())), // mcp: the server's tools agents may call (none listed = none)
+    }),
+    schemaHint: v.string(), // tables and columns (databases) or endpoints (http), shown to the model
+    rowLimit: v.number(),
+    visibility: v.object({ kind: v.union(v.literal("workspace"), v.literal("spaces")), spaceIds: v.array(v.id("spaces")) }),
+    enabled: v.boolean(),
+    lastCheck: v.optional(v.object({ ok: v.boolean(), at: v.number(), error: v.optional(v.string()) })),
+    createdBy: v.id("users"),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  }),
 });

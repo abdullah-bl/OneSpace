@@ -51,6 +51,6 @@ export const update_artifact: AppTool<Args> = {
       note: args.note,
       sources,
     });
-    return { content: `حُفظت النسخة ${r.version} من المخرج. artifactId=${r.artifactId}`, artifactIds: [r.artifactId], spaceIds: [r.spaceId] };
+    return { content: `حُفظت النسخة ${r.version} من المخرج. artifactId=${r.artifactId}`, display: `حُفظت النسخة ${r.version}.`, undo: { restore: { artifactId: r.artifactId, version: r.version - 1 } }, artifactIds: [r.artifactId], spaceIds: [r.spaceId] };
   },
 };

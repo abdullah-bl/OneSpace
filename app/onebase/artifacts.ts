@@ -10,6 +10,7 @@
 //   - anything saved in a sensitive space ... classified sensitive with that space as origin
 // Content is returned by mutations (open/export) so opens of sensitive outputs are audited.
 
+import { scheduleIngest } from "./ingest";
 import { OneBaseError, v } from "onebase/values";
 import ExcelJS from "exceljs";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -19,6 +20,7 @@ import { actorFor, assertCan, Denied, requireActive, requireUserId, roleAllows, 
 import { writeAudit } from "./audit";
 import { artifactKind, cellValue } from "./outputsSchema";
 import { sha256Hex } from "./recordSources";
+import { renderDocument, type DocFormat } from "./lib/docExport";
 
 type Ctx = QueryCtx | MutationCtx;
 export type ArtifactKind = "markdown" | "html" | "table";
@@ -76,7 +78,7 @@ export function normalizeContent(kind: ArtifactKind, content: unknown): string {
 }
 
 /** Loads each source, checks the user can read it (and that it is in this turn's scope). */
-async function resolveSources(ctx: Ctx, actor: Actor, refs: SourceRef[], scope: Set<string> | null) {
+export async function resolveSources(ctx: Ctx, actor: Actor, refs: SourceRef[], scope: Set<string> | null) {
   const out: Source[] = [];
   const sensitiveOrigins = new Set<Id<"spaces">>();
   for (const ref of refs.slice(0, 50)) {
@@ -302,6 +304,63 @@ export const list = query({
   },
 });
 
+/**
+ * «أعمالي»: the outputs I made, in spaces I can still read, newest first. `q` searches titles and
+ * the text of the current version; `kind` narrows to markdown / html / table / image (an image is
+ * a markdown output made from a picture). Each comes with its space and the chat it came from.
+ */
+export const mine = query({
+  args: { q: v.optional(v.string()), kind: v.optional(v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("image"))), spaceId: v.optional(v.string()) },
+  handler: async (ctx, { q, kind, spaceId }) => {
+    const me = await requireActive(ctx);
+    const rows = (await ctx.db.query("artifacts").withIndex("by_owner", (x) => x.eq("ownerId", me.userId)).collect()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 500);
+    const norm = (t: string) => t.toLowerCase().replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+    const words = q ? norm(q).split(/\s+/).filter(Boolean).slice(0, 6) : [];
+    const spaces = new Map<string, { name: string; ok: boolean }>();
+    const threads = new Map<string, string | null>();
+    const out = [];
+    for (const a of rows) {
+      if (spaceId && a.spaceId !== spaceId) continue;
+      if (!spaces.has(a.spaceId)) {
+        let ok = true;
+        let name = "";
+        try {
+          const { space } = await assertCan(ctx, me.userId, a.spaceId, "read");
+          name = space.kind === "personal" ? "مساحتي" : space.name;
+        } catch {
+          ok = false;
+        }
+        spaces.set(a.spaceId, { name, ok });
+      }
+      const sp = spaces.get(a.spaceId)!;
+      if (!sp.ok) continue;
+      const image = a.kind === "markdown" && /\.(png|jpe?g|gif|webp|svg)$/i.test(a.title);
+      const k = image ? "image" : a.kind;
+      if (kind && k !== kind) continue;
+      let snippet: string | null = null;
+      if (words.length) {
+        const title = norm(a.title);
+        if (!words.every((w) => title.includes(w))) {
+          const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (x) => x.eq("artifactId", a._id).eq("version", a.currentVersion)).unique();
+          const text = image ? "" : (ver?.content ?? "").replace(/<[^>]+>/g, " ").replace(/data:[^)\s"]+/g, "").replace(/\s+/g, " ");
+          const nt = norm(text);
+          if (!words.every((w) => nt.includes(w))) continue;
+          const at = Math.max(0, nt.indexOf(words[0]!) - 40);
+          snippet = (at > 0 ? "…" : "") + text.slice(at, at + 140) + "…";
+        }
+      }
+      if (a.sourceThreadId && !threads.has(a.sourceThreadId)) {
+        const t = await ctx.db.query("threadMeta").withIndex("by_thread", (x) => x.eq("threadId", a.sourceThreadId!)).unique();
+        threads.set(a.sourceThreadId, t && t.userId === me.userId && !t.test ? t.title || "محادثة" : null);
+      }
+      const threadTitle = a.sourceThreadId ? threads.get(a.sourceThreadId) : null;
+      out.push({ ...shape(a), kind: k, spaceName: sp.name, thread: a.sourceThreadId && threadTitle ? { id: a.sourceThreadId, title: threadTitle } : null, snippet });
+      if (out.length >= 200) break;
+    }
+    return out;
+  },
+});
+
 export const versions = query({
   args: { artifactId: v.id("artifacts") },
   handler: async (ctx, { artifactId }) => {
@@ -337,12 +396,17 @@ export const remove = mutation({
     const art = await ctx.db.get(artifactId);
     if (!art) throw new Denied();
     await assertCan(ctx, me.userId, art.spaceId, "write");
-    for (const row of await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id)).collect()) await ctx.db.delete(row._id);
-    for (const t of await ctx.db.query("artifactTransfers").withIndex("by_artifact", (q) => q.eq("artifactId", art._id)).collect()) await ctx.db.delete(t._id);
-    await ctx.db.delete(art._id);
-    await writeAudit(ctx, { userId: me.userId, action: "artifact.delete", resourceType: "artifact", resourceId: art._id, spaceId: art.spaceId, detail: { name: art.title } });
+    await deleteArtifactRows(ctx, me.userId, art, "user");
   },
 });
+
+/** Deletes an artifact with its versions and transfers. Callers check write access first. */
+export async function deleteArtifactRows(ctx: MutationCtx, userId: Id<"users">, art: Doc<"artifacts">, via: string) {
+  for (const row of await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id)).collect()) await ctx.db.delete(row._id);
+  for (const t of await ctx.db.query("artifactTransfers").withIndex("by_artifact", (q) => q.eq("artifactId", art._id)).collect()) await ctx.db.delete(t._id);
+  await ctx.db.delete(art._id);
+  await writeAudit(ctx, { userId, action: "artifact.delete", resourceType: "artifact", resourceId: art._id, spaceId: art.spaceId, detail: { name: art.title, ...(via !== "user" ? { via } : {}) } });
+}
 
 async function doMove(ctx: MutationCtx, userId: Id<"users">, art: Doc<"artifacts">, to: Id<"spaces">, via: string) {
   await ctx.db.patch(art._id, { spaceId: to, updatedAt: Date.now() });
@@ -456,13 +520,98 @@ export const exportTable = action({
   },
 });
 
+/** Downloads an output as Word, PDF or PowerPoint (rendered in the sandbox). Audited for sensitive outputs. */
+export const exportDocument = action({
+  args: { artifactId: v.id("artifacts"), version: v.optional(v.number()), format: v.union(v.literal("docx"), v.literal("pdf"), v.literal("pptx")) },
+  handler: async (ctx, { artifactId, version, format }): Promise<{ fileName: string; mime: string; base64: string }> => {
+    const userId = await requireUserId(ctx);
+    const art: any = await ctx.runMutation(internal.artifacts.openForExport, { userId, artifactId, version, format });
+    const out = await renderDocument(art, format as DocFormat);
+    return { fileName: out.fileName, mime: out.mime, base64: Buffer.from(out.bytes).toString("base64") };
+  },
+});
+
+/** "تعديل": saves my edit of a Markdown/HTML output as a new version (write access to its space). */
+export const edit = mutation({
+  args: { artifactId: v.id("artifacts"), content: v.string(), note: v.optional(v.string()) },
+  handler: async (ctx, { artifactId, content, note }) => {
+    const me = await requireActive(ctx);
+    const actor = await requireActor(ctx, me.userId);
+    const art = await ctx.db.get(artifactId);
+    if (!art) throw new Denied();
+    await assertCan(ctx, me.userId, art.spaceId, "write");
+    if (art.kind === "table") throw new OneBaseError("لا يُعدَّل الجدول نصياً؛ صدّره إلى Excel أو اطلب تعديله من الوكيل");
+    return await updateArtifact(ctx, actor, { artifactId, content, note }, { scope: null, via: "user" });
+  },
+});
+
+
 // ---------- internal (agent tools and actions; identity passed in by trusted server code) ----------
 
 export const openForExport = internalMutation({
-  args: { userId: v.id("users"), artifactId: v.string(), version: v.optional(v.number()), format: v.string() },
-  handler: async (ctx, { userId, artifactId, version }) => {
+  args: {
+    userId: v.id("users"),
+    artifactId: v.string(),
+    version: v.optional(v.number()),
+    format: v.string(),
+    scopeSpaceIds: v.optional(v.array(v.string())),
+    /** The caller will save the result in the output's space (export_document): check that first. */
+    requireWrite: v.optional(v.boolean()),
+  },
+  handler: async (ctx, { userId, artifactId, version, scopeSpaceIds, requireWrite }) => {
     await requireActor(ctx, userId);
+    if (scopeSpaceIds || requireWrite) {
+      const { art, space } = await loadReadable(ctx, userId, artifactId);
+      // An agent: only outputs in its turn's scope (or the user's personal space), like updates.
+      if (scopeSpaceIds && space.kind !== "personal" && !scopeSpaceIds.includes(space._id)) throw new Denied();
+      if (requireWrite) await assertCan(ctx, userId, art.spaceId, "write");
+    }
     return await openFor(ctx, userId, artifactId, version, "artifact.export");
+  },
+});
+
+/**
+ * Saves a rendered document (Word/PDF/PowerPoint of an output) as a file in the output's own space,
+ * so it follows that space's permissions and sensitivity. Needs write access there.
+ */
+export const saveRenderedFile = internalMutation({
+  args: { userId: v.id("users"), artifactId: v.id("artifacts"), storageId: v.id("_storage"), name: v.string(), mime: v.string(), size: v.number(), sha256: v.string(), format: v.string(), via: v.string() },
+  handler: async (ctx, a) => {
+    await requireActor(ctx, a.userId);
+    const art = await ctx.db.get(a.artifactId);
+    if (!art) throw new Denied();
+    try {
+      await assertCan(ctx, a.userId, art.spaceId, "write");
+    } catch {
+      await ctx.storage.delete(a.storageId);
+      throw new OneBaseError("لا تملك صلاحية حفظ ملف في مساحة هذا المخرج. نزّله من لوحة المخرج بدلاً من ذلك.");
+    }
+    const now = Date.now();
+    const fileId = await ctx.db.insert("files", {
+      spaceId: art.spaceId,
+      storageId: a.storageId,
+      name: a.name,
+      mime: a.mime,
+      size: a.size,
+      sha256: a.sha256,
+      version: 1,
+      uploadedBy: a.userId,
+      ingest: "pending",
+      status: "active",
+      updatedAt: now,
+    });
+    await ctx.db.insert("fileVersions", { fileId, version: 1, storageId: a.storageId, name: a.name, mime: a.mime, size: a.size, sha256: a.sha256, uploadedBy: a.userId, uploadedAt: now });
+    // Like an upload: index it, so the assistant can read and search the documents it made.
+    await scheduleIngest(ctx, fileId);
+    await writeAudit(ctx, {
+      userId: a.userId,
+      action: "file.upload",
+      resourceType: "file",
+      resourceId: fileId,
+      spaceId: art.spaceId,
+      detail: { fileName: a.name, size: a.size, via: a.via, artifactId: art._id, version: art.currentVersion, format: a.format },
+    });
+    return { fileId, spaceId: art.spaceId };
   },
 });
 

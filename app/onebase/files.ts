@@ -153,15 +153,20 @@ export const remove = mutation({
     const me = await requireActive(ctx);
     const file = await loadFile(ctx, fileId);
     await assertCan(ctx, me.userId, file.spaceId, "write");
-    const versions = await ctx.db.query("fileVersions").withIndex("by_file_version", (q) => q.eq("fileId", file._id)).collect();
-    const storageIds = new Set<Id<"_storage">>([file.storageId, ...versions.map((v) => v.storageId)]);
-    await unindexFile(ctx, file);
-    for (const row of versions) await ctx.db.delete(row._id);
-    await ctx.db.delete(file._id);
-    for (const s of storageIds) await releaseStorage(ctx, s);
-    await writeAudit(ctx, { userId: me.userId, action: "file.delete", resourceType: "file", resourceId: file._id, spaceId: file.spaceId, detail: { fileName: file.name } });
+    await deleteFileRows(ctx, me.userId, file, "user");
   },
 });
+
+/** Deletes a file with its versions, index and stored bytes. Callers check write access first. */
+export async function deleteFileRows(ctx: MutationCtx, userId: Id<"users">, file: Doc<"files">, via: string) {
+  const versions = await ctx.db.query("fileVersions").withIndex("by_file_version", (q) => q.eq("fileId", file._id)).collect();
+  const storageIds = new Set<Id<"_storage">>([file.storageId, ...versions.map((v) => v.storageId)]);
+  await unindexFile(ctx, file);
+  for (const row of versions) await ctx.db.delete(row._id);
+  await ctx.db.delete(file._id);
+  for (const s of storageIds) await releaseStorage(ctx, s);
+  await writeAudit(ctx, { userId, action: "file.delete", resourceType: "file", resourceId: file._id, spaceId: file.spaceId, detail: { fileName: file.name, ...(via !== "user" ? { via } : {}) } });
+}
 
 /** Leaving a sensitive space needs its manager; other moves need write on both sides. */
 async function checkTransfer(ctx: MutationCtx, me: Actor, file: Doc<"files">, toSpaceId: Id<"spaces">, sourceAction: "read" | "write") {

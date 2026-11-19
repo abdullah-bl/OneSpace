@@ -6,6 +6,7 @@
 // and artifacts always live together. Every export and every run is audited, and each run is a
 // row in `runs`.
 
+import { scheduleIngest } from "./ingest";
 import { OneBaseError, v } from "onebase/values";
 import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -44,6 +45,8 @@ const MIME: Record<string, string> = {
   json: "application/json",
   html: "text/html",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 };
 export const mimeFor = (name: string) => MIME[name.split(".").pop()?.toLowerCase() ?? ""] ?? "application/octet-stream";
 
@@ -179,6 +182,8 @@ export const finish = internalMutation({
         });
         await ctx.db.insert("fileVersions", { fileId, version: 1, storageId: o.storageId, name, mime, size: o.size, sha256: o.sha256, uploadedBy: run.userId, uploadedAt: now });
         await writeAudit(ctx, { userId: run.userId, action: "file.upload", resourceType: "file", resourceId: fileId, spaceId: run.spaceId, detail: { fileName: name, size: o.size, via: "sandbox", runId } });
+        // Like an upload: index it, so the assistant can read and search what it made.
+        await scheduleIngest(ctx, fileId);
         saved.push({ fileId, name, sha256: o.sha256, size: o.size });
       }
       if (artifacts?.length) {
@@ -287,10 +292,17 @@ export const myRuns = query({
   handler: async (ctx) => {
     const me = await requireActive(ctx);
     const rows = await ctx.db.query("runs").withIndex("by_user", (q) => q.eq("userId", me.userId)).order("desc").take(50);
+    const titles = new Map<string, string>();
+    for (const r of rows) {
+      if (!r.threadId || titles.has(r.threadId)) continue;
+      const t = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", r.threadId!)).unique();
+      if (t && t.userId === me.userId && !t.test) titles.set(r.threadId, t.title || "محادثة");
+    }
     return rows
       .filter((r) => r.kind === "sandbox")
       .map((r) => ({
         _id: r._id,
+        thread: r.threadId && titles.has(r.threadId) ? { id: r.threadId, title: titles.get(r.threadId)! } : null,
         status: r.status,
         spaceId: r.spaceId,
         createdAt: r.createdAt,

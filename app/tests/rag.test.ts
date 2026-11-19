@@ -189,7 +189,8 @@ describe("answers", () => {
     await ask(s, tok("mem"), t, "كم يوماً يجوز العمل عن بعد TEXTKEY-1001؟");
     const before = ai.requests.length;
     await ask(s, tok("mem"), t, "وبموافقة من؟");
-    const rw = ai.requests.slice(before).find((r) => r.body.response_format);
+    // The query rewrite (the router's JSON request comes first in an unpinned chat).
+    const rw = ai.requests.slice(before).find((r) => JSON.stringify(r.body.response_format ?? "").includes('"query"'));
     expect(rw.body.model).toBe("fake-fast");
     expect(rw.body.response_format.type).toBe("json_schema");
     expect(JSON.stringify(rw.body.messages)).toContain("TEXTKEY-1001");

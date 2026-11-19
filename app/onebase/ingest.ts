@@ -15,7 +15,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, requireActive } from "./access";
-import { aiConfig, ensureEmbeddingIndex, ocr } from "./ai";
+import { aiConfig, embedConfigFromDb, ensureEmbeddingIndex, ocr, primeAi } from "./ai";
 import { shadowText } from "./lib/arabic";
 import { chunkBlocks } from "./lib/chunk";
 import { extract } from "./lib/extract";
@@ -47,7 +47,7 @@ export async function scheduleIngest(ctx: MutationCtx, fileId: Id<"files">) {
   if (!file) return;
   const row = await indexRow(ctx, fileId);
   const base = { version: file.version, spaceId: file.spaceId, error: undefined, note: undefined, step: undefined };
-  if (!aiConfig().embed.baseUrl) {
+  if (!(await embedConfigFromDb(ctx.db)).baseUrl) {
     await setState(ctx, file, { ...base, state: "failed", error: "الفهرسة غير مفعّلة: خادم التضمين غير مضبوط" });
     return;
   }
@@ -155,6 +155,7 @@ export const fileForIngest = internalQuery({
 export const extractFile = internalAction({
   args: fileArgs,
   handler: async (ctx, { fileId, version }): Promise<{ ok: boolean; error?: string; done?: string }> => {
+    await primeAi(ctx);
     try {
       const meta = await ctx.runQuery(internal.ingest.fileForIngest, { fileId, version });
       if (!meta) return { ok: true, done: "stale" };
@@ -257,6 +258,23 @@ export const reindexAll = internalMutation({
     const files = await ctx.db.query("files").collect();
     for (const f of files) if (f.status === "active") await scheduleIngest(ctx, f._id);
     return files.length;
+  },
+});
+
+/**
+ * Indexes files that were saved without it (rendered documents and analysis outputs, before they
+ * scheduled their own ingestion). Admin key only; safe to run again.
+ */
+export const ingestMissing = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    let n = 0;
+    for (const f of await ctx.db.query("files").collect()) {
+      if (f.status !== "active" || f.ingest !== "pending" || (await indexRow(ctx, f._id))) continue;
+      await scheduleIngest(ctx, f._id);
+      n++;
+    }
+    return n;
   },
 });
 

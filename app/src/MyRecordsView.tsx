@@ -11,19 +11,19 @@ export function MyRecordsView() {
   const [error, setError] = useState("");
   return (
     <div className="mx-auto max-w-5xl space-y-4">
-      <h1 className="text-xl font-semibold">بياناتي</h1>
-      <p className="text-sm text-neutral-500">سجلات عنك أدخلتها الإدارات (دورات، نتائج، شهادات). تُطابق برقمك المسجّل على حسابك من مدير مساحة العمل.</p>
-      {error && <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p>}
+      <h1 className="page-title">بياناتي</h1>
+      <p className="text-sm text-muted">سجلات عنك أدخلتها الإدارات (دورات، نتائج، شهادات). تُطابق برقمك المسجّل على حسابك من مدير مساحة العمل.</p>
+      {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       {mine && !mine.hasIdentity && <div className="card p-4 text-sm">لا يوجد رقم هوية أو رقم وظيفي على حسابك بعد. يضيفه مدير مساحة العمل.</div>}
       {mine?.documents && mine.documents.length > 0 && (
         <section className="space-y-2">
-          <h2 className="font-semibold">شهاداتي</h2>
-          <div className="card divide-y divide-neutral-100">
+          <h2 className="section-title">شهاداتي</h2>
+          <div className="card divide-y divide-rule">
             {mine.documents.map((d) => (
               <div key={d._id} className="flex flex-wrap items-center gap-3 p-3 text-sm">
                 <div className="flex-1">
-                  <div className="font-semibold">{d.templateName}</div>
-                  <div className="text-xs text-neutral-500" dir="ltr">
+                  <div className="font-bold">{d.templateName}</div>
+                  <div className="text-xs text-muted" dir="ltr">
                     {d.serial} · {d.verifyCode} · {d.issuedAt ? formatDate(d.issuedAt) : ""}
                   </div>
                 </div>
@@ -44,10 +44,10 @@ export function MyRecordsView() {
       )}
       {mine?.sets.map((s) => (
         <section key={s.recordSetId} className="space-y-2">
-          <h2 className="font-semibold">{s.setName}</h2>
+          <h2 className="section-title">{s.setName}</h2>
           <div className="card overflow-auto">
             <table className="w-full text-sm">
-              <thead className="bg-neutral-50">
+              <thead className="bg-sunken">
                 <tr>
                   {s.columns.map((c) => (
                     <th key={c.key} className="th">
@@ -58,7 +58,7 @@ export function MyRecordsView() {
               </thead>
               <tbody>
                 {s.rows.map((r) => (
-                  <tr key={r.recordId} className="border-t border-neutral-100">
+                  <tr key={r.recordId} className="border-t border-rule">
                     {s.columns.map((c) => (
                       <td key={c.key} className="td">
                         {r.data[c.key] === null || r.data[c.key] === undefined ? "" : String(r.data[c.key])}
@@ -71,7 +71,7 @@ export function MyRecordsView() {
           </div>
         </section>
       ))}
-      {mine && mine.hasIdentity && mine.sets.length === 0 && mine.documents.length === 0 && <p className="text-sm text-neutral-400">لا توجد سجلات باسمك.</p>}
+      {mine && mine.hasIdentity && mine.sets.length === 0 && mine.documents.length === 0 && <p className="text-sm text-faint">لا توجد سجلات باسمك.</p>}
     </div>
   );
 }

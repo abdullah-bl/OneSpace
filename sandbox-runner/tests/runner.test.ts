@@ -7,7 +7,7 @@ import { dockerAvailable, imagePresent, safeInputName } from "../src/docker";
 import { startServer } from "../src/server";
 
 const SECRET = "test-secret-" + crypto.randomUUID();
-const IMAGE = process.env.SANDBOX_IMAGE ?? "onespace-sandbox:1";
+const IMAGE = process.env.SANDBOX_IMAGE ?? "onespace-sandbox:3";
 const canRun = (await dockerAvailable()) && (await imagePresent(IMAGE));
 if (!canRun) console.warn(`[sandbox-runner tests] Docker or image ${IMAGE} missing: container tests skipped`);
 
@@ -177,6 +177,33 @@ describe.skipIf(!canRun)("limits", () => {
       expect(elapsed).toBeLessThan(2000 + 8000);
       expect(((await (await fetch(`${base}/health`)).json()) as any).ok).toBe(true);
       expect(await leftoverContainers()).toBe("");
+    },
+    T,
+  );
+
+  test(
+    "Arabic in charts just works: shaped, in visual order, with a font fallback for Latin and symbols",
+    async () => {
+      const res = await probe(
+        [
+          "import matplotlib.pyplot as plt, onespace",
+          "fig, ax = plt.subplots()",
+          "t = ax.set_title('تطور الراتب (ريال) 7%')",
+          "res['shaped'] = any(0xFE70 <= ord(c) <= 0xFEFF for c in t.get_text())",
+          "res['base_left'] = any(0x0600 <= ord(c) <= 0x06FF for c in t.get_text())",
+          "pre = onespace.ar('الراتب')",
+          "res['twice'] = ax.set_xlabel(pre).get_text() == pre",
+          "res['latin'] = ax.set_ylabel('Salary').get_text()",
+          "import matplotlib",
+          "res['family'] = list(matplotlib.rcParams['font.family'])",
+          "fig.savefig('/output/a.png')",
+        ].join("\n"),
+      );
+      expect(res.shaped).toBe(true);
+      expect(res.base_left).toBe(false);
+      expect(res.twice).toBe(true);
+      expect(res.latin).toBe("Salary");
+      expect(res.family).toEqual(["Noto Sans Arabic", "DejaVu Sans"]);
     },
     T,
   );

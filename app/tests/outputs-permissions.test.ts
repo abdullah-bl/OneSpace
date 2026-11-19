@@ -52,6 +52,10 @@ async function sensitiveArtifact() {
   return r.artifactIds[0] as string;
 }
 
+/** Without a sandbox, an export that got past every access check stops at "not configured": count it as allowed. */
+const SANDBOX_OFF = /الساندبوكس غير مهيأ|تعذّر الاتصال بالساندبوكس/;
+const passedAccess = (r: Result): Result => (!r.ok && SANDBOX_OFF.test(r.error) ? { ok: true, value: "access ok (no sandbox)" } : r);
+
 type Op = { name: string; need: Need; spaces: readonly SpaceKey[]; expect?: (a: ActorKey, sp: SpaceKey) => boolean; run: (a: ActorKey, sp: SpaceKey) => Promise<Result> };
 
 const OPS: Op[] = [
@@ -96,6 +100,28 @@ const OPS: Op[] = [
     need: "write",
     spaces: SPACES,
     run: (a, sp) => (f.ids[a] ? tool(s, f.ids[a]!, "create_artifact", { title: "t", kind: "markdown", content: "x", spaceId: f.spaces[sp] }) : Promise.resolve(fail("anon"))),
+  },
+  {
+    name: "artifacts:exportDocument",
+    need: "read",
+    spaces: SPACES,
+    run: async (a, sp) => passedAccess(await s.call("action", "artifacts:exportDocument", { artifactId: o.artifacts[sp], format: "docx" }, tok(a))),
+  },
+  {
+    name: "export_document (tool)",
+    need: "write",
+    spaces: SPACES,
+    run: async (a, sp) => (f.ids[a] ? passedAccess(await tool(s, f.ids[a]!, "export_document", { artifactId: o.artifacts[sp], format: "pdf" })) : fail("anon")),
+  },
+  {
+    name: "artifacts:edit",
+    need: "write",
+    spaces: SPACES,
+    run: async (a, sp) => {
+      const owner = sp === "P_mem" ? tok("mem") : tok("mgr");
+      const id = must(await s.call("mutation", "artifacts:create", { title: "ed", kind: "markdown", content: "قبل", spaceId: f.spaces[sp] }, owner)).artifactId;
+      return s.call("mutation", "artifacts:edit", { artifactId: id, content: `بعد ${a}` }, tok(a));
+    },
   },
   {
     name: "update_artifact (tool)",

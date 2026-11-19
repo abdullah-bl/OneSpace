@@ -1,0 +1,25 @@
+// Public functions added with the admin console (providers, data sources, overview) and global
+// search. Each is checked per actor in platform.test.ts; permissions.test.ts includes this list.
+export const PLATFORM_COVERED = [
+  "admin:overview",
+  "palette:find",
+  "providers:list",
+  "providers:save",
+  "providers:remove",
+  "providers:setRole",
+  "providers:check",
+  "providers:setEmbedding",
+  "providers:reindex",
+  "dataSources:list",
+  "dataSources:save",
+  "dataSources:remove",
+  "dataSources:check",
+  "toolsAdmin:overview",
+  "artifacts:mine",
+  "chat:setPinned",
+  "folderSync:list",
+  "folderSync:save",
+  "folderSync:remove",
+  "folderSync:runNow",
+  "folderSync:browse",
+];

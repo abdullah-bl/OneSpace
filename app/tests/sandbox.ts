@@ -6,7 +6,7 @@ import { resolve } from "node:path";
 import { deflateRawSync } from "node:zlib";
 
 const RUNNER = resolve(import.meta.dir, "../../sandbox-runner");
-const IMAGE = process.env.SANDBOX_IMAGE ?? "onespace-sandbox:1";
+const IMAGE = process.env.SANDBOX_IMAGE ?? "onespace-sandbox:3";
 
 export async function sandboxAvailable(): Promise<boolean> {
   try {

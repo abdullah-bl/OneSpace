@@ -32,6 +32,9 @@ export const fill_template: AppTool<Args> = {
       threadId: t.threadId,
     });
     const status = r.status === "issued" ? `صدر سابقاً برقم ${r.serial}` : r.status === "approved" ? "معتمدة وجاهزة للإصدار" : "مسودة بانتظار اعتماد مدير المساحة";
-    return { content: `${r.existing ? "المستند موجود مسبقاً" : "أُنشئت مسودة المستند"}: ${status}. documentId=${r.documentId}. الحقول: ${JSON.stringify(r.data)}` };
+    return {
+      content: `${r.existing ? "المستند موجود مسبقاً" : "أُنشئت مسودة المستند"}: ${status}. documentId=${r.documentId}. الحقول: ${JSON.stringify(r.data)}`,
+      display: `${r.existing ? "المستند موجود مسبقاً" : "أُنشئت مسودة المستند"}: ${status}.`,
+    };
   },
 };
