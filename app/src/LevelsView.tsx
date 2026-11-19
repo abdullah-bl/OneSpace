@@ -9,8 +9,8 @@ import { api, errorText } from "./lib";
 import { Icon } from "./icons";
 import { EmptyState, PageHeader, ask } from "./ui";
 
-type Draft = { levelId?: string; name: string; description: string; model: "main" | "fast"; deep: boolean; tools: string[] | null; sources: string[] | null; spaceIds: string[]; subagents: number; dailyQuestions: number };
-const NEW: Draft = { name: "", description: "", model: "main", deep: false, tools: null, sources: null, spaceIds: [], subagents: 0, dailyQuestions: 100 };
+type Draft = { levelId?: string; name: string; description: string; model: "main" | "fast"; deep: boolean; tools: string[] | null; sources: string[] | null; spaceIds: string[]; subagents: number; memory: boolean; dailyQuestions: number };
+const NEW: Draft = { name: "", description: "", model: "main", deep: false, tools: null, sources: null, spaceIds: [], subagents: 0, memory: true, dailyQuestions: 100 };
 
 export function LevelsView() {
   const data = useQuery(api.levels.list);
@@ -32,6 +32,7 @@ export function LevelsView() {
       ...(l.spaceIds.length ? [`لأعضاء ${l.spaceIds.map((id) => data.spaces.find((x) => x._id === id)?.name ?? "مساحة").join("، ")}`] : []),
       ...(data.sources.length ? [l.sources ? (l.sources.length ? `${l.sources.length} من مصادر البيانات` : "بلا مصادر بيانات") : "كل مصادر البيانات"] : []),
       l.subagents >= 2 ? `حتى ${l.subagents} وكلاء للطلب` : "وكيل واحد للطلب",
+      ...(l.memory ? [] : ["بلا ذاكرة"]),
       l.dailyQuestions ? `${l.dailyQuestions} سؤالاً يومياً` : "بلا حد يومي",
     ].join(" · ");
 
@@ -87,6 +88,10 @@ export function LevelsView() {
           <label className="flex items-center gap-2 text-sm">
             <input type="checkbox" checked={editing.deep && editing.model === "main"} disabled={editing.model === "fast"} onChange={(e) => set("deep", e.target.checked)} />
             يسمح بـ«تفكير عميق» {editing.model === "fast" && <span className="meta">(النموذج السريع لا يفكّر)</span>}
+          </label>
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={editing.memory} onChange={(e) => set("memory", e.target.checked)} />
+            الذاكرة: يتذكّر المساعد ما يطلب الموظف حفظه، ويقرأ ذاكرة المساحة
           </label>
           <fieldset className="space-y-2 text-sm">
             <label className="flex items-center gap-2">
@@ -150,7 +155,7 @@ export function LevelsView() {
               className="btn-primary"
               disabled={!editing.name.trim()}
               onClick={() =>
-                void save({ ...(editing.levelId ? { levelId: editing.levelId } : {}), name: editing.name, description: editing.description, model: editing.model, deep: editing.deep, tools: editing.tools, sources: editing.sources, spaceIds: editing.spaceIds, subagents: editing.subagents, dailyQuestions: editing.dailyQuestions })
+                void save({ ...(editing.levelId ? { levelId: editing.levelId } : {}), name: editing.name, description: editing.description, model: editing.model, deep: editing.deep, tools: editing.tools, sources: editing.sources, spaceIds: editing.spaceIds, subagents: editing.subagents, memory: editing.memory, dailyQuestions: editing.dailyQuestions })
                   .then(() => (setEditing(null), setError("")))
                   .catch((e) => setError(errorText(e)))
               }
@@ -186,7 +191,7 @@ export function LevelsView() {
                   اجعله الافتراضي
                 </button>
               )}
-              <button className="btn-ghost" onClick={() => setEditing({ levelId: l._id, name: l.name, description: l.description, model: l.model, deep: l.deep, tools: l.tools, sources: l.sources, spaceIds: l.spaceIds, subagents: l.subagents, dailyQuestions: l.dailyQuestions })}>
+              <button className="btn-ghost" onClick={() => setEditing({ levelId: l._id, name: l.name, description: l.description, model: l.model, deep: l.deep, tools: l.tools, sources: l.sources, spaceIds: l.spaceIds, subagents: l.subagents, memory: l.memory, dailyQuestions: l.dailyQuestions })}>
                 تعديل
               </button>
               <button className="btn-danger" onClick={() => void ask(`حذف مستوى «${l.name}»؟ يعود موظفوه إلى المستوى الافتراضي.`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run(remove({ levelId: l._id })); })}>

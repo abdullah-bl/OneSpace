@@ -298,6 +298,7 @@ export default defineSchema({
     sources: v.optional(v.array(v.id("dataSources"))), // allowed data sources (none = all the employee may see)
     spaceIds: v.optional(v.array(v.id("spaces"))), // team level: members of these shared spaces get it (unless they have their own)
     subagents: v.number(), // max parts a request may be split into (0 = no splitting)
+    memory: v.optional(v.boolean()), // plans/09: personal and space memory (missing = on)
     dailyQuestions: v.number(), // 0 = unlimited
     isDefault: v.boolean(),
     createdAt: v.number(),
@@ -356,6 +357,8 @@ export default defineSchema({
     taskId: v.optional(v.string()), // Phase 6: opened from a task ("اعمل عليها مع الوكيل")
     test: v.optional(v.boolean()), // an admin's "جرّب الوكيل" run: hidden from the chat list
     pinnedAt: v.optional(v.number()), // pinned to the top of my chat list (newest pin first)
+    noMemory: v.optional(v.boolean()), // «محادثة بلا ذاكرة»: no memory read or written in this chat (plans/09)
+    memoryScannedAt: v.optional(v.number()), // how many user messages the suggestion pass has read
     agentDraft: v.optional(v.boolean()), // test runs use the agent's unpublished draft
     // UX redesign: a chat started inside a space belongs to it (listed on the space page, scoped
     // to it, with its instructions and file list as context). Still private to its owner.
@@ -489,6 +492,28 @@ export default defineSchema({
   })
     .index("by_user", ["userId", "createdAt"])
     .index("by_due", ["enabled", "nextRunAt"]),
+
+  // plans/09: what the assistant remembers. "user" items are the owner's alone (admins can't read
+  // them); "space" items are shared with the space's readers and written only by its managers
+  // (members propose). Every item is data in the prompt, never instructions. originSpaceId ties
+  // what was learned in a space's chat to that space: it is shown only while the owner can read it.
+  memories: defineTable({
+    scope: v.union(v.literal("user"), v.literal("space")),
+    ownerId: v.optional(v.id("users")), // user scope
+    spaceId: v.optional(v.id("spaces")), // space scope
+    text: v.string(),
+    kind: v.union(v.literal("fact"), v.literal("preference"), v.literal("decision"), v.literal("term")),
+    state: v.union(v.literal("active"), v.literal("proposed")),
+    how: v.union(v.literal("asked"), v.literal("auto"), v.literal("manual")), // the user asked / suggested by the model / typed on the page
+    by: v.id("users"),
+    threadId: v.optional(v.string()),
+    originSpaceId: v.optional(v.id("spaces")),
+    uses: v.number(),
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_owner", ["ownerId", "state", "updatedAt"])
+    .index("by_space", ["spaceId", "state", "updatedAt"]),
 
   aiSettings: defineTable({ key: v.string(), value: v.any(), updatedAt: v.number() }).index("by_key", ["key"]),
 

@@ -29,7 +29,8 @@ import { queueTurn } from "./lib/turns";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type ToolSpec, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
-import { tools as registry } from "./tools";
+import { MEMORY_TOOLS, tools as registry } from "./tools";
+import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, undoMemories } from "./memory";
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
 import type { AppTool, Citation, ToolContext } from "./tools/types";
@@ -317,6 +318,16 @@ export const setPinned = mutation({
 });
 const MAX_PINNED = 20;
 
+/** «محادثة بلا ذاكرة»: this chat neither reads nor writes memory, and isn't searched by recall. */
+export const setNoMemory = mutation({
+  args: { threadId: v.string(), on: v.boolean() },
+  handler: async (ctx, { threadId, on }) => {
+    const me = await requireActive(ctx);
+    const meta = await ownThread(ctx, me.userId, threadId);
+    await ctx.db.patch(meta._id, { noMemory: on || undefined });
+  },
+});
+
 /** Picks the agent for my thread (null = the default agent). Test threads keep their draft agent. */
 export const setAgent = mutation({
   args: { threadId: v.string(), agentId: v.union(v.string(), v.null()) },
@@ -483,6 +494,7 @@ export const messages = query({
     return {
       title: meta.title,
       pinned: !!meta.pinnedAt,
+      noMemory: !!meta.noMemory,
       scope: meta.scope,
       scopeLabel: await scopeLabel(ctx, meta.scope, me.userId),
       spaceId: spaceName ? (meta.spaceId ?? null) : null,
@@ -729,11 +741,14 @@ export const turnContext = internalQuery({
     // The agent, resolved now (an admin may have disabled or narrowed it since the question was sent).
     // The router's pick is resolved like a user's pick: enabled, published, visible to this user.
     const agent = await resolveAgent(ctx, turn.userId, agentOverride ? { agentId: agentOverride } : meta);
-    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false, skill: null };
+    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false, skill: null, memory: { on: false, autoSave: false } };
     // Scope = readable spaces right now ∩ the agent's data scope ∩ the thread's scope chips
     // (∩ what the question @mentions: narrowing only).
     const { spaceIds, fileIds } = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId, agent.config.dataScope, meta.scope), mentions);
     const context = [...(await turnExtraContext(ctx, turn.userId, meta, spaceIds)), ...(await mentionContext(ctx, mentions, spaceIds, fileIds))];
+    // Memory (plans/09): the asker's index and the space's, unless the level or this chat turns it off.
+    const memory = !meta.test && !meta.noMemory && level.memory;
+    if (memory) context.push(...(await memoryContext(ctx, turn.userId, meta, spaceIds)));
     // External data sources this employee may read (only if the agent and level allow the tool).
     if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
       const sources = sourcesContext(await sourcesFor(ctx, turn.userId));
@@ -778,7 +793,7 @@ export const turnContext = internalQuery({
         draft: agent.draft,
         name: agent.config.name,
         instructions: agent.config.instructions,
-        allowedTools: levelTools(level, agentTools(agent.config)),
+        allowedTools: [...levelTools(level, agentTools(agent.config)), ...(memory ? MEMORY_TOOLS : [])],
         modelRole: level.model === "fast" ? ("fast" as const) : agent.config.modelRole,
         maxSteps: agent.config.maxSteps,
         grounding: groundingOf(agent.config),
@@ -802,6 +817,8 @@ export const turnContext = internalQuery({
       afterRun,
       afterRunMissing: !!turn.afterProposal && !afterRun,
       skill: await turnSkill(ctx, turn),
+      // A personal save runs without «نفّذ» only when the person asked for it, outside sensitive spaces.
+      memory: { on: memory, autoSave: memory && !(await sensitiveOrigin(ctx, meta)) },
     };
   },
 });
@@ -1418,7 +1435,10 @@ export const runTurn = internalAction({
               toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "اقتراح مرفوض" });
               continue;
             }
-            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds });
+            let tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds });
+            // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
+            // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
+            if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
             plans.push({ tc, tool, kind: tier === 1 && autoRunEnabled() ? "auto" : "proposal", tier });
           } else plans.push({ tc, tool, kind: "read" });
         }
@@ -1493,6 +1513,7 @@ export const runTurn = internalAction({
       const abstained = !proposals.length && !autoRuns.length && (!answer || (ABSTAIN_RE.test(answer) && !/\[\d+\]/.test(answer)));
       await finish(answer || ABSTAIN_TEXT, abstained);
       if (c.titlePending) await nameThread(ctx, c.turn.threadId, c.question, answer);
+      if (c.memory.on && !c.scheduled) await ctx.scheduler.runAfter(0, internal.memory.suggest, { threadId: c.turn.threadId });
     } catch (err) {
       if (stopper.signal.aborted) {
         // Stopped by the user: keep what was written (and anything already done), say it stopped.
@@ -1720,7 +1741,8 @@ export const claimProposal = internalMutation({
     if ("error" in agent) return await fail(agent.error);
     if ((agent.agentId ?? undefined) !== (p.agentId ?? undefined)) return await fail("تغيّر وكيل المحادثة منذ الاقتراح");
     const tool = Object.hasOwn(registry, p.tool) ? registry[p.tool] : undefined;
-    if (!tool || !tool.requiresConfirmation || !agentTools(agent.config).includes(p.tool)) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
+    const memoryTool = MEMORY_TOOLS.includes(p.tool) && (await memoryOn(ctx, userId, meta));
+    if (!tool || !tool.requiresConfirmation || !(memoryTool || agentTools(agent.config).includes(p.tool))) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
     const scope = await effectiveScope(ctx, userId, agent.config.dataScope, meta.scope);
     await ctx.db.patch(p._id, { state: "running", decidedAt: now });
     return { proposal: { id: p._id, tool: p.tool, args: p.args, threadId: p.threadId, agentId: p.agentId ?? null }, spaceIds: scope.spaceIds as string[], fileIds: scope.fileIds };
@@ -1822,7 +1844,8 @@ export const undo = mutation({
     if (!p || p.userId !== me.userId) throw new Denied();
     await ownThread(ctx, me.userId, p.threadId);
     if (!p.auto || p.state !== "executed") throw new OneBaseError("لا يمكن التراجع عن هذا الإجراء");
-    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; restore?: { artifactId: string; version: number } };
+    const u = (p.undo ?? {}) as { deleteArtifacts?: string[]; deleteFiles?: string[]; deleteMemories?: string[]; restore?: { artifactId: string; version: number } };
+    if (u.deleteMemories?.length) await undoMemories(ctx, me.userId, u.deleteMemories);
     const mine = async (spaceId: Id<"spaces">) => {
       const space = await ctx.db.get(spaceId);
       if (!space || space.kind !== "personal" || space.ownerId !== me.userId) return false;

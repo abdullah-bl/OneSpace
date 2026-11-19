@@ -12,6 +12,8 @@ import { my_records } from "./my_records";
 import { fill_template } from "./fill_template";
 import { export_document } from "./export_document";
 import { query_source } from "./query_source";
+import { remember } from "./remember";
+import { recall } from "./recall";
 
 export const tools: Record<string, AppTool> = {
   // Phase 4: outputs, records, templates
@@ -28,7 +30,13 @@ export const tools: Record<string, AppTool> = {
   [readFileTool.name]: readFileTool,
   // plans/08 §C: external data sources (read only)
   query_source,
+  // plans/09: memory. Not part of any agent's list: every agent gets them while memory is on (chat.ts).
+  remember,
+  recall,
 };
+
+/** Memory tools follow the employee's level and the chat («بلا ذاكرة»), not the agent's tool list. */
+export const MEMORY_TOOLS = ["remember", "recall"];
 
 export function getTool(name: string): AppTool | undefined {
   return Object.hasOwn(tools, name) ? tools[name] : undefined;

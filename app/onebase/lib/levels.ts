@@ -12,14 +12,15 @@ export type Level = {
   tools: string[] | null; // null = whatever the agent has
   sources: string[] | null; // data sources; null = every source the employee may see
   subagents: number;
+  memory: boolean; // plans/09: personal and space memory
   dailyQuestions: number; // 0 = unlimited
 };
 
 export const MAX_SUBAGENTS = 3;
-export const UNLIMITED: Level = { id: null, name: "كامل", model: "main", deep: true, tools: null, sources: null, subagents: MAX_SUBAGENTS, dailyQuestions: 0 };
+export const UNLIMITED: Level = { id: null, name: "كامل", model: "main", deep: true, tools: null, sources: null, subagents: MAX_SUBAGENTS, memory: true, dailyQuestions: 0 };
 
 export function asLevel(l: Doc<"levels">): Level {
-  return { id: l._id, name: l.name, model: l.model, deep: l.deep, tools: l.tools ?? null, sources: (l.sources as string[] | undefined) ?? null, subagents: l.subagents, dailyQuestions: l.dailyQuestions };
+  return { id: l._id, name: l.name, model: l.model, deep: l.deep, tools: l.tools ?? null, sources: (l.sources as string[] | undefined) ?? null, subagents: l.subagents, memory: l.memory !== false, dailyQuestions: l.dailyQuestions };
 }
 
 function generosity(l: Doc<"levels">): number {

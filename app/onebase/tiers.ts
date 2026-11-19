@@ -47,6 +47,12 @@ export const resolve = internalQuery({
     const a = (args ?? {}) as Record<string, any>;
     try {
       switch (tool) {
+        case "remember": {
+          // My own memory: tier 1 (chat.ts asks anyway unless I asked for it). A space's memory is shared.
+          if (a.scope !== "space") return 1;
+          const { space } = await assertCan(ctx, userId, String(a.spaceId ?? ""), "read");
+          return space.sensitive ? 3 : 2;
+        }
         case "update_artifact":
           return await artifactTier(ctx, userId, a.artifactId);
         case "export_document":

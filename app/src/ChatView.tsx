@@ -185,7 +185,12 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
             <span className="ms-auto" />
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            {data?.noMemory && (
+              <span className="flex shrink-0 items-center gap-1 rounded bg-raised px-2 py-0.5 text-xs text-muted" title="لا يقرأ المساعد الذاكرة ولا يحفظ فيها في هذه المحادثة">
+                <Icon name="memory" size={13} /> بلا ذاكرة
+              </span>
+            )}
+            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} noMemory={!!data?.noMemory} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
           </header>
         )}
         <div
@@ -230,8 +235,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   );
 }
 
-function ThreadMenu({ threadId, title, pinned, onDeleted, go }: { threadId: string; title: string; pinned: boolean; onDeleted: () => void; go: (path: string) => void }) {
+function ThreadMenu({ threadId, title, pinned, noMemory, onDeleted, go }: { threadId: string; title: string; pinned: boolean; noMemory: boolean; onDeleted: () => void; go: (path: string) => void }) {
   const rename = useMutation(api.chat.rename);
+  const setNoMemory = useMutation(api.chat.setNoMemory);
   const setPinned = useMutation(api.chat.setPinned);
   const del = useMutation(api.chat.deleteThread);
   const draftSkill = useAction(api.skills.draftFromThread);
@@ -256,6 +262,12 @@ function ThreadMenu({ threadId, title, pinned, onDeleted, go }: { threadId: stri
         },
         "divider",
         { label: pinned ? "إلغاء التثبيت" : "تثبيت في الأعلى", icon: "pin", onSelect: () => void setPinned({ threadId, pinned: !pinned }).catch((e) => void tell(errorText(e))) },
+        {
+          label: noMemory ? "شغّل الذاكرة في هذه المحادثة" : "محادثة بلا ذاكرة",
+          icon: "memory",
+          hint: noMemory ? undefined : "لا يقرأ الذاكرة ولا يحفظ فيها",
+          onSelect: () => void setNoMemory({ threadId, on: !noMemory }).catch((e) => void tell(errorText(e))),
+        },
         {
           label: "إعادة التسمية",
           icon: "pencil",

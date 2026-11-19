@@ -24,6 +24,7 @@ const fields = {
   sources: v.optional(v.union(v.array(v.string()), v.null())),
   spaceIds: v.optional(v.array(v.string())),
   subagents: v.number(),
+  memory: v.optional(v.boolean()),
   dailyQuestions: v.number(),
 };
 
@@ -81,6 +82,7 @@ export const save = mutation({
       sources: sources as Id<"dataSources">[] | undefined,
       spaceIds: spaceIds.length ? spaceIds : undefined,
       subagents: Math.min(Math.max(Math.round(a.subagents) || 0, 0), MAX_SUBAGENTS),
+      memory: a.memory !== false,
       dailyQuestions: Math.min(Math.max(Math.round(a.dailyQuestions) || 0, 0), MAX_DAILY),
       updatedAt: Date.now(),
     };
@@ -100,7 +102,7 @@ export const save = mutation({
       const firstGeneral = !spaceIds.length && !(await ctx.db.query("levels").collect()).some((l) => !l.spaceIds?.length);
       id = await ctx.db.insert("levels", { ...row, isDefault: firstGeneral, createdAt: Date.now() });
     }
-    await writeAudit(ctx, { userId: me.userId, action: levelId ? "level.update" : "level.create", resourceType: "level", resourceId: id, detail: { name: row.name, model: row.model, deep: row.deep, tools: row.tools ? row.tools.join(",") : null, sources: row.sources ? row.sources.length : null, teams: spaceIds.length, subagents: row.subagents, dailyQuestions: row.dailyQuestions } });
+    await writeAudit(ctx, { userId: me.userId, action: levelId ? "level.update" : "level.create", resourceType: "level", resourceId: id, detail: { name: row.name, model: row.model, deep: row.deep, tools: row.tools ? row.tools.join(",") : null, sources: row.sources ? row.sources.length : null, teams: spaceIds.length, subagents: row.subagents, memory: row.memory, dailyQuestions: row.dailyQuestions } });
     return id;
   },
 });

@@ -105,7 +105,9 @@ describe("levels", () => {
     await memOn({ tools: ["search_documents"] });
     await answerWith("ابحث LVLQ-3");
     const names = (answerReq("LVLQ-3").body.tools ?? []).map((t: any) => t.function.name);
-    expect(names.every((n: string) => n === "search_documents")).toBe(true);
+    // Memory tools follow the level's memory switch, not its tool list (plans/09).
+    expect(names.every((n: string) => n === "search_documents" || n === "remember" || n === "recall")).toBe(true);
+    expect(names).toContain("search_documents");
   }, 30_000);
 });
 

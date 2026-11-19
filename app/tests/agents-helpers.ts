@@ -52,9 +52,12 @@ export function isTitleRequest(r: any) {
   return !!r.body.response_format && JSON.stringify(r.body.response_format).includes('"title"');
 }
 
-/** The tool names offered in a chat request. */
+/** The tool names offered in a chat request: the agent's own (memory tools come with every agent, plans/09). */
 export function offered(req: any): string[] {
-  return (req.body.tools ?? []).map((t: any) => t.function.name).sort();
+  return (req.body.tools ?? [])
+    .map((t: any) => t.function.name)
+    .filter((n: string) => n !== "remember" && n !== "recall")
+    .sort();
 }
 
 export function systemOf(req: any): string {

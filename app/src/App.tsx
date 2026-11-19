@@ -10,6 +10,7 @@ import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
 import { SkillsView } from "./SkillsView";
+import { MemoryView } from "./MemoryView";
 import { SpaceView, SpacesPage } from "./SpaceView";
 import { TasksPage } from "./TasksView";
 import { MentionsPage } from "./MentionsView";
@@ -178,6 +179,7 @@ function Shell({ me }: { me: Me }) {
   else if (head === "schedules") screen = <TasksPage tab="scheduled" taskId={null} go={go} spaces={spaces} />;
   else if (head === "mentions") screen = <MentionsPage go={go} />;
   else if (head === "me") screen = <Wide><MyRecordsView /></Wide>;
+  else if (head === "memory") screen = <Wide><MemoryView /></Wide>;
   else if (head === "skills")
     screen = (
       <SkillsView
@@ -414,6 +416,7 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
               {level.dailyQuestions > 0 && <span className="num"> · {Math.max(0, level.dailyQuestions - level.usedToday)} من {level.dailyQuestions} سؤالاً باقية اليوم</span>}
             </div>
           )}
+          {item("ذاكرتي", "/memory")}
           {item("مهاراتي", "/skills")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}

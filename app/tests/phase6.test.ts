@@ -88,7 +88,7 @@ describe("starter agents", () => {
     expect(a.citations.some((c: any) => c.fileId === policyFile)).toBe(true);
     const req = chatRequestsWith(ai, "ما سياسة العمل عن بعد POLICYKEY-6610؟").at(-1);
     // The default agent uses «كل الأدوات»: the whole registry is offered (each tool still runs as the user).
-    expect([...offered(req)].sort()).toEqual(Object.keys(registry).sort());
+    expect([...offered(req)].sort()).toEqual(Object.keys(registry).filter((n) => n !== "remember" && n !== "recall").sort());
     expect(systemOf(req)).toContain("المساعد العام");
   });
 
