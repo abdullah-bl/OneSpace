@@ -17,10 +17,10 @@ import { NotificationBell } from "./NotificationBell";
 import { AdminConsole } from "./AdminConsole";
 import { CommandPalette, useCommandPalette } from "./CommandPalette";
 import { HelpView } from "./HelpView";
-import { AnalysisView } from "./AnalysisView";
+import { WorksView } from "./WorksView";
 import { RankingView } from "./RankingView";
 import { MyRecordsView } from "./MyRecordsView";
-import { ConfirmHost } from "./ui";
+import { ConfirmHost, tell } from "./ui";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -187,7 +187,7 @@ function Shell({ me }: { me: Me }) {
         }}
       />
     );
-  else if (head === "analysis") screen = <Wide><AnalysisView spaces={spaces} /></Wide>;
+  else if (head === "works" || head === "analysis") screen = <Wide><WorksView spaces={spaces} /></Wide>;
   else if (head === "ranking") screen = <Wide><RankingView spaces={spaces} /></Wide>;
   else if (head === "help") screen = <Wide><HelpView article={a ?? null} isAdmin={isAdmin} /></Wide>;
   else if (head === "admin" && (isAdmin || managesAny)) screen = <AdminConsole page={a ?? (isAdmin ? "overview" : "audit")} isAdmin={isAdmin} spaces={spaces} go={go} />;
@@ -278,6 +278,8 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
   const myTasks = useQuery(api.tasks.mine);
   const openTasks = (myTasks ?? []).filter((t) => t.status !== "done").length;
   const current = route[0] === "chat" ? route[1] : null;
+  const pinned = (threads ?? []).filter((t) => t.pinned);
+  const recent = (threads ?? []).filter((t) => !t.pinned);
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-14 shrink-0 items-center gap-2 px-4">
@@ -303,6 +305,9 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
         <NavLink href="#/chats" icon="chat" on={section === "chats"}>
           المحادثات
         </NavLink>
+        <NavLink href="#/works" icon="file" on={section === "works" || section === "analysis"}>
+          أعمالي
+        </NavLink>
         <NavLink href="#/spaces" icon="folder" on={section === "spaces"}>
           المساحات
         </NavLink>
@@ -319,31 +324,57 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
         )}
       </nav>
       <div className="mt-5 flex min-h-0 flex-1 flex-col">
+        {pinned.length > 0 && (
+          <>
+            <div className="px-6 pb-1 text-xs text-muted">المثبّتة</div>
+            <ul className="shrink-0 px-3 pb-3">
+              {pinned.map((t) => (
+                <ThreadLink key={t.threadId} t={t} current={current} />
+              ))}
+            </ul>
+          </>
+        )}
         <div className="flex items-center px-6 pb-1 text-xs text-muted">
           الأخيرة
-          {threads && threads.length > 12 && (
+          {recent.length > 12 && (
             <a href="#/chats" className="ms-auto hover:text-ink">
               عرض الكل
             </a>
           )}
         </div>
         <ul className="min-h-0 flex-1 overflow-y-auto px-3 pb-3">
-          {threads?.length === 0 && <li className="px-3 py-2 text-xs text-muted">لا محادثات بعد.</li>}
-          {threads?.slice(0, 30).map((t) => (
-            <li key={t.threadId}>
-              <a
-                href={`#/chat/${t.threadId}`}
-                className={`flex h-8 items-center gap-2 rounded-md px-3 text-sm ${current === t.threadId ? "bg-active text-ink" : "text-ink hover:bg-active"}`}
-                title={`${t.title}${t.spaceName ? ` · ${t.spaceName}` : ""} · ${relTime(t.lastAt)}`}
-              >
-                <span className="truncate">{t.title}</span>
-              </a>
-            </li>
+          {threads && recent.length === 0 && <li className="px-3 py-2 text-xs text-muted">لا محادثات بعد.</li>}
+          {recent.slice(0, 30).map((t) => (
+            <ThreadLink key={t.threadId} t={t} current={current} />
           ))}
         </ul>
       </div>
       <UserMenu {...props} />
     </div>
+  );
+}
+
+/** A chat in the sidebar; hovering shows a pin button (pinned chats stay at the top). */
+function ThreadLink({ t, current }: { t: { threadId: string; title: string; spaceName: string | null; lastAt: number; pinned: boolean }; current: string | null }) {
+  const setPinned = useMutation(api.chat.setPinned);
+  return (
+    <li className="group relative">
+      <a
+        href={`#/chat/${t.threadId}`}
+        className={`flex h-8 items-center gap-2 rounded-md pe-8 ps-3 text-sm ${current === t.threadId ? "bg-active text-ink" : "text-ink hover:bg-active"}`}
+        title={`${t.title}${t.spaceName ? ` · ${t.spaceName}` : ""} · ${relTime(t.lastAt)}`}
+      >
+        <span className="truncate">{t.title}</span>
+      </a>
+      <button
+        className={`absolute end-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-muted hover:bg-surface hover:text-ink opacity-0 focus:opacity-100 group-hover:opacity-100`}
+        aria-label={t.pinned ? `إلغاء تثبيت ${t.title}` : `تثبيت ${t.title}`}
+        title={t.pinned ? "إلغاء التثبيت" : "تثبيت في الأعلى"}
+        onClick={() => void setPinned({ threadId: t.threadId, pinned: !t.pinned }).catch((e) => void tell(errorText(e)))}
+      >
+        <Icon name={t.pinned ? "x" : "pin"} size={14} />
+      </button>
+    </li>
   );
 }
 
@@ -386,7 +417,6 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
           {item("مهاراتي", "/skills")}
           {item("بياناتي", "/me")}
           {item("المهام المجدولة", "/schedules")}
-          {item("التحليلات", "/analysis")}
           {item("المفاضلة", "/ranking")}
           {item("مركز المساعدة", "/help")}
           {(isAdmin || managesAny) && <div className="my-1 border-t border-rule" />}

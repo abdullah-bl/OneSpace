@@ -355,6 +355,7 @@ export default defineSchema({
     agentId: v.optional(v.string()), // Phase 6: the picked agent (none = the default agent)
     taskId: v.optional(v.string()), // Phase 6: opened from a task ("اعمل عليها مع الوكيل")
     test: v.optional(v.boolean()), // an admin's "جرّب الوكيل" run: hidden from the chat list
+    pinnedAt: v.optional(v.number()), // pinned to the top of my chat list (newest pin first)
     agentDraft: v.optional(v.boolean()), // test runs use the agent's unpublished draft
     // UX redesign: a chat started inside a space belongs to it (listed on the space page, scoped
     // to it, with its instructions and file list as context). Still private to its owner.

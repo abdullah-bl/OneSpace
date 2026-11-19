@@ -304,6 +304,63 @@ export const list = query({
   },
 });
 
+/**
+ * «أعمالي»: the outputs I made, in spaces I can still read, newest first. `q` searches titles and
+ * the text of the current version; `kind` narrows to markdown / html / table / image (an image is
+ * a markdown output made from a picture). Each comes with its space and the chat it came from.
+ */
+export const mine = query({
+  args: { q: v.optional(v.string()), kind: v.optional(v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("image"))), spaceId: v.optional(v.string()) },
+  handler: async (ctx, { q, kind, spaceId }) => {
+    const me = await requireActive(ctx);
+    const rows = (await ctx.db.query("artifacts").withIndex("by_owner", (x) => x.eq("ownerId", me.userId)).collect()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 500);
+    const norm = (t: string) => t.toLowerCase().replace(/[\u064B-\u0652\u0640]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+    const words = q ? norm(q).split(/\s+/).filter(Boolean).slice(0, 6) : [];
+    const spaces = new Map<string, { name: string; ok: boolean }>();
+    const threads = new Map<string, string | null>();
+    const out = [];
+    for (const a of rows) {
+      if (spaceId && a.spaceId !== spaceId) continue;
+      if (!spaces.has(a.spaceId)) {
+        let ok = true;
+        let name = "";
+        try {
+          const { space } = await assertCan(ctx, me.userId, a.spaceId, "read");
+          name = space.kind === "personal" ? "مساحتي" : space.name;
+        } catch {
+          ok = false;
+        }
+        spaces.set(a.spaceId, { name, ok });
+      }
+      const sp = spaces.get(a.spaceId)!;
+      if (!sp.ok) continue;
+      const image = a.kind === "markdown" && /\.(png|jpe?g|gif|webp|svg)$/i.test(a.title);
+      const k = image ? "image" : a.kind;
+      if (kind && k !== kind) continue;
+      let snippet: string | null = null;
+      if (words.length) {
+        const title = norm(a.title);
+        if (!words.every((w) => title.includes(w))) {
+          const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (x) => x.eq("artifactId", a._id).eq("version", a.currentVersion)).unique();
+          const text = image ? "" : (ver?.content ?? "").replace(/<[^>]+>/g, " ").replace(/data:[^)\s"]+/g, "").replace(/\s+/g, " ");
+          const nt = norm(text);
+          if (!words.every((w) => nt.includes(w))) continue;
+          const at = Math.max(0, nt.indexOf(words[0]!) - 40);
+          snippet = (at > 0 ? "…" : "") + text.slice(at, at + 140) + "…";
+        }
+      }
+      if (a.sourceThreadId && !threads.has(a.sourceThreadId)) {
+        const t = await ctx.db.query("threadMeta").withIndex("by_thread", (x) => x.eq("threadId", a.sourceThreadId!)).unique();
+        threads.set(a.sourceThreadId, t && t.userId === me.userId && !t.test ? t.title || "محادثة" : null);
+      }
+      const threadTitle = a.sourceThreadId ? threads.get(a.sourceThreadId) : null;
+      out.push({ ...shape(a), kind: k, spaceName: sp.name, thread: a.sourceThreadId && threadTitle ? { id: a.sourceThreadId, title: threadTitle } : null, snippet });
+      if (out.length >= 200) break;
+    }
+    return out;
+  },
+});
+
 export const versions = query({
   args: { artifactId: v.id("artifacts") },
   handler: async (ctx, { artifactId }) => {

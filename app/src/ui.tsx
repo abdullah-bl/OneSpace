@@ -190,74 +190,102 @@ export function EmptyState({ icon = "file", title, children, action }: { icon?: 
   );
 }
 
-// ---------------------------------------------------------------- confirmation dialog
-// Never window.confirm(): embedded browsers (the desktop app's pane, some webviews) cancel native
-// dialogs without showing them, which made every confirmed action silently do nothing.
+// ---------------------------------------------------------------- dialogs
+// Never window.confirm() / prompt() / alert(): embedded browsers (the desktop app's pane, some
+// webviews) cancel native dialogs without showing them, which made every confirmed action
+// silently do nothing. ask() confirms, askText() asks for a line of text, tell() shows a message.
 
 type AskOptions = { confirmLabel?: string; danger?: boolean; detail?: string };
 type AskRequest = AskOptions & {
   message: string;
-  resolve: (ok: boolean) => void;
+  input?: string; // askText: the starting value
+  notice?: boolean; // tell: one button
+  resolve: (r: { ok: boolean; value: string }) => void;
 };
 let pushAsk: ((r: AskRequest) => void) | null = null;
 
-/** Asks in an in-app dialog; resolves true on confirm. Needs <ConfirmHost /> mounted once. */
-export function ask(message: string, opts: AskOptions = {}): Promise<boolean> {
+function open(r: Omit<AskRequest, "resolve">): Promise<{ ok: boolean; value: string }> {
   return new Promise((resolve) => {
-    if (!pushAsk) return resolve(false);
-    pushAsk({ message, ...opts, resolve });
+    if (!pushAsk) return resolve({ ok: false, value: "" });
+    pushAsk({ ...r, resolve });
   });
+}
+
+/** Asks in an in-app dialog; resolves true on confirm. Needs <ConfirmHost /> mounted once. */
+export async function ask(message: string, opts: AskOptions = {}): Promise<boolean> {
+  return (await open({ message, ...opts })).ok;
+}
+
+/** Asks for a line of text; resolves the trimmed text, or null when cancelled or empty. */
+export async function askText(message: string, initial = "", opts: AskOptions = {}): Promise<string | null> {
+  const r = await open({ message, input: initial, confirmLabel: "حفظ", ...opts });
+  return r.ok && r.value.trim() ? r.value.trim() : null;
+}
+
+/** Shows a message with one button. */
+export async function tell(message: string, detail?: string): Promise<void> {
+  await open({ message, detail, notice: true, confirmLabel: "حسناً" });
 }
 
 export function ConfirmHost() {
   const [req, setReq] = useState<AskRequest | null>(null);
+  const [value, setValue] = useState("");
   const okRef = useRef<HTMLButtonElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
-    pushAsk = (r) => setReq((cur) => (cur?.resolve(false), r));
+    pushAsk = (r) =>
+      setReq((cur) => {
+        cur?.resolve({ ok: false, value: "" });
+        setValue(r.input ?? "");
+        return r;
+      });
     return () => {
       pushAsk = null;
     };
   }, []);
   useEffect(() => {
     if (!req) return;
-    okRef.current?.focus();
+    if (req.input !== undefined) {
+      inputRef.current?.focus();
+      inputRef.current?.select();
+    } else okRef.current?.focus();
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && close(false);
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [req]);
   const close = (ok: boolean) => {
-    req?.resolve(ok);
+    req?.resolve({ ok, value });
     setReq(null);
   };
   if (!req) return null;
   return (
-    <div
-      className="fixed inset-0 z-[100] grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]"
-      onMouseDown={(e) => e.target === e.currentTarget && close(false)}
-    >
-      <div
+    <div className="fixed inset-0 z-[100] grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && close(false)}>
+      <form
         role="alertdialog"
         aria-modal="true"
         aria-labelledby="ask-title"
         className="card w-full max-w-sm animate-rise p-5 shadow-xl"
+        onSubmit={(e) => {
+          e.preventDefault();
+          close(true);
+        }}
       >
         <p id="ask-title" className="font-medium leading-7">
           {req.message}
         </p>
         {req.detail && <p className="mt-1 text-sm text-muted">{req.detail}</p>}
+        {req.input !== undefined && <input ref={inputRef} className="input mt-3 w-full" dir="auto" value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} />}
         <div className="mt-5 flex justify-end gap-2">
-          <button className="btn-secondary" onClick={() => close(false)}>
-            إلغاء
-          </button>
-          <button
-            ref={okRef}
-            className={req.danger ? "btn-danger" : "btn-primary"}
-            onClick={() => close(true)}
-          >
+          {!req.notice && (
+            <button type="button" className="btn-secondary" onClick={() => close(false)}>
+              إلغاء
+            </button>
+          )}
+          <button ref={okRef} type="submit" className={req.danger ? "btn-danger" : "btn-primary"}>
             {req.confirmLabel ?? "تأكيد"}
           </button>
         </div>
-      </div>
+      </form>
     </div>
   );
 }

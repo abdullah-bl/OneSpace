@@ -21,7 +21,7 @@ const PAGES: { title: string; path: string; icon: IconName; words?: string }[] =
   { title: "الإشارات", path: "/mentions", icon: "at" },
   { title: "مهاراتي", path: "/skills", icon: "bulb", words: "مهارة /" },
   { title: "بياناتي", path: "/me", icon: "user", words: "سجلاتي" },
-  { title: "التحليلات", path: "/analysis", icon: "table", words: "تحليل تشغيل" },
+  { title: "أعمالي", path: "/works", icon: "file", words: "مخرجات مستندات جداول صفحات رسوم تحليل" },
   { title: "مركز المساعدة", path: "/help", icon: "help", words: "مساعدة شرح دليل" },
 ];
 

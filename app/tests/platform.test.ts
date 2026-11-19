@@ -243,6 +243,43 @@ describe("global search and overview", () => {
   });
 });
 
+describe("أعمالي (artifacts:mine)", () => {
+  test("only my outputs, only in spaces I can still read; search reaches the content", async () => {
+    const doc = must(await s.call("mutation", "artifacts:create", { title: "تقرير الربع WRK-1", kind: "markdown", content: "# ملخص\nالميزانية التشغيلية WRK-INNER-7 تجاوزت الخطة", spaceId: f.spaces.S_plain }, tok("mem")));
+    must(await s.call("mutation", "artifacts:create", { title: "chart-WRK.png", kind: "markdown", content: "![x](data:image/png;base64,AAAA)", spaceId: f.spaces.P_mem }, tok("mem")));
+    must(await s.call("mutation", "artifacts:create", { title: "جدول-WRK", kind: "table", content: JSON.stringify({ columns: ["a"], rows: [[1]] }), spaceId: f.spaces.S_plain }, tok("mgr")));
+    const mine = must(await s.call("query", "artifacts:mine", {}, tok("mem")));
+    expect(mine.map((a: any) => a.title)).toContain("تقرير الربع WRK-1");
+    expect(mine.map((a: any) => a.title)).not.toContain("جدول-WRK"); // mgr's, not mine
+    expect(mine.find((a: any) => a.title === "chart-WRK.png").kind).toBe("image");
+    const hit = must(await s.call("query", "artifacts:mine", { q: "wrk-inner-7" }, tok("mem")));
+    expect(hit.map((a: any) => a._id)).toEqual([doc.artifactId]);
+    expect(hit[0].snippet).toContain("WRK-INNER-7");
+    expect(must(await s.call("query", "artifacts:mine", { kind: "image" }, tok("mem"))).every((a: any) => a.kind === "image")).toBe(true);
+    expect(must(await s.call("query", "artifacts:mine", { q: "WRK" }, tok("out"))).length).toBe(0);
+    // Removed from the space: gone from «أعمالي» too.
+    must(await s.call("mutation", "spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.mem }, tok("mgr")));
+    expect(must(await s.call("query", "artifacts:mine", { q: "WRK-1" }, tok("mem"))).length).toBe(0);
+    must(await s.call("mutation", "spaces:addMember", { spaceId: f.spaces.S_plain, userId: f.ids.mem, role: "member" }, tok("mgr")));
+    for (const a of ACTORS) expect((await s.call("query", "artifacts:mine", {}, tok(a))).ok).toBe(ACTIVE.includes(a));
+  });
+});
+
+describe("pinned chats", () => {
+  test("a pinned chat comes first; only its owner can pin it", async () => {
+    const old = must(await s.call("mutation", "chat:createThread", { title: "قديمة-PIN" }, tok("mem")));
+    await Bun.sleep(5);
+    must(await s.call("mutation", "chat:createThread", { title: "أحدث-PIN" }, tok("mem")));
+    must(await s.call("mutation", "chat:setPinned", { threadId: old, pinned: true }, tok("mem")));
+    const list = must(await s.call("query", "chat:threads", {}, tok("mem")));
+    expect(list[0]).toMatchObject({ threadId: old, pinned: true });
+    expect((await s.call("mutation", "chat:setPinned", { threadId: old, pinned: false }, tok("mgr"))).ok).toBe(false);
+    must(await s.call("mutation", "chat:setPinned", { threadId: old, pinned: false }, tok("mem")));
+    expect(must(await s.call("query", "chat:threads", {}, tok("mem")))[0].threadId).not.toBe(old);
+    for (const a of ACTORS) if (a !== "mem") expect((await s.call("mutation", "chat:setPinned", { threadId: old, pinned: true }, tok(a))).ok).toBe(false);
+  });
+});
+
 describe("permission matrix: providers, data sources, overview, palette", () => {
   test("admin-only functions refuse everyone else; palette: active members", async () => {
     const pid = must(await s.call("mutation", "providers:save", { name: "مصفوفة", baseUrl: ai2.url, enabled: true }, tok("admin")));

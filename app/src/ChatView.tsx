@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
-import { Menu, Popover, PopoverItem, ask } from "./ui";
+import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
 import { openSkillDraft } from "./SkillsView";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
@@ -185,7 +185,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
             <span className="ms-auto" />
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
           </header>
         )}
         <div
@@ -230,8 +230,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   );
 }
 
-function ThreadMenu({ threadId, title, onDeleted, go }: { threadId: string; title: string; onDeleted: () => void; go: (path: string) => void }) {
+function ThreadMenu({ threadId, title, pinned, onDeleted, go }: { threadId: string; title: string; pinned: boolean; onDeleted: () => void; go: (path: string) => void }) {
   const rename = useMutation(api.chat.rename);
+  const setPinned = useMutation(api.chat.setPinned);
   const del = useMutation(api.chat.deleteThread);
   const draftSkill = useAction(api.skills.draftFromThread);
   const [drafting, setDrafting] = useState(false);
@@ -249,18 +250,19 @@ function ThreadMenu({ threadId, title, onDeleted, go }: { threadId: string; titl
             setDrafting(true);
             draftSkill({ threadId })
               .then((d) => openSkillDraft({ ...d, fromThreadId: threadId }, go))
-              .catch((e) => alert(errorText(e)))
+              .catch((e) => void tell(errorText(e)))
               .finally(() => setDrafting(false));
           },
         },
         "divider",
+        { label: pinned ? "إلغاء التثبيت" : "تثبيت في الأعلى", icon: "pin", onSelect: () => void setPinned({ threadId, pinned: !pinned }).catch((e) => void tell(errorText(e))) },
         {
           label: "إعادة التسمية",
           icon: "pencil",
-          onSelect: () => {
-            const t = prompt("عنوان المحادثة", title);
-            if (t?.trim()) void rename({ threadId, title: t });
-          },
+          onSelect: () =>
+            void askText("عنوان المحادثة", title).then((t) => {
+              if (t) void rename({ threadId, title: t });
+            }),
         },
         { label: "حذف المحادثة", danger: true, onSelect: () => void ask("حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void del({ threadId }).then(onDeleted); })},
       ]}
@@ -1064,6 +1066,7 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
         {threads?.map((t) => (
           <li key={t.threadId}>
             <a href={`#/chat/${t.threadId}`} className="flex min-h-[60px] items-center gap-3 border-b border-rule px-2 py-2 hover:bg-sunken">
+              {t.pinned && <Icon name="pin" size={14} className="shrink-0 text-primary" aria-label="مثبّتة" />}
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px]">{t.title}</span>
                 <span className="block truncate text-xs text-muted">

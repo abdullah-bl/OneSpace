@@ -206,6 +206,7 @@ function shapeThread(r: Doc<"threadMeta">, spaceName: string | null) {
     spaceId: spaceName ? (r.spaceId ?? null) : null,
     spaceName,
     scheduled: !!r.scheduleId,
+    pinned: !!r.pinnedAt,
   };
 }
 
@@ -215,9 +216,12 @@ export const threads = query({
   handler: async (ctx, { q }) => {
     const me = await requireActive(ctx);
     const needle = (q ?? "").trim().toLowerCase();
-    const rows = (await ctx.db.query("threadMeta").withIndex("by_user", (q) => q.eq("userId", me.userId)).order("desc").take(500))
+    const recent = await ctx.db.query("threadMeta").withIndex("by_user", (q) => q.eq("userId", me.userId)).order("desc").take(2000);
+    // Pinned chats first (newest pin first), then the rest by last activity.
+    const pinned = recent.filter((r) => r.pinnedAt).sort((a, b) => b.pinnedAt! - a.pinnedAt!);
+    const rows = [...pinned, ...recent.filter((r) => !r.pinnedAt)]
       .filter((r) => !r.test && (!needle || r.title.toLowerCase().includes(needle)))
-      .slice(0, 100);
+      .slice(0, 100 + pinned.length);
     const cache = new Map<string, string | null>();
     const out = [];
     for (const r of rows) out.push(shapeThread(r, await spaceNameFor(ctx, me.userId, r.spaceId, cache)));
@@ -297,6 +301,21 @@ export const rename = mutation({
     await ctx.db.patch(meta._id, { title: name, titlePending: undefined });
   },
 });
+
+/** Pins my chat to the top of the list, or unpins it. */
+export const setPinned = mutation({
+  args: { threadId: v.string(), pinned: v.boolean() },
+  handler: async (ctx, { threadId, pinned }) => {
+    const me = await requireActive(ctx);
+    const meta = await ownThread(ctx, me.userId, threadId);
+    if (pinned) {
+      const count = (await ctx.db.query("threadMeta").withIndex("by_user", (q) => q.eq("userId", me.userId)).collect()).filter((r) => r.pinnedAt && r._id !== meta._id).length;
+      if (count >= MAX_PINNED) throw new OneBaseError(`يمكن تثبيت ${MAX_PINNED} محادثة على الأكثر`);
+    }
+    await ctx.db.patch(meta._id, { pinnedAt: pinned ? Date.now() : undefined });
+  },
+});
+const MAX_PINNED = 20;
 
 /** Picks the agent for my thread (null = the default agent). Test threads keep their draft agent. */
 export const setAgent = mutation({
@@ -463,6 +482,7 @@ export const messages = query({
     const spaceName = await spaceNameFor(ctx, me.userId, meta.spaceId, new Map());
     return {
       title: meta.title,
+      pinned: !!meta.pinnedAt,
       scope: meta.scope,
       scopeLabel: await scopeLabel(ctx, meta.scope, me.userId),
       spaceId: spaceName ? (meta.spaceId ?? null) : null,

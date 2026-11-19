@@ -13,6 +13,8 @@ export const PLATFORM_COVERED = [
   "dataSources:remove",
   "dataSources:check",
   "toolsAdmin:overview",
+  "artifacts:mine",
+  "chat:setPinned",
   "folderSync:list",
   "folderSync:save",
   "folderSync:remove",
