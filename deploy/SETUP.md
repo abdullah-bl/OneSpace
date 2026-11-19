@@ -50,9 +50,9 @@ Then start them with `docker compose --profile models up -d`.
 
 **C. A hosted API.** Set the URL, `LLM_API_KEY` and the model names.
 
-Later, an admin can add or switch servers in the app without a restart, under **إدارة المنصة ← مزوّدو النماذج**. That page lists each server's models.
+Later, an admin can add or switch servers in the app without a restart, under **إدارة المنصة ← مزوّدو النماذج**. That page lists each server's models and sets the main, fast, vision and embedding models. The embedding model must produce vectors of `EMBED_DIMENSIONS` (the page tests it). Choosing a different one stops file search until **«أعد الفهرسة»** finishes.
 
-> `EMBED_DIMENSIONS` and the embedding model are fixed once files are indexed. Changing them later means re-indexing every file.
+> `EMBED_DIMENSIONS` is fixed once files are indexed. Changing the embedding model later means re-indexing every file (one button on the providers page).
 
 ## 4. Build and start
 

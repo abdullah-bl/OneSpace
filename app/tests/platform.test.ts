@@ -9,6 +9,7 @@ import { join } from "node:path";
 import { Server, must } from "./harness";
 import { ACTORS, buildFixture, FILE_NAMES, TASK_TITLES, type ActorKey, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
+import { waitIngest } from "./rag-helpers";
 import { checkReadOnlySql, httpTarget } from "../onebase/lib/sourceQuery";
 import { maskUrl } from "../onebase/dataSources";
 
@@ -134,6 +135,33 @@ describe("model providers", () => {
     await ask(tok("mem"), "سؤال بعد العودة PRV-78");
     expect(ai2.requests.some((x) => JSON.stringify(x.body).includes("PRV-78"))).toBe(false);
     expect(ai.requests.some((x) => JSON.stringify(x.body).includes("PRV-78"))).toBe(true);
+  }, 90_000);
+
+  test("embedding model from a provider: size checked, re-index required, then files index with it", async () => {
+    const ai3 = startFakeAI(32); // wrong vector size
+    try {
+      const id = must(await s.call("mutation", "providers:save", { name: "تضمين", baseUrl: ai2.url, enabled: true }, tok("admin")));
+      const bad = must(await s.call("mutation", "providers:save", { name: "تضمين-32", baseUrl: ai3.url, enabled: true }, tok("admin")));
+      const wrong = await s.call("action", "providers:setEmbedding", { providerId: bad, model: "small-embed" }, tok("admin"));
+      expect(wrong.ok).toBe(false);
+      expect(String((wrong as any).error)).toContain("أبعاد");
+      const r = must(await s.call("action", "providers:setEmbedding", { providerId: id, model: "other-embed" }, tok("admin")));
+      expect(r.needsReindex).toBe(true);
+      expect(must(await s.call("query", "providers:list", {}, tok("admin"))).embed).toMatchObject({ mismatch: true, choice: { model: "other-embed" } });
+      const before = ai2.requests.filter((x) => x.path === "/v1/embeddings").length;
+      const n = must(await s.call("mutation", "providers:reindex", {}, tok("admin")));
+      expect(n).toBeGreaterThan(0);
+      expect(must(await s.call("query", "providers:list", {}, tok("admin"))).embed.mismatch).toBe(false);
+      expect((await waitIngest(s, tok("mem"), f.spaces.P_mem, f.files.P_mem)).state).toBe("ready");
+      expect(ai2.requests.filter((x) => x.path === "/v1/embeddings" && x.body.model === "other-embed").length).toBeGreaterThan(before);
+      // Back to the environment's model (and its index), for the other tests.
+      expect(must(await s.call("action", "providers:setEmbedding", { providerId: null }, tok("admin"))).needsReindex).toBe(true);
+      must(await s.call("mutation", "providers:reindex", {}, tok("admin")));
+      expect((await waitIngest(s, tok("mem"), f.spaces.P_mem, f.files.P_mem)).state).toBe("ready");
+      for (const pid of [id, bad]) must(await s.call("mutation", "providers:remove", { providerId: pid }, tok("admin")));
+    } finally {
+      ai3.stop();
+    }
   }, 90_000);
 
   test("bad addresses are refused", async () => {
@@ -296,6 +324,8 @@ describe("permission matrix: providers, data sources, overview, palette", () => 
       expect((await s.call("mutation", "providers:setRole", { role: "main", providerId: pid, model: "fake" }, tok(a))).ok).toBe(false);
       expect((await s.call("mutation", "providers:remove", { providerId: pid }, tok(a))).ok).toBe(false);
       expect((await s.call("action", "providers:check", { providerId: pid }, tok(a))).ok).toBe(false);
+      expect((await s.call("action", "providers:setEmbedding", { providerId: pid, model: "x" }, tok(a))).ok).toBe(false);
+      expect((await s.call("mutation", "providers:reindex", {}, tok(a))).ok).toBe(false);
       expect((await s.call("mutation", "dataSources:save", { name: "x", kind: "sqlite", description: "x", url: "sqlite:///etc/x.db", schemaHint: "", rowLimit: 5, visibility: { kind: "workspace", spaceIds: [] }, enabled: true }, tok(a))).ok).toBe(false);
       expect((await s.call("mutation", "dataSources:remove", { sourceId: sid }, tok(a))).ok).toBe(false);
       expect((await s.call("action", "dataSources:check", { sourceId: sid }, tok(a))).ok).toBe(false);

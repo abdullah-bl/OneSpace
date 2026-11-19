@@ -1,0 +1,31 @@
+# OneSpace on Fly.io (see deploy/SETUP.md, "Fly.io"). Run from the repository root:
+#   flyctl deploy --config deploy/fly/fly.toml
+# Models are not set here: add them in the app (إدارة المنصة → مزوّدو النماذج) or as secrets
+# (LLM_BASE_URL, LLM_MODEL, LLM_API_KEY, EMBED_BASE_URL, …). Analysis (the sandbox runner)
+# needs Docker and isn't available on Fly.
+
+app = "onespace-app"
+primary_region = "fra"
+
+[build]
+  dockerfile = "../../app/Dockerfile"
+
+[env]
+  ONEBASE_DATA = "/data"
+  PORT = "8090"
+  ONEBASE_URL = "https://onespace-app.fly.dev"
+
+[[mounts]]
+  source = "onespace_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8090
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

@@ -5,7 +5,7 @@ import { useState } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate } from "./lib";
 import { Icon } from "./icons";
-import { ask, EmptyState, Menu, PageHeader } from "./ui";
+import { ask, EmptyState, Menu, PageHeader, tell } from "./ui";
 
 type Role = "main" | "fast" | "vision";
 const ROLES: { key: Role; title: string; detail: string }[] = [
@@ -57,12 +57,13 @@ export function ProvidersView() {
         <div className="space-y-8">
           <section>
             <h2 className="section-title mb-3">الأدوار</h2>
-            <div className="grid gap-3 @2xl:grid-cols-3">
+            <div className="grid gap-3 @2xl:grid-cols-2 @5xl:grid-cols-4">
               {ROLES.map((r) => (
                 <RoleCard key={r.key} role={r} data={data} onError={setError} />
               ))}
+              <EmbedCard data={data} onError={setError} />
             </div>
-            <p className="mt-2 text-xs text-muted">نموذج التضمين (للبحث في الملفات) يبقى في إعدادات الخادم: تغييره يتطلب إعادة فهرسة كل الملفات.</p>
+            {data.embed.mismatch && <ReindexBanner indexedWith={data.embed.indexedWith} onError={setError} />}
           </section>
 
           <section>
@@ -75,7 +76,7 @@ export function ProvidersView() {
             ) : (
               <ul className="space-y-2">
                 {data.providers.map((p) => (
-                  <ProviderRow key={p._id} p={p} roles={data.roles} onEdit={() => setEditing(p)} onError={setError} />
+                  <ProviderRow key={p._id} p={p} roles={data.roles} data={data} onEdit={() => setEditing(p)} onError={setError} />
                 ))}
               </ul>
             )}
@@ -175,11 +176,12 @@ function RoleCard({ role, data, onError }: { role: (typeof ROLES)[number]; data:
   );
 }
 
-function ProviderRow({ p, roles: roles_, onEdit, onError }: { p: Provider; roles: Data["roles"]; onEdit: () => void; onError: (e: string) => void }) {
+function ProviderRow({ p, roles: roles_, data: data_, onEdit, onError }: { p: Provider; roles: Data["roles"]; data: Data; onEdit: () => void; onError: (e: string) => void }) {
   const check = useAction(api.providers.check);
   const save = useMutation(api.providers.save);
   const remove = useMutation(api.providers.remove);
   const setRole = useMutation(api.providers.setRole);
+  const setEmbedding = useAction(api.providers.setEmbedding);
   const [busy, setBusy] = useState(false);
   const [showModels, setShowModels] = useState(false);
   const [filter, setFilter] = useState("");
@@ -273,7 +275,25 @@ function ProviderRow({ p, roles: roles_, onEdit, onError }: { p: Provider; roles
                         {r.title.replace("النموذج ", "").replace("نموذج ", "")}
                       </span>
                     ))}
+                    {data_.embed.choice?.providerId === p._id && data_.embed.choice.model === m && <span className="badge-primary">التضمين</span>}
                     {special(m) && <span className="badge">{special(m)}</span>}
+                    {p.enabled && special(m) === "تضمين" && (
+                      <Menu
+                        label={`استخدم ${m}`}
+                        items={[
+                          {
+                            label: "استخدمه للتضمين (البحث في الملفات)",
+                            icon: "check" as const,
+                            disabled: data_.embed.choice?.providerId === p._id && data_.embed.choice.model === m,
+                            onSelect: () =>
+                              void run(async () => {
+                                const r = await setEmbedding({ providerId: p._id, model: m });
+                                if (r.needsReindex) await tell("تغيّر نموذج التضمين", "البحث في الملفات متوقف حتى تعيد الفهرسة: اضغط «أعد الفهرسة» أعلى الصفحة.");
+                              }),
+                          },
+                        ]}
+                      />
+                    )}
                     {p.enabled && !special(m) && (
                       <Menu
                         label={`استخدم ${m}`}
@@ -363,5 +383,131 @@ function ProviderForm({ provider, onDone }: { provider: Provider | null; onDone:
         </button>
       </div>
     </form>
+  );
+}
+
+function EmbedCard({ data, onError }: { data: Data; onError: (e: string) => void }) {
+  const setEmbedding = useAction(api.providers.setEmbedding);
+  const cur = data.embed.choice;
+  const p = cur ? data.providers.find((x) => x._id === cur.providerId) : null;
+  const [open, setOpen] = useState(false);
+  const [providerId, setProviderId] = useState<string>(cur?.providerId ?? "");
+  const [model, setModel] = useState(cur?.model ?? "");
+  const [busy, setBusy] = useState(false);
+  const chosen = data.providers.find((x) => x._id === providerId);
+  const embedModels = chosen ? chosen.models.filter((m) => special(m) === "تضمين") : [];
+  const save = async () => {
+    onError("");
+    setBusy(true);
+    try {
+      const r = await setEmbedding({ providerId: providerId || null, model: providerId ? model : undefined });
+      setOpen(false);
+      if (r.needsReindex) await tell("تغيّر نموذج التضمين", "البحث في الملفات متوقف حتى تعيد الفهرسة: اضغط «أعد الفهرسة» أعلى الصفحة.");
+    } catch (e) {
+      onError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <div className="card p-4">
+      <p className="font-medium">نموذج التضمين</p>
+      <p className="text-xs text-muted">البحث في الملفات · <span className="num">{data.embed.dimensions}</span> بُعداً</p>
+      {!open ? (
+        <>
+          <p className="mt-3 truncate text-sm" dir="auto">
+            {cur && p ? (
+              <>
+                <span className="font-medium">{cur.model}</span> <span className="text-muted">· {p.name}</span>
+              </>
+            ) : data.embed.env.configured ? (
+              <>
+                <span className="font-medium" dir="ltr">
+                  {data.embed.env.model}
+                </span>{" "}
+                <span className="text-muted">· إعدادات الخادم</span>
+              </>
+            ) : (
+              <span className="text-negative">غير مضبوط: البحث في الملفات متوقف</span>
+            )}
+          </p>
+          <button
+            className="btn-ghost mt-2 h-8 px-2 text-xs"
+            onClick={() => {
+              setProviderId(cur?.providerId ?? "");
+              setModel(cur?.model ?? "");
+              setOpen(true);
+            }}
+          >
+            غيّر
+          </button>
+        </>
+      ) : (
+        <div className="mt-3 space-y-2">
+          <select className="input w-full text-sm" value={providerId} onChange={(e) => (setProviderId(e.target.value), setModel(""))}>
+            <option value="">إعدادات الخادم{data.embed.env.configured ? ` (${data.embed.env.model})` : ""}</option>
+            {data.providers
+              .filter((x) => x.enabled)
+              .map((x) => (
+                <option key={x._id} value={x._id}>
+                  {x.name}
+                </option>
+              ))}
+          </select>
+          {providerId &&
+            (embedModels.length ? (
+              <select className="input w-full text-sm" dir="ltr" value={model} onChange={(e) => setModel(e.target.value)}>
+                <option value="">اختر نموذج تضمين…</option>
+                {embedModels.map((m) => (
+                  <option key={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <input className="input w-full text-sm" dir="ltr" placeholder="اسم نموذج التضمين" value={model} onChange={(e) => setModel(e.target.value)} />
+            ))}
+          <p className="text-[11px] leading-4 text-muted">يُجرَّب النموذج قبل الحفظ: يجب أن يعطي {data.embed.dimensions} بُعداً. وتغييره يتطلب إعادة الفهرسة.</p>
+          <div className="flex gap-2">
+            <button className="btn-primary h-8 text-xs" disabled={busy || (!!providerId && !model.trim())} onClick={() => void save()}>
+              {busy ? "يجرّب…" : "جرّب واحفظ"}
+            </button>
+            <button className="btn-ghost h-8 text-xs" onClick={() => setOpen(false)}>
+              إلغاء
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ReindexBanner({ indexedWith, onError }: { indexedWith: string | null; onError: (e: string) => void }) {
+  const reindex = useMutation(api.providers.reindex);
+  const [busy, setBusy] = useState(false);
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm">
+      <span className="min-w-0 flex-1">
+        <span className="font-medium">الفهرس مبني بنموذج آخر{indexedWith ? ` (${indexedWith})` : ""}.</span> البحث في الملفات وفهرسة الجديد متوقفان حتى تعيد فهرسة كل الملفات بالنموذج الحالي.
+      </span>
+      <button
+        className="btn-primary h-8 text-xs"
+        disabled={busy}
+        onClick={() =>
+          void ask("إعادة فهرسة كل الملفات بنموذج التضمين الحالي؟ قد تستغرق وقتاً، ويعود البحث لكل ملف حين تنتهي فهرسته.", { confirmLabel: "أعد الفهرسة" }).then(async (ok) => {
+            if (!ok) return;
+            setBusy(true);
+            try {
+              const n = await reindex({});
+              await tell("بدأت إعادة الفهرسة", `${n} ملفاً في الطابور.`);
+            } catch (e) {
+              onError(errorText(e));
+            } finally {
+              setBusy(false);
+            }
+          })
+        }
+      >
+        {busy ? "يبدأ…" : "أعد الفهرسة"}
+      </button>
+    </div>
   );
 }

@@ -28,13 +28,21 @@ const env = (k: string) => {
 
 export type Target = { baseUrl?: string; model: string; apiKey?: string };
 export type RoleName = "main" | "fast" | "vision";
+/** The embedding model. `dimensions` is fixed by the rag index (EMBED_DIMENSIONS when it was mounted). */
+export type EmbedTarget = { baseUrl?: string; model: string; apiKey?: string; dimensions: number; queryPrefix: string; docPrefix: string; sendDimensions?: boolean };
+export type Overrides = Partial<Record<RoleName, Target>> & { embed?: EmbedTarget };
+
+/** Vector size of the rag index: fixed when the docs component is mounted (components.ts). */
+export const INDEX_DIMENSIONS = Number(process.env.EMBED_DIMENSIONS || 768);
+/** embeddinggemma's task prefixes (model card). Other models get none unless the env sets them. */
+export const GEMMA_PREFIXES = { queryPrefix: "task: search result | query: ", docPrefix: "title: {title} | text: " };
 
 // Roles an admin pointed at a provider (providers.ts), loaded per action by primeAi(). Each
 // action process keeps the last copy for a few seconds; unset roles use the environment.
-let overrides: Partial<Record<RoleName, Target>> = {};
+let overrides: Overrides = {};
 let primedAt = 0;
 
-export function setAiOverrides(o: Partial<Record<RoleName, Target>>) {
+export function setAiOverrides(o: Overrides) {
   overrides = o;
   primedAt = Date.now();
 }
@@ -59,6 +67,32 @@ export function envTargets(): Record<RoleName, Target> {
   };
 }
 
+export function envEmbed(): EmbedTarget {
+  return {
+    baseUrl: env("EMBED_BASE_URL"),
+    model: env("EMBED_MODEL") ?? "default",
+    dimensions: INDEX_DIMENSIONS,
+    // empty string turns a prefix off
+    queryPrefix: process.env.EMBED_QUERY_PREFIX ?? GEMMA_PREFIXES.queryPrefix,
+    docPrefix: process.env.EMBED_DOC_PREFIX ?? GEMMA_PREFIXES.docPrefix,
+    apiKey: env("EMBED_API_KEY") ?? env("LLM_API_KEY"),
+  };
+}
+
+/**
+ * The embedding model as stored now (for mutations, which can't prime): the admin's choice
+ * (aiSettings "roles".embed and its provider), else the environment.
+ */
+export async function embedConfigFromDb(db: any): Promise<EmbedTarget> {
+  const row = await db.query("aiSettings").withIndex("by_key", (q: any) => q.eq("key", "roles")).unique();
+  const c = (row?.value as any)?.embed;
+  if (c) {
+    const p = await db.get(c.providerId);
+    if (p?.enabled) return { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey, dimensions: INDEX_DIMENSIONS, queryPrefix: c.queryPrefix ?? "", docPrefix: c.docPrefix ?? "", sendDimensions: !!c.sendDimensions };
+  }
+  return envEmbed();
+}
+
 export function aiConfig() {
   const base = envTargets();
   const main = overrides.main ?? base.main;
@@ -66,15 +100,7 @@ export function aiConfig() {
     main,
     fast: overrides.fast ?? base.fast,
     vision: overrides.vision ?? base.vision,
-    embed: {
-      baseUrl: env("EMBED_BASE_URL"),
-      model: env("EMBED_MODEL") ?? "default",
-      dimensions: Number(env("EMBED_DIMENSIONS") ?? 768),
-      // embeddinggemma's task prefixes (model card); empty string turns a prefix off.
-      queryPrefix: process.env.EMBED_QUERY_PREFIX ?? "task: search result | query: ",
-      docPrefix: process.env.EMBED_DOC_PREFIX ?? "title: {title} | text: ",
-      apiKey: env("EMBED_API_KEY") ?? env("LLM_API_KEY"),
-    },
+    embed: overrides.embed ?? envEmbed(),
     rerank: { baseUrl: env("RERANK_BASE_URL"), model: env("RERANK_MODEL") ?? "default", apiKey: env("RERANK_API_KEY") ?? env("LLM_API_KEY") },
     thinking: env("LLM_THINKING") === "1",
     answerMaxTokens: Math.max(500, Number(env("LLM_ANSWER_MAX_TOKENS") ?? 8192)),
@@ -249,7 +275,7 @@ export async function embed(texts: string[], kind: "query" | "document"): Promis
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += 64) {
     const batch = texts.slice(i, i + 64).map((t) => withPrefix(prefix, t, kind));
-    const data = await postJson(`${cfg.baseUrl}/embeddings`, { model: cfg.model, input: batch }, cfg.apiKey);
+    const data = await postJson(`${cfg.baseUrl}/embeddings`, { model: cfg.model, input: batch, ...(cfg.sendDimensions ? { dimensions: cfg.dimensions } : {}) }, cfg.apiKey);
     const rows = [...(data.data ?? [])].sort((a: any, b: any) => a.index - b.index);
     if (rows.length !== batch.length) throw new Error(`خادم التضمين أعاد ${rows.length} متجهاً لـ${batch.length} نصاً`);
     for (const r of rows) {
@@ -328,8 +354,7 @@ export async function health(): Promise<Health> {
 // ---------------------------------------------------------------- the embedding index guard
 
 /** What the index was built with. Stored once; a different model or size afterwards means a full re-index. */
-export function embeddingSignature() {
-  const e = aiConfig().embed;
+export function embeddingSignature(e: EmbedTarget = aiConfig().embed) {
   return { model: e.model, dimensions: e.dimensions, queryPrefix: e.queryPrefix, docPrefix: e.docPrefix };
 }
 
@@ -337,7 +362,7 @@ export const MISMATCH = "نموذج التضمين الحالي لا يطابق 
 
 /** Registers the rag embedder and pins the embedding model on first use; throws if the model changed since. */
 export async function ensureEmbeddingIndex(ctx: MutationCtx) {
-  const sig = embeddingSignature();
+  const sig = embeddingSignature(await embedConfigFromDb(ctx.db));
   const row = await ctx.db.query("aiSettings").withIndex("by_key", (q) => q.eq("key", "embedding")).unique();
   if (!row) {
     await ctx.components.docs.setEmbedder({ embed: internal.ai.embedForIndex });
@@ -377,14 +402,15 @@ export const repinEmbedding = internalMutation({
     const row = await ctx.db.query("aiSettings").withIndex("by_key", (q) => q.eq("key", "embedding")).unique();
     if (row) await ctx.db.delete(row._id);
     await ensureEmbeddingIndex(ctx);
-    return embeddingSignature();
+    return embeddingSignature(await embedConfigFromDb(ctx.db));
   },
 });
 
 /** The rag component's embedder. Queries arrive marked with QUERY_MARK and get the query prefix. */
 export const embedForIndex = internalAction({
   args: { texts: v.array(v.string()) },
-  handler: async (_ctx, { texts }) => {
+  handler: async (ctx, { texts }) => {
+    await primeAi(ctx);
     const queries = texts.map((t) => t.startsWith(QUERY_MARK));
     if (queries.every(Boolean)) return await embed(texts.map((t) => t.slice(QUERY_MARK.length)), "query");
     if (!queries.some(Boolean)) return await embed(texts, "document");

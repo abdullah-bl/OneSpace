@@ -15,7 +15,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, requireActive } from "./access";
-import { aiConfig, ensureEmbeddingIndex, ocr, primeAi } from "./ai";
+import { aiConfig, embedConfigFromDb, ensureEmbeddingIndex, ocr, primeAi } from "./ai";
 import { shadowText } from "./lib/arabic";
 import { chunkBlocks } from "./lib/chunk";
 import { extract } from "./lib/extract";
@@ -47,7 +47,7 @@ export async function scheduleIngest(ctx: MutationCtx, fileId: Id<"files">) {
   if (!file) return;
   const row = await indexRow(ctx, fileId);
   const base = { version: file.version, spaceId: file.spaceId, error: undefined, note: undefined, step: undefined };
-  if (!aiConfig().embed.baseUrl) {
+  if (!(await embedConfigFromDb(ctx.db)).baseUrl) {
     await setState(ctx, file, { ...base, state: "failed", error: "الفهرسة غير مفعّلة: خادم التضمين غير مضبوط" });
     return;
   }
