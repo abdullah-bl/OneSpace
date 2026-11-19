@@ -4,6 +4,7 @@
 
 import { useEffect, useState } from "react";
 import { SkillFiles, useFileEdits, type SkillFile } from "./SkillFiles";
+import { SkillImport } from "./SkillImport";
 import { useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate } from "./lib";
 import { Icon } from "./icons";
@@ -62,11 +63,21 @@ export function SkillsView({ onTry }: { onTry: (skill: { id: string; name: strin
         title="مهاراتي"
         subtitle="طرق عملك المحفوظة. اكتب / في مربع المحادثة واختر مهارة لتطبّق تعليماتها على طلبك. الوكيل المناسب يُختار تلقائياً."
         actions={
-          <button className="btn-primary" onClick={() => (setEditing({ ...EMPTY }), setNote(""))}>
-            <Icon name="plus" /> مهارة جديدة
-          </button>
+          <>
+            <SkillImport
+              panelTarget="skill-import-panel"
+              onSave={async (d) => {
+                await create(d);
+                setNote(`استُوردت /${d.name}. اكتب / في المحادثة لاستخدامها، أو يختارها المساعد حين يناسبها الطلب.`);
+              }}
+            />
+            <button className="btn-primary" onClick={() => (setEditing({ ...EMPTY }), setNote(""))}>
+              <Icon name="plus" /> مهارة جديدة
+            </button>
+          </>
         }
       />
+      <div id="skill-import-panel" />
       {error && <p className="alert-negative mb-3">{error}</p>}
       {note && <p className="alert-info mb-3 animate-fade">{note}</p>}
 

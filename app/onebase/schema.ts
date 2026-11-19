@@ -455,7 +455,7 @@ export default defineSchema({
     // the Python that worked (rerun as is on new files through run_analysis) and an example output
     // whose shape the next answer keeps. `inputs`: the file names the script was written against.
     files: v.optional(
-      v.array(v.object({ name: v.string(), kind: v.union(v.literal("script"), v.literal("example")), content: v.string(), inputs: v.optional(v.array(v.string())) })),
+      v.array(v.object({ name: v.string(), kind: v.union(v.literal("script"), v.literal("example"), v.literal("reference")), content: v.string(), inputs: v.optional(v.array(v.string())) })),
     ),
   })
     .index("by_owner", ["ownerId", "name"])
