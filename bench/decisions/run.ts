@@ -67,7 +67,8 @@ async function route() {
       const applied = lightPred.filter((r) => !makingRequest(r.q) && r.q.length <= 200 && (cases.find((c: any) => c.id === r.id).history || r.q.length <= 20));
       return { applied: applied.length, correct: applied.filter((r) => r.gold.effort === "light").length, wrongLight: applied.filter((r) => r.gold.effort !== "light").map((r) => r.id) };
     })(),
-    followUpQuery: { n: follow.length, keptKeys: follow.filter((r) => r.decision && r.keys.every((k: string) => r.decision.query.includes(k))).length },
+    // null query: a typed decision model writes none, and rewriteQuery writes it in the app
+    followUpQuery: { n: follow.length, written: follow.filter((r) => r.decision?.query).length, keptKeys: follow.filter((r) => r.decision?.query && r.keys.every((k: string) => r.decision.query.includes(k))).length },
     latencyMs: stats(rows.map((r) => r.ms ?? 0)),
     errors: rows.filter((r) => r.decision && r.decision.needsFiles !== r.gold.needsFiles).map((r) => ({ id: r.id, q: r.q, gold: r.gold.needsFiles, got: r.decision.needsFiles })),
   };

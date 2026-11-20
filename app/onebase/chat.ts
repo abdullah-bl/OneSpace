@@ -1570,7 +1570,7 @@ export const runTurn = internalAction({
       let shown = 0;
       if (retrieve) {
         // 1. Rewrite a follow-up ("وكم مدتها؟") into a standalone search query (the route's, or the fast model's).
-        const query = (route && hasHistory ? route.query : await rewriteQuery(c.question, c.history, c.summary, { ctx, purpose: "rewrite", turnId })).slice(0, MAX_QUERY);
+        const query = (route?.query && hasHistory ? route.query : await rewriteQuery(c.question, c.history, c.summary, { ctx, purpose: "rewrite", turnId })).slice(0, MAX_QUERY);
 
         // 2. Retrieval before the first generation: the safety net if the model calls no tool.
         await ctx.runMutation(internal.chat.setLabel, { turnId, label: search.label });

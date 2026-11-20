@@ -372,7 +372,7 @@ export async function decide<T>(
   kind: DecisionKind,
   messages: ChatMsg[],
   schema: Record<string, unknown>,
-  opts: { track?: Omit<UsageTrack, "purpose">; maxTokens?: number; timeoutMs?: number; log?: (l: DecisionLog) => void } = {},
+  opts: { track?: Omit<UsageTrack, "purpose">; maxTokens?: number; timeoutMs?: number; log?: (l: DecisionLog) => void; typed?: TypedAsk<T> } = {},
 ): Promise<T | null> {
   const cfg = aiConfig();
   const started = Date.now();
@@ -383,6 +383,20 @@ export async function decide<T>(
   }
   const signal = AbortSignal.timeout(opts.timeoutMs ?? cfg.decideTimeoutMs);
   try {
+    // A native decision model (llama.cpp `/v1/systemone`) answers typed questions, not chat.
+    if (await isDecisionModel(cfg.decide)) {
+      if (!opts.typed) {
+        done({ ok: false, why: "error" });
+        return null;
+      }
+      const value = await askTyped(cfg.decide, kind, opts.typed, signal, opts.track);
+      if (value === null || !matchesSchema(value, schema)) {
+        done({ ok: false, why: "invalid" });
+        return null;
+      }
+      done({ ok: true, out: value });
+      return value;
+    }
     const r = await chat({
       role: "decide",
       temperature: 0,
@@ -409,6 +423,77 @@ export async function decide<T>(
   } catch {
     done({ ok: false, why: signal.aborted ? "timeout" : "error" });
     return null;
+  }
+}
+
+// ---------------------------------------------------------------- native decision models
+
+/**
+ * A decision as typed questions for a native decision model (llama.cpp `POST /v1/systemone`,
+ * the TypeSafe API): `noul` (probability of true), `choice` (one option) or `score`. Such a model
+ * reads a `state` and answers each question in one forward pass; it writes no text, so `map`
+ * turns the answers into the same value the chat path returns (or null).
+ */
+export type TypedQuestion =
+  | { type: "noul"; instructions: string }
+  | { type: "choice"; instructions: string; criteria: Record<string, string | null> }
+  | { type: "score"; instructions: string; criteria: string[] };
+export type TypedAnswers = Record<string, { noul?: number; choice?: string; probabilities?: Record<string, number>; score?: number; confidence?: number }>;
+export type TypedAsk<T> = { state: unknown; questions: Record<string, TypedQuestion>; map: (a: TypedAnswers) => T | null };
+
+const kindCache = new Map<string, { decisions: boolean; at: number }>();
+
+/** True when the server lists this model as one that outputs decisions, not text (cached 10 min). */
+export async function isDecisionModel(t: Target): Promise<boolean> {
+  if (!t.baseUrl) return false;
+  const key = `${t.baseUrl}|${t.model}`;
+  const hit = kindCache.get(key);
+  if (hit && Date.now() - hit.at < 600_000) return hit.decisions;
+  let decisions = false;
+  try {
+    const r = await fetch(`${t.baseUrl}/models`, { headers: headers(t.apiKey), signal: AbortSignal.timeout(3000) });
+    const data: any = r.ok ? await r.json() : null;
+    const m = ((data?.data ?? []) as any[]).find((x) => x?.id === t.model || (x?.aliases ?? []).includes(t.model));
+    const out: string[] = m?.architecture?.output_modalities ?? [];
+    decisions = out.includes("decisions") && !out.includes("text");
+  } catch {
+    // unknown: treat it as a chat model (the old path)
+  }
+  kindCache.set(key, { decisions, at: Date.now() });
+  return decisions;
+}
+
+async function askTyped<T>(t: Target, kind: DecisionKind, ask: TypedAsk<T>, signal: AbortSignal, track?: Omit<UsageTrack, "purpose">): Promise<T | null> {
+  const started = Date.now();
+  let ok = false;
+  let inputTokens = 0;
+  try {
+    const res = await post(`${t.baseUrl}/systemone`, { model: t.model, state: ask.state, questions: ask.questions }, t.apiKey, undefined, signal);
+    if (!res.ok) throw new Error(`systemone HTTP ${res.status}`);
+    const data: any = await res.json();
+    inputTokens = data?.usage?.input_tokens ?? 0;
+    ok = true;
+    return ask.map((data?.answers ?? {}) as TypedAnswers);
+  } finally {
+    if (track) {
+      try {
+        await track.ctx.runMutation(internal.usage.record, {
+          model: t.model,
+          provider: t.provider ?? "إعدادات الخادم",
+          role: "decide",
+          purpose: `decide:${kind}`,
+          ...(track.userId ? { userId: track.userId } : {}),
+          ...(track.turnId ? { turnId: track.turnId } : {}),
+          prompt: inputTokens,
+          completion: 0,
+          counted: ok,
+          ms: Date.now() - started,
+          ok,
+        });
+      } catch (e) {
+        console.error("usage: not recorded", e instanceof Error ? e.message : e);
+      }
+    }
   }
 }
 

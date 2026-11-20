@@ -1,0 +1,143 @@
+{
+ "model": "danbev/d1-Omni-2B-GGUF:BF16",
+ "cases": 74,
+ "answered": 74,
+ "fallbacks": 0,
+ "needsFiles": {
+  "regex": 50,
+  "decision": 87.8,
+  "missedFiles": {
+   "regex": 11,
+   "decision": 0
+  },
+  "needlessSearch": {
+   "regex": 26,
+   "decision": 9
+  }
+ },
+ "byGroup": {
+  "ask-files": {
+   "n": 16,
+   "regex": 100,
+   "decision": 100
+  },
+  "make-files": {
+   "n": 14,
+   "regex": 21.4,
+   "decision": 100
+  },
+  "make-general": {
+   "n": 14,
+   "regex": 50,
+   "decision": 78.6
+  },
+  "ask-general": {
+   "n": 10,
+   "regex": 0,
+   "decision": 90
+  },
+  "light": {
+   "n": 8,
+   "regex": 12.5,
+   "decision": 62.5
+  },
+  "follow-files": {
+   "n": 6,
+   "regex": 100,
+   "decision": 100
+  },
+  "follow-general": {
+   "n": 2,
+   "regex": 0,
+   "decision": 50
+  },
+  "topic-switch": {
+   "n": 4,
+   "regex": 100,
+   "decision": 75
+  }
+ },
+ "effortLight": {
+  "predicted": 8,
+  "correct": 7,
+  "gold": 9,
+  "wrongLight": [
+   "follow-06"
+  ]
+ },
+ "effortLightApplied": {
+  "applied": 8,
+  "correct": 7,
+  "wrongLight": [
+   "follow-06"
+  ]
+ },
+ "followUpQuery": {
+  "n": 6,
+  "written": 0,
+  "keptKeys": 0
+ },
+ "latencyMs": {
+  "n": 74,
+  "p50": 61,
+  "p90": 64,
+  "max": 67,
+  "mean": 61
+ },
+ "errors": [
+  {
+   "id": "make-09",
+   "q": "أعد صياغة هذه الفقرة بأسلوب رسمي: نبي نخلص الشغل بسرعة عشان العميل زعلان",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "make-10",
+   "q": "لو تكرمت اكتب سيرة ذاتية مختصرة لمهندس برمجيات خبرته ٥ سنوات",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "make-12",
+   "q": "حط لي قالب لمحضر اجتماع",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "gen-02",
+   "q": "كيف أحسب النسبة المئوية للزيادة؟",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "light-05",
+   "q": "اختصر الرد اللي فوق",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "light-06",
+   "q": "لخص الرد اللي فوق بثلاث نقاط",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "light-07",
+   "q": "ترجم الإجابة السابقة للإنجليزي",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "follow-07",
+   "q": "خله أقصر وأرسمي",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "switch-03",
+   "q": "اكتب لي قصيدة قصيرة عن الصباح",
+   "gold": false,
+   "got": true
+  }
+ ]
+}

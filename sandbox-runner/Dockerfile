@@ -1,4 +1,4 @@
-# sandbox-runner: starts one throwaway container per analysis run (image onespace-sandbox:3).
+# sandbox-runner: starts one throwaway container per analysis run (image onespace-sandbox:4).
 # It talks to the host's Docker through the mounted socket, so it is effectively root on the host:
 # keep it on the internal network only (never publish its port) and protect SANDBOX_SECRET.
 

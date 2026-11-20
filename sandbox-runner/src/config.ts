@@ -21,7 +21,10 @@ export type Config = {
   host: string;
   port: number;
   image: string;
-  /** "auto" picks gVisor (runsc) when Docker has it registered, else runc. */
+  /** Container engine's API socket (DOCKER_HOST for the docker CLI), e.g. unix:///run/kiri/docker.sock. Unset: the CLI's default. */
+  dockerHost?: string;
+  /** "auto" picks gVisor (runsc) when the engine has it registered, else the engine's default runtime.
+   *  A runtime named here that the engine doesn't list is refused (no silent fallback). */
   runtime: "auto" | "runc" | "runsc";
   workdir: string;
   maxConcurrency: number;
@@ -38,6 +41,8 @@ const num = (v: string | undefined, d: number) => {
 export function loadConfig(env: Record<string, string | undefined> = process.env): Config {
   const secret = env.SANDBOX_SECRET ?? "";
   if (secret.length < 16) throw new Error("SANDBOX_SECRET must be set (at least 16 characters)");
+  const dockerHost = env.SANDBOX_DOCKER_HOST;
+  if (dockerHost && !/^(unix|tcp|ssh|npipe):\/\//.test(dockerHost)) throw new Error("SANDBOX_DOCKER_HOST must be a URL like unix:///run/kiri/docker.sock");
   const runtime = (env.SANDBOX_RUNTIME ?? "auto") as Config["runtime"];
   if (!["auto", "runc", "runsc"].includes(runtime)) throw new Error("SANDBOX_RUNTIME must be auto, runc or runsc");
   const ceilings: Limits = {
@@ -51,7 +56,8 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     secret,
     host: env.SANDBOX_HOST ?? "127.0.0.1",
     port: num(env.SANDBOX_PORT, 8787),
-    image: env.SANDBOX_IMAGE ?? "onespace-sandbox:3",
+    image: env.SANDBOX_IMAGE ?? "onespace-sandbox:4",
+    dockerHost: env.SANDBOX_DOCKER_HOST || undefined,
     runtime,
     workdir: env.SANDBOX_WORKDIR ?? join(tmpdir(), "onespace-sandbox"),
     maxConcurrency: Math.floor(num(env.SANDBOX_MAX_CONCURRENCY, 2)),
