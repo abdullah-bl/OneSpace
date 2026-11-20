@@ -1,7 +1,9 @@
 // The chat (UX redesign): one conversation column like Claude. A new chat starts from the empty
 // state (a few starters) or from a space; the composer has attachments (uploaded to the space or
 // to "مساحتي"), a quiet agent picker and an "@" list of files and spaces. Mentioning a
-// file or a space narrows that question to it (the server intersects; it never widens).
+// file or a space narrows that question to it (the server intersects; it never widens). In a
+// shared space's chat "@" also lists its members: each one picked is told this message's text
+// (never the chat or the answer), and the assistant answers as usual.
 // Answers stream, render as Markdown with small citation chips that open the source, and can be
 // copied or retried. Write tools arrive as proposal cards ("نفّذ"); their outputs open in a side
 // panel. Threads opened from a task, test threads and scheduled-task threads use the same screen.
@@ -16,7 +18,8 @@ import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { CITE_CHECK, renderAnswer } from "./markdown";
 
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
-type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spaceId?: string };
+// "person": a named member of this shared space's chat, told this one message (mentions.mentionInChat).
+type Mention = { kind: "file" | "space" | "agent" | "person"; id: string; name: string; spaceId?: string };
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
 type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
@@ -142,7 +145,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     try {
       let id = threadId;
       if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace, shared: !!canShareNew && newShared } : {}) })) as string;
-      await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })), ...(skill ? { skillId: skill.id } : {}), effort });
+      const scope = mentions.filter((m): m is Mention & { kind: "file" | "space" } => m.kind === "file" || m.kind === "space");
+      const people = mentions.filter((m) => m.kind === "person").map((m) => m.id);
+      await send({ threadId: id, text, mentions: scope.map((m) => ({ kind: m.kind, id: m.id })), ...(people.length ? { people } : {}), ...(skill ? { skillId: skill.id } : {}), effort });
       stick.current = true;
       if (!threadId) go(`/chat/${id}`);
       return true;
@@ -255,7 +260,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               <MessageView key={m.id} m={m} canWrite={data?.canWrite ?? true} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
-            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} />}
+            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} shared={!!canShareNew && newShared} />}
           </div>
         </div>
         {!empty && (
@@ -267,7 +272,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                   <Icon name="eye" size={15} /> دورك في المساحة قارئ: تقرأ المحادثة ولا تسأل فيها.
                 </p>
               ) : (
-              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
+              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} shared={!!data?.shared} />
               )}
             </div>
           </div>
@@ -393,6 +398,7 @@ function Composer(props: {
   onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null) => Promise<boolean>;
   initial?: { mentions: Mention[]; text?: string; skill?: SkillRef } | null;
   starters?: boolean;
+  shared?: boolean; // a shared space chat (plans/14): its members read it, so @person links to it
   go?: (path: string) => void;
 }) {
   // Mentioned files and spaces live in the chips above the text, not in the text itself.
@@ -427,6 +433,7 @@ function Composer(props: {
   const items: Mention[] = useMemo(() => {
     if (!suggestions) return [];
     return [
+      ...suggestions.people.map((x) => ({ kind: "person" as const, id: x.id, name: x.name, detail: x.detail })),
       ...suggestions.files.map((x) => ({ kind: "file" as const, id: x.id, name: x.name, detail: x.detail })),
       ...suggestions.spaces.map((x) => ({ kind: "space" as const, id: x.id, name: x.name, detail: x.detail })),
       ...suggestions.agents.map((x) => ({ kind: "agent" as const, id: x.id, name: x.name, detail: x.detail })),
@@ -601,7 +608,7 @@ function Composer(props: {
               const st = up ? ingest?.find((x) => x.fileId === m.id) : null;
               return (
                 <span key={m.id} className="flex h-7 max-w-[260px] items-center gap-1.5 rounded-md bg-raised ps-2 pe-1 text-xs">
-                  <Icon name={m.kind === "file" ? "file" : "folder"} size={14} />
+                  <Icon name={m.kind === "file" ? "file" : m.kind === "person" ? "user" : "folder"} size={14} />
                   <span className="truncate">{m.name}</span>
                   {up && st?.state !== "ready" && <span className="shrink-0 text-muted">{st?.state === "failed" ? "تعذّرت القراءة" : "يجهّز…"}</span>}
                   <button
@@ -618,6 +625,15 @@ function Composer(props: {
               );
             })}
           </div>
+        )}
+        {visibleMentions.some((m) => m.kind === "person") && (
+          <p className="px-3 pt-1.5 text-xs text-muted">
+            {props.shared ? (
+              <>تصل إشارة إلى {visibleMentions.filter((m) => m.kind === "person").map((m) => m.name).join("، ")} في «الإشارات» تفتح هذه المحادثة المشتركة.</>
+            ) : (
+              <>يصل نص هذه الرسالة وحده إلى {visibleMentions.filter((m) => m.kind === "person").map((m) => m.name).join("، ")} في «الإشارات». المحادثة والإجابة تبقيان خاصتين بك.</>
+            )}
+          </p>
         )}
         <textarea
           ref={ta}
@@ -713,7 +729,7 @@ function Composer(props: {
   );
 }
 
-const KIND_LABEL: Record<string, string> = { file: "ملف", space: "مساحة", agent: "وكيل" };
+const KIND_LABEL: Record<string, string> = { file: "ملف", space: "مساحة", agent: "وكيل", person: "زميل" };
 
 function MentionList({ items, active, onPick }: { items: (Mention & { detail: string })[]; active: number; onPick: (m: Mention) => void }) {
   return (
@@ -726,7 +742,7 @@ function MentionList({ items, active, onPick }: { items: (Mention & { detail: st
           className={`flex w-full items-center gap-2 rounded-md px-2 py-2 text-start text-sm ${i === active ? "bg-active" : "hover:bg-active"}`}
           onMouseDown={(e) => (e.preventDefault(), onPick(it))}
         >
-          <Icon name={it.kind === "file" ? "file" : it.kind === "space" ? "folder" : "bot"} size={16} className="text-muted" />
+          <Icon name={it.kind === "file" ? "file" : it.kind === "space" ? "folder" : it.kind === "person" ? "user" : "bot"} size={16} className="text-muted" />
           <span className="min-w-0 flex-1 truncate">{it.name}</span>
           <span className="max-w-[45%] shrink-0 truncate text-xs text-muted">
             {KIND_LABEL[it.kind]}

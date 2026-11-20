@@ -52,10 +52,77 @@ type TaskRow = {
   priority: string;
   due: number | null;
   spaceName: string;
-  assigneeName: string | null;
-  assigneeActive: boolean;
+  assignees: Assignee[];
   linkCount: number;
 };
+
+type Assignee = { userId: string; name: string | null; active: boolean };
+
+/** The task's assignees by name; one who is no longer a manager or member shows in red. */
+function AssigneeNames({ assignees }: { assignees: Assignee[] }) {
+  if (!assignees.length) return <span className="text-faint">—</span>;
+  return (
+    <span>
+      {assignees.map((a, i) => (
+        <span key={a.userId} className={a.active ? "" : "text-negative"}>
+          {i > 0 && "، "}
+          {a.name ?? "؟"}
+          {!a.active && " (لم يعد عضواً)"}
+        </span>
+      ))}
+    </span>
+  );
+}
+
+/** Up to three initials, overlapping, then «+n». */
+function AssigneeFaces({ assignees }: { assignees: Assignee[] }) {
+  const shown = assignees.slice(0, 3);
+  return (
+    <span className="flex items-center" aria-hidden>
+      {shown.map((a, i) => (
+        <span key={a.userId} className={`grid h-5 w-5 place-items-center rounded-full border border-surface bg-active text-[10px] ${i ? "-ms-1.5" : ""}`}>
+          {(a.name ?? "؟").charAt(0)}
+        </span>
+      ))}
+      {assignees.length > 3 && <span className="ms-1 text-[10px] text-faint num">+{assignees.length - 3}</span>}
+    </span>
+  );
+}
+
+/** Multi-select of the space's managers and members (tasks:assignees): toggle chips. */
+function AssigneePicker({
+  people,
+  value,
+  onChange,
+  extra = [],
+}: {
+  people: { userId: string; name: string | null }[] | undefined;
+  value: string[];
+  onChange: (next: string[]) => void;
+  extra?: Assignee[]; // current assignees no longer offered (left the space): shown so they can be removed
+}) {
+  const offered = [...(people ?? []), ...extra.filter((a) => !people?.some((p) => p.userId === a.userId))];
+  if (people === undefined) return <p className="text-xs text-muted">جارٍ التحميل…</p>;
+  return (
+    <div className="flex flex-wrap gap-1.5" role="group" aria-label="المسؤولون">
+      {offered.map((p) => {
+        const on = value.includes(p.userId);
+        return (
+          <button
+            key={p.userId}
+            type="button"
+            aria-pressed={on}
+            className={`rounded-full border px-2.5 py-1 text-xs transition-colors ${on ? "border-primary bg-primary text-primary-ink" : "border-line hover:border-control"}`}
+            onClick={() => onChange(on ? value.filter((id) => id !== p.userId) : [...value, p.userId])}
+          >
+            {p.name ?? "؟"}
+          </button>
+        );
+      })}
+      {!offered.length && <span className="text-xs text-muted">لا أعضاء يمكن الإسناد إليهم.</span>}
+    </div>
+  );
+}
 
 const DAY = 86_400_000;
 const dayStart = (t: number) => {
@@ -135,11 +202,8 @@ function TaskCard({ t, onOpen }: { t: TaskRow; onOpen: () => void }) {
       </div>
       <div className="flex flex-wrap items-center gap-2 text-xs text-muted">
         <span className="flex items-center gap-1">
-          <span className="grid h-5 w-5 place-items-center rounded-full bg-active text-[10px]">{(t.assigneeName ?? "؟").charAt(0)}</span>
-          <span className={t.assigneeActive ? "" : "text-negative"}>
-            {t.assigneeName ?? "—"}
-            {!t.assigneeActive && " (لم يعد عضواً)"}
-          </span>
+          <AssigneeFaces assignees={t.assignees} />
+          <AssigneeNames assignees={t.assignees} />
         </span>
         <Due due={t.due} status={t.status} />
         {t.linkCount > 0 && (
@@ -239,7 +303,7 @@ function SpaceTaskList({ space, go }: { space: SpaceInfo; go: (p: string) => voi
       ) : (
         <div className="divide-y divide-rule">
           {open.map((t) => (
-            <TaskRowView key={t._id} t={t as TaskRow} onOpen={() => go(`/tasks/${t._id}`)} sub={<span className={(t as TaskRow).assigneeActive ? "" : "text-negative"}>{t.assigneeName ?? "—"}</span>} />
+            <TaskRowView key={t._id} t={t as TaskRow} onOpen={() => go(`/tasks/${t._id}`)} sub={<AssigneeNames assignees={t.assignees} />} />
           ))}
         </div>
       )}
@@ -388,6 +452,7 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
   const create = useMutation(api.tasks.create);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  const [picked, setPicked] = useState<string[]>([]);
   return (
     <form
       className="card animate-rise space-y-3 p-4"
@@ -395,6 +460,7 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
         e.preventDefault();
         const fd = new FormData(e.currentTarget);
         const due = String(fd.get("due") || "");
+        if (!picked.length) return setError("اختر مسؤولاً واحداً على الأقل");
         setBusy(true);
         setError("");
         try {
@@ -402,7 +468,7 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
             spaceId: space._id as any,
             title: String(fd.get("title")),
             body: String(fd.get("body") || "") || undefined,
-            assigneeId: String(fd.get("assignee")) as any,
+            assigneeIds: picked as any,
             priority: String(fd.get("priority")) as any,
             due: due ? new Date(due + "T23:59:00").getTime() : undefined,
           });
@@ -416,20 +482,11 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
     >
       <input className="input w-full text-base font-medium" name="title" placeholder="عنوان المهمة" required maxLength={200} autoFocus />
       <textarea className="textarea w-full" name="body" placeholder="التفاصيل: المطلوب، والمصادر، ومعيار الإنجاز (اختياري)" rows={3} />
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="text-sm">
-          <span className="label">المسؤول</span>
-          <select className="input w-full" name="assignee" required defaultValue="">
-            <option value="" disabled>
-              اختر عضواً…
-            </option>
-            {(people ?? []).map((p) => (
-              <option key={p.userId} value={p.userId}>
-                {p.name ?? p.userId}
-              </option>
-            ))}
-          </select>
-        </label>
+      <div className="text-sm">
+        <span className="label">المسؤولون (واحد أو أكثر)</span>
+        <AssigneePicker people={people} value={picked} onChange={setPicked} />
+      </div>
+      <div className="grid gap-3 sm:grid-cols-2">
         <label className="text-sm">
           <span className="label">الأولوية</span>
           <select className="input w-full" name="priority" defaultValue="normal">
@@ -447,7 +504,7 @@ function NewTaskForm({ space, onDone }: { space: SpaceInfo; onDone: () => void }
       </div>
       {error && <p className="text-sm text-negative">{error}</p>}
       <div className="flex flex-wrap items-center gap-2 border-t border-rule pt-3">
-        <span className="meta flex-1">تُسند لمدير أو عضو في هذه المساحة فقط، ويصله إشعار.</span>
+        <span className="meta flex-1">تُسند لمديري هذه المساحة وأعضائها فقط، ويصل كلاً منهم إشعار. مهمة واحدة يشتركون فيها.</span>
         <button type="button" className="btn-ghost" onClick={onDone}>
           إلغاء
         </button>
@@ -581,11 +638,8 @@ export function TaskDetail({ taskId, onClose }: { taskId: string; onClose: () =>
             <Fact label="الحالة">
               <Pill status={task.status} />
             </Fact>
-            <Fact label="المسؤول">
-              <span className={task.assigneeActive ? "" : "text-negative"}>
-                {task.assigneeName ?? "—"}
-                {!task.assigneeActive && " (لم يعد عضواً)"}
-              </span>
+            <Fact label={task.assignees.length > 1 ? "المسؤولون" : "المسؤول"}>
+              <AssigneeNames assignees={task.assignees} />
             </Fact>
             <Fact label="الأولوية">
               <span className={PRIORITY[task.priority]?.tone}>{PRIORITY[task.priority]?.label}</span>
@@ -783,7 +837,7 @@ function ArtifactPicker({ spaceId, exclude, onPick }: { spaceId: string; exclude
   );
 }
 
-function ManageTask({ task }: { task: { _id: string; spaceId: string; assigneeId: string; priority: string; due: number | null } }) {
+function ManageTask({ task }: { task: { _id: string; spaceId: string; assigneeIds: string[]; assignees: Assignee[]; priority: string; due: number | null } }) {
   const people = useQuery(api.tasks.assignees, { spaceId: task.spaceId as any });
   const assign = useMutation(api.tasks.assign);
   const update = useMutation(api.tasks.update);
@@ -791,10 +845,16 @@ function ManageTask({ task }: { task: { _id: string; spaceId: string; assigneeId
   const wrap = (p: Promise<unknown>) => p.catch((e) => setError(errorText(e)));
   return (
     <div className="grid gap-2 text-xs">
-      <select className="input w-full text-xs" aria-label="المسؤول" value={task.assigneeId} onChange={(e) => wrap(assign({ taskId: task._id as any, assigneeId: e.target.value as any }))}>
-        {!people?.some((p) => p.userId === task.assigneeId) && <option value={task.assigneeId}>— المسؤول الحالي —</option>}
-        {(people ?? []).map((p) => <option key={p.userId} value={p.userId}>{p.name ?? p.userId}</option>)}
-      </select>
+      <AssigneePicker
+        people={people}
+        value={task.assigneeIds}
+        extra={task.assignees}
+        onChange={(next) => {
+          setError("");
+          if (!next.length) return setError("يبقى مسؤول واحد على الأقل");
+          void wrap(assign({ taskId: task._id as any, assigneeIds: next as any }));
+        }}
+      />
       <select className="input w-full text-xs" aria-label="الأولوية" value={task.priority} onChange={(e) => wrap(update({ taskId: task._id as any, priority: e.target.value as any }))}>
         {Object.entries(PRIORITY).map(([k, p]) => <option key={k} value={k}>{p.label}</option>)}
       </select>

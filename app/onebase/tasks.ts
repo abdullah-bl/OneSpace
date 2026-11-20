@@ -1,15 +1,18 @@
 // Tasks (Phase 3). A task lives in one shared space and inherits it: only the space's named
 // members see it (access.ts: assertTaskCan), only its manager creates, assigns, edits, reviews,
-// closes and deletes, and it can only be assigned to a manager or member of that space.
+// closes and deletes, and it can only be assigned to managers or members of that space.
 //
-// The assignee moves it forward (new → inProgress → review) and attaches output. Attachments
+// A task has one or more assignees (`assigneeIds`; rows from before hold one `assigneeId`, read
+// through assigneesOf). It is one task shared by all of them, with one status: each assignee is
+// notified, sees it in «مهامي», comments, attaches output and moves it forward
+// (new → inProgress → review); any of them can send it for review. Attachments
 // (links) must live in the task's own space: checked when added, and again every time the task
 // is read, so a file moved out later stops showing (name hidden). Every lookup by id answers with
 // the same "not found" message whether the thing is missing, forbidden or in another space.
 //
 //   who            view  comment  attach  forward(new→inProgress→review)  review/close/reopen  create/assign/edit/delete
 //   manager         ✓       ✓        ✓          ✓                              ✓                    ✓
-//   assignee        ✓       ✓        ✓          ✓                              –                    –
+//   an assignee     ✓       ✓        ✓          ✓                              –                    –
 //   member          ✓       ✓        –          –                              –                    –
 //   reader          ✓       –        –          –                              –                    –
 //   everyone/admin/others: nothing (not even existence)
@@ -17,7 +20,7 @@
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertTaskCan, canBeAssignee, currentSpaceRole, Denied, requireActive, taskRoleAllows, type Actor, type SpaceRole } from "./access";
+import { assertTaskCan, assigneesOf, canBeAssignee, currentSpaceRole, Denied, requireActive, taskRoleAllows, type Actor, type SpaceRole } from "./access";
 import { writeAudit } from "./audit";
 import { notify, type NotifyKind } from "./notifications";
 import { taskLinkType, taskPriority, taskStatus } from "./schema";
@@ -29,6 +32,7 @@ type LinkType = Doc<"tasks">["links"][number]["type"];
 const TITLE_MAX = 200;
 const BODY_MAX = 10_000;
 const COMMENT_MAX = 5_000;
+const MAX_ASSIGNEES = 20;
 
 function cleanTitle(title: string) {
   const t = title.replace(/[\u0000-\u001f]/g, " ").trim().slice(0, TITLE_MAX);
@@ -58,13 +62,13 @@ async function taskAccess(ctx: Ctx, me: Actor, taskId: string, action: "view" | 
   const { space, role } = await assertTaskCan(ctx, me.userId, task.spaceId, action === "manage" ? "manage" : "view");
   if (action === "comment" && !taskRoleAllows(role, "comment")) throw new Denied();
   const canManage = taskRoleAllows(role, "manage");
-  const isAssignee = task.assigneeId === me.userId && canBeAssignee(role);
+  const isAssignee = assigneesOf(task).includes(me.userId) && canBeAssignee(role);
   return { task, space, role, canManage, isAssignee };
 }
 
 const FORWARD: Partial<Record<Status, Status>> = { new: "inProgress", inProgress: "review" };
 
-/** Status changes allowed to this caller: the assignee moves forward; a manager can also close, return and reopen. */
+/** Status changes allowed to this caller: an assignee moves forward; a manager can also close, return and reopen. */
 function nextStatuses(status: Status, isAssignee: boolean, canManage: boolean): Status[] {
   const out = new Set<Status>();
   const fwd = FORWARD[status];
@@ -104,7 +108,9 @@ async function linkTarget(ctx: Ctx, type: LinkType, id: string): Promise<{ space
   return null;
 }
 
-function summary(task: Doc<"tasks">, extra: { spaceName: string; assigneeName: string | null; assigneeActive: boolean; isAssignee: boolean; canManage: boolean; canComment: boolean }) {
+type Assignee = { userId: Id<"users">; name: string | null; active: boolean };
+
+function summary(task: Doc<"tasks">, extra: { spaceName: string; assignees: Assignee[]; isAssignee: boolean; canManage: boolean; canComment: boolean }) {
   return {
     _id: task._id,
     spaceId: task.spaceId,
@@ -112,7 +118,7 @@ function summary(task: Doc<"tasks">, extra: { spaceName: string; assigneeName: s
     status: task.status,
     priority: task.priority,
     due: task.due ?? null,
-    assigneeId: task.assigneeId,
+    assigneeIds: assigneesOf(task),
     createdAt: task.createdAt,
     updatedAt: task.updatedAt,
     closedAt: task.closedAt ?? null,
@@ -127,13 +133,15 @@ async function shapeMany(ctx: Ctx, me: Actor, rows: { task: Doc<"tasks">; space:
   const names = new Map<string, string | null>();
   const out = [];
   for (const { task, space, role } of rows) {
-    const assigneeRole = await currentSpaceRole(ctx, task.assigneeId, space);
+    const assignees: Assignee[] = [];
+    for (const userId of assigneesOf(task)) {
+      assignees.push({ userId, name: await nameOf(ctx, names, userId), active: canBeAssignee(await currentSpaceRole(ctx, userId, space)) });
+    }
     out.push(
       summary(task, {
         spaceName: space.name,
-        assigneeName: await nameOf(ctx, names, task.assigneeId),
-        assigneeActive: canBeAssignee(assigneeRole),
-        isAssignee: task.assigneeId === me.userId && canBeAssignee(role),
+        assignees,
+        isAssignee: assigneesOf(task).includes(me.userId) && canBeAssignee(role),
         canManage: taskRoleAllows(role, "manage"),
         canComment: taskRoleAllows(role, "comment"),
       }),
@@ -165,24 +173,49 @@ async function notifyMany(ctx: MutationCtx, me: Actor, space: Doc<"spaces">, tas
 
 const who = (me: Actor) => me.user.name ?? me.user.email ?? "";
 
-async function requireAssignable(ctx: MutationCtx, space: Doc<"spaces">, assigneeId: Id<"users">) {
-  if (!canBeAssignee(await currentSpaceRole(ctx, assigneeId, space))) throw new OneBaseError("لا تُسند المهمة إلا لمدير أو عضو في المساحة نفسها");
+/**
+ * The assignee list from the arguments (`assigneeIds`, or the single `assigneeId` older callers
+ * send): at least one, no repeats, and every one a manager or member of the space right now.
+ */
+async function requireAssignable(ctx: MutationCtx, space: Doc<"spaces">, args: { assigneeIds?: Id<"users">[]; assigneeId?: Id<"users"> }) {
+  const ids = [...new Set([...(args.assigneeIds ?? []), ...(args.assigneeId ? [args.assigneeId] : [])])];
+  if (ids.length === 0) throw new OneBaseError("اختر مسؤولاً واحداً على الأقل");
+  if (ids.length > MAX_ASSIGNEES) throw new OneBaseError(`لا تُسند المهمة لأكثر من ${MAX_ASSIGNEES} شخصاً`);
+  for (const id of ids) {
+    if (!canBeAssignee(await currentSpaceRole(ctx, id, space))) throw new OneBaseError("لا تُسند المهمة إلا لمدير أو عضو في المساحة نفسها");
+  }
+  return ids;
 }
+
+/** Audit detail values are scalars: a list of people is stored as joined ids and joined names. */
+async function namesOf(ctx: MutationCtx, ids: Id<"users">[]) {
+  const cache = new Map<string, string | null>();
+  const out: string[] = [];
+  for (const id of ids) out.push((await nameOf(ctx, cache, id)) ?? "؟");
+  return out.join("، ");
+}
+
+const assigneeArgs = { assigneeIds: v.optional(v.array(v.id("users"))), assigneeId: v.optional(v.id("users")) };
 
 // ---- queries ------------------------------------------------------------------------------
 
-/** "مهامي": tasks assigned to me, across every space where I can still see them. */
+/** "مهامي": tasks I'm one of the assignees of, across every space where I can still see them. */
 export const mine = query({
   args: {},
   handler: async (ctx) => {
     const me = await requireActive(ctx);
-    const rows = await ctx.db.query("tasks").withIndex("by_assignee", (q) => q.eq("assigneeId", me.userId)).collect();
+    // Tasks are assigned only to named members, so my spaces are where to look.
+    const memberships = await ctx.db.query("spaceMembers").withIndex("by_user", (q) => q.eq("userId", me.userId)).collect();
     const visible = [];
-    for (const task of rows) {
+    for (const m of memberships) {
+      let access;
       try {
-        const { space, role } = await assertTaskCan(ctx, me.userId, task.spaceId, "view");
-        visible.push({ task, space, role });
-      } catch {}
+        access = await assertTaskCan(ctx, me.userId, m.spaceId, "view");
+      } catch {
+        continue;
+      }
+      const rows = await ctx.db.query("tasks").withIndex("by_space", (q) => q.eq("spaceId", access.space._id)).collect();
+      for (const task of rows) if (assigneesOf(task).includes(me.userId)) visible.push({ task, ...access });
     }
     return await shapeMany(ctx, me, visible);
   },
@@ -252,14 +285,14 @@ export const create = mutation({
     spaceId: v.id("spaces"),
     title: v.string(),
     body: v.optional(v.string()),
-    assigneeId: v.id("users"),
+    ...assigneeArgs,
     due: v.optional(v.number()),
     priority: v.optional(taskPriority),
   },
-  handler: async (ctx, { spaceId, title, body, assigneeId, due, priority }) => {
+  handler: async (ctx, { spaceId, title, body, assigneeIds: picked, assigneeId, due, priority }) => {
     const me = await requireActive(ctx);
     const { space } = await assertTaskCan(ctx, me.userId, spaceId, "manage");
-    await requireAssignable(ctx, space, assigneeId);
+    const assigneeIds = await requireAssignable(ctx, space, { assigneeIds: picked, assigneeId });
     const now = Date.now();
     const t = cleanTitle(title);
     const taskId = await ctx.db.insert("tasks", {
@@ -267,7 +300,7 @@ export const create = mutation({
       title: t,
       body: cleanBody(body),
       createdBy: me.userId,
-      assigneeId,
+      assigneeIds,
       due,
       priority: priority ?? "normal",
       status: "new",
@@ -276,9 +309,8 @@ export const create = mutation({
       updatedAt: now,
     });
     const task = (await ctx.db.get(taskId))!;
-    const assignee = await ctx.db.get(assigneeId);
-    await writeAudit(ctx, { userId: me.userId, action: "task.assign", resourceType: "task", resourceId: taskId, spaceId: space._id, detail: { taskTitle: t, assigneeId, assigneeName: assignee?.name ?? null, created: true } });
-    await notifyMany(ctx, me, space, task, [assigneeId], "task.assigned", `مهمة جديدة: ${t}`, `أسندها إليك ${who(me)} في «${space.name}»`);
+    await writeAudit(ctx, { userId: me.userId, action: "task.assign", resourceType: "task", resourceId: taskId, spaceId: space._id, detail: { taskTitle: t, assigneeIds: assigneeIds.join(","), assigneeNames: await namesOf(ctx, assigneeIds), created: true } });
+    await notifyMany(ctx, me, space, task, assigneeIds, "task.assigned", `مهمة جديدة: ${t}`, `أسندها إليك ${who(me)} في «${space.name}»`);
     return taskId;
   },
 });
@@ -298,18 +330,37 @@ export const update = mutation({
   },
 });
 
-/** Manager (re)assigns to another manager or member of the same space. */
+/**
+ * Manager sets the task's assignees (the whole list; managers or members of the same space). Only
+ * the newly added are notified; one audit row records who was added and who removed.
+ */
 export const assign = mutation({
-  args: { taskId: v.id("tasks"), assigneeId: v.id("users") },
-  handler: async (ctx, { taskId, assigneeId }) => {
+  args: { taskId: v.id("tasks"), ...assigneeArgs },
+  handler: async (ctx, { taskId, assigneeIds: picked, assigneeId }) => {
     const me = await requireActive(ctx);
     const { task, space } = await taskAccess(ctx, me, taskId, "manage");
-    await requireAssignable(ctx, space, assigneeId);
-    if (task.assigneeId === assigneeId) return;
-    await ctx.db.patch(task._id, { assigneeId, updatedAt: Date.now() });
-    const assignee = await ctx.db.get(assigneeId);
-    await writeAudit(ctx, { userId: me.userId, action: "task.assign", resourceType: "task", resourceId: task._id, spaceId: space._id, detail: { taskTitle: task.title, assigneeId, assigneeName: assignee?.name ?? null, from: task.assigneeId } });
-    await notifyMany(ctx, me, space, task, [assigneeId], "task.assigned", `أُسندت إليك مهمة: ${task.title}`, `أسندها إليك ${who(me)} في «${space.name}»`);
+    const assigneeIds = await requireAssignable(ctx, space, { assigneeIds: picked, assigneeId });
+    const before = assigneesOf(task);
+    const added = assigneeIds.filter((u) => !before.includes(u));
+    const removed = before.filter((u) => !assigneeIds.includes(u));
+    if (!added.length && !removed.length) return;
+    await ctx.db.patch(task._id, { assigneeIds, assigneeId: undefined, updatedAt: Date.now() });
+    await writeAudit(ctx, {
+      userId: me.userId,
+      action: "task.assign",
+      resourceType: "task",
+      resourceId: task._id,
+      spaceId: space._id,
+      detail: {
+        taskTitle: task.title,
+        assigneeIds: assigneeIds.join(","),
+        assigneeNames: await namesOf(ctx, assigneeIds),
+        added: added.join(",") || null,
+        removed: removed.join(",") || null,
+        from: before.join(","),
+      },
+    });
+    await notifyMany(ctx, me, space, task, added, "task.assigned", `أُسندت إليك مهمة: ${task.title}`, `أسندها إليك ${who(me)} في «${space.name}»`);
   },
 });
 
@@ -329,12 +380,12 @@ export const setStatus = mutation({
       await notifyMany(ctx, me, space, task, await managersOf(ctx, space._id), "task.review", `مهمة بانتظار مراجعتك: ${task.title}`, `أرسلها ${who(me)} للمراجعة في «${space.name}»`);
     } else if (status === "done") {
       await writeAudit(ctx, { userId: me.userId, action: "task.close", resourceType: "task", resourceId: task._id, spaceId: space._id, detail: { taskTitle: task.title, from: task.status } });
-      await notifyMany(ctx, me, space, task, [task.assigneeId], "task.closed", `أُغلقت المهمة: ${task.title}`, `أغلقها ${who(me)}`);
+      await notifyMany(ctx, me, space, task, assigneesOf(task), "task.closed", `أُغلقت المهمة: ${task.title}`, `أغلقها ${who(me)}`);
     } else if (task.status === "done") {
       await writeAudit(ctx, { userId: me.userId, action: "task.reopen", resourceType: "task", resourceId: task._id, spaceId: space._id, detail: { taskTitle: task.title } });
-      await notifyMany(ctx, me, space, task, [task.assigneeId], "task.returned", `أُعيد فتح المهمة: ${task.title}`, `أعاد فتحها ${who(me)}`);
+      await notifyMany(ctx, me, space, task, assigneesOf(task), "task.returned", `أُعيد فتح المهمة: ${task.title}`, `أعاد فتحها ${who(me)}`);
     } else if (task.status === "review" && status === "inProgress") {
-      await notifyMany(ctx, me, space, task, [task.assigneeId], "task.returned", `أُعيدت إليك المهمة للتعديل: ${task.title}`, `أعادها ${who(me)}`);
+      await notifyMany(ctx, me, space, task, assigneesOf(task), "task.returned", `أُعيدت إليك المهمة للتعديل: ${task.title}`, `أعادها ${who(me)}`);
     }
   },
 });
@@ -406,7 +457,7 @@ export const comment = mutation({
       await ctx.db.insert("mentions", { userId: uid, byId: me.userId, taskId: task._id, spaceId: space._id, commentId: id, excerpt: preview, createdAt: now });
       await notify(ctx, uid, { kind: "task.mention", title: `أشار إليك ${who(me)} في: ${task.title}`, body: preview, taskId: task._id, spaceId: space._id });
     }
-    const others = [task.assigneeId, ...(await managersOf(ctx, space._id))].filter((u) => !mentioned.has(u));
+    const others = [...assigneesOf(task), ...(await managersOf(ctx, space._id))].filter((u) => !mentioned.has(u));
     await notifyMany(ctx, me, space, task, others, "task.comment", `تعليق من ${who(me)} على: ${task.title}`, preview);
     return id;
   },

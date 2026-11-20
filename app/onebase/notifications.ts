@@ -3,12 +3,13 @@
 // the session only. A notification about a task is shown only while the reader can still see
 // that task (removed from the space → its notifications disappear from the feed too); one about
 // a chat thread (a scheduled task's result, a colleague's question in a shared chat) only while
-// the reader may still read that thread.
+// the reader may still read that thread; one about a space alone (a chat mention) only while the
+// reader is still a named member who can read that space.
 
 import { v } from "onebase/values";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertTaskCan, requireActive, threadAllows } from "./access";
+import { assertTaskCan, namedReader, requireActive, threadAllows } from "./access";
 
 export type NotifyKind =
   | "task.assigned"
@@ -17,6 +18,7 @@ export type NotifyKind =
   | "task.comment"
   | "task.returned"
   | "task.mention"
+  | "chat.mention"
   | "schedule.result"
   | "schedule.failed"
   | "schedule.stopped"
@@ -59,6 +61,11 @@ async function visibleFeed(ctx: QueryCtx, limit: number) {
       } catch {
         continue; // lost access (or the task is gone): drop it, fail-closed
       }
+    } else if (meta.spaceId && !meta.threadId) {
+      // About a space alone (a chat mention: no task, no thread): shown while I'm still a named member who can read it.
+      const sid = ctx.db.normalizeId("spaces", meta.spaceId);
+      const space = sid ? await ctx.db.get(sid) : null;
+      if (!space || !(await namedReader(ctx, me.userId, space))) continue;
     }
     if (meta.threadId) {
       const t = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", meta.threadId!)).unique();
@@ -77,6 +84,7 @@ async function visibleFeed(ctx: QueryCtx, limit: number) {
       title: r.title,
       body: r.body ?? null,
       taskId: meta.taskId ?? null,
+      spaceId: meta.spaceId ?? null,
       threadId: meta.threadId ?? null,
       scheduleId: meta.scheduleId ?? null,
       createdAt: r.createdAtMs,

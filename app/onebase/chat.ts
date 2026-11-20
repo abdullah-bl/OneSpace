@@ -22,9 +22,10 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { onCompleteArgs } from "onebase/components/work-queue";
-import { actorFor, assertCan, assertTaskCan, canBeAssignee, currentSpaceRole, Denied, isSharedThread, requireActive, requireUserId, roleAllows, taskRoleAllows, threadAllows, type ThreadUse } from "./access";
+import { actorFor, assertCan, assertTaskCan, assigneesOf, canBeAssignee, currentSpaceRole, Denied, isSharedThread, requireActive, requireUserId, roleAllows, taskRoleAllows, threadAllows, type ThreadUse } from "./access";
 import { agentTools, effectiveScope, groundingOf, MAX_STEPS_LIMIT, MIN_STEPS, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
+import { mentionInChat } from "./mentions";
 import { queueTurn } from "./lib/turns";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type DecisionLog, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { routeTurn, type Route } from "./decisions";
@@ -502,7 +503,7 @@ export const openTaskThread = mutation({
       threadId = (await ctx.components.chat.createThread({ userId: me.userId, title })).threadId;
       await ctx.db.insert("threadMeta", { threadId, userId: me.userId, title, scope, taskId: task._id, createdAt: now, lastAt: now });
     }
-    const works = taskRoleAllows(role, "manage") || (task.assigneeId === me.userId && canBeAssignee(role));
+    const works = taskRoleAllows(role, "manage") || (assigneesOf(task).includes(me.userId) && canBeAssignee(role));
     if (works && !task.threadId) await ctx.db.patch(task._id, { threadId, updatedAt: now });
     return threadId;
   },
@@ -739,8 +740,9 @@ async function assertIdle(ctx: MutationCtx, threadId: string) {
 }
 
 export const send = mutation({
-  args: { threadId: v.string(), text: v.string(), mentions: v.optional(v.array(mentionV)), skillId: v.optional(v.string()), effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))) },
-  handler: async (ctx, { threadId, text, mentions, skillId, effort }) => {
+  // people: "@person" in a shared space's chat (mentions.mentionInChat): they're told this message's text only.
+  args: { threadId: v.string(), text: v.string(), mentions: v.optional(v.array(mentionV)), people: v.optional(v.array(v.string())), skillId: v.optional(v.string()), effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))) },
+  handler: async (ctx, { threadId, text, mentions, people, skillId, effort }) => {
     const me = await requireActive(ctx);
     let meta = await useThread(ctx, me.userId, threadId, "write");
     const question = text.trim();
@@ -768,6 +770,7 @@ export const send = mutation({
     }
     const firstQuestion = meta.title === "محادثة جديدة";
     await ctx.db.patch(meta._id, { lastAt: now, ...(firstQuestion ? { title: question.replace(/\s+/g, " ").slice(0, 60), titlePending: true } : {}) });
+    await mentionInChat(ctx, me, meta, people ?? [], question);
     return turnId;
   },
 });
