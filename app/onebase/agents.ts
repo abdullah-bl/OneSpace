@@ -197,6 +197,7 @@ async function normalizeConfig(ctx: Ctx, workspaceId: Id<"workspaces">, c: Agent
     maxSteps: steps,
     visibility: c.visibility.kind === "spaces" ? { kind: "spaces", spaceIds } : workspaceWide,
     ...(c.grounding ? { grounding: c.grounding } : {}),
+    ...(c.lightRouting ? { lightRouting: true } : {}),
   };
 }
 

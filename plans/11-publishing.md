@@ -125,10 +125,10 @@ A form is not generated HTML. Model-written `<form>` + JS is exactly what the sa
    - **Always `noindex`:** there is no «searchable» option yet.
    - **`publish_output`:** for the public it is a tier-3 card.
 4. **`publish_output` for the assistant.** Built:
-   - always a card, with a form or a quiz bound to a list;
-   - quizzes marked by code (score and level), with choices shuffled per page;
-   - publishing refused if the intro page shows the answers;
+   - always a card, with a form bound to a list;
    - «جرّبها», a preview that saves nothing.
+
+   The quiz mode first built here (a key in the form, `markQuiz`, `seededShuffle`, `answersShown`) was replaced by general app building in plans/13. A quiz is now an app the assistant writes, tests and publishes, and marking is a handler it writes. Existing quiz publications are migrated to apps.
 
    No example skill: users build their own skills from their work, and the platform's part is the tools.
 5. **Later:**

@@ -194,6 +194,10 @@ export function aiEnv(ai: FakeAI, extra: Record<string, string> = {}): Record<st
     GPU_SLOTS: "2",
     CHAT_RATE_PER_MIN: "10000",
     CHAT_BURST: "10000",
+    // plans/12: no decision model unless a test sets one (decisions.test.ts). Nothing listens on
+    // port 9, so every decision falls back to the code, which is today's behaviour: these tests
+    // run that fallback path, and their request counts stay those of the main and fast models.
+    LLM_DECIDE_BASE_URL: "http://127.0.0.1:9/v1",
     ...extra,
   };
 }

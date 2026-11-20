@@ -239,7 +239,10 @@ export const markReady = internalMutation({
   args: fileArgs,
   handler: async (ctx, { fileId, version }) => {
     const file = await current(ctx, fileId, version);
-    if (file) await setState(ctx, file, { state: "ready", step: undefined, error: undefined });
+    if (!file) return;
+    await setState(ctx, file, { state: "ready", step: undefined, error: undefined });
+    // plans/12: screen the first chunks for text aimed at the assistant (a badge, never a block).
+    await ctx.scheduler.runAfter(0, internal.decisions.guardFile, { fileId, version });
   },
 });
 
@@ -303,6 +306,8 @@ export const statuses = query({
         ocr: row?.ocr ?? false,
         pages: row?.pages ?? null,
         chunks: row?.chunks ?? null,
+        // plans/12: «فيه نص موجّه للمساعد» (only for the version it was found in)
+        steering: row?.steering && row.guardedVersion === f.version ? row.steering.quote : null,
       });
     }
     return out;

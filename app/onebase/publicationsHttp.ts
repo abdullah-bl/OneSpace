@@ -15,6 +15,8 @@ import { appOrigin, publishOrigin } from "./publications";
 import { tableToMarkdown } from "./lib/docExport";
 import { renderAnswer } from "../src/markdown";
 import { ARTIFACT_CSP, BASE_STYLE, TABLE_TOOLS, stripMeta } from "../src/sandbox";
+import { bundlePage, type PageConfig } from "./lib/appFiles";
+import { runHandler } from "./lib/appHandler";
 
 const SLUG = /^[A-Za-z0-9_-]{12,40}$/;
 const COOKIE = "os_pub";
@@ -54,10 +56,10 @@ const PAGE_STYLE = `body{max-width:860px;margin:0 auto;padding:24px 16px 48px}
 .os-field input:not([type=checkbox]),.os-field select,.os-field textarea{width:100%;box-sizing:border-box;padding:8px 10px;border:1px solid #cbd5e1;border-radius:8px;font:inherit;background:#fff}
 .os-field textarea{min-height:72px}.os-req{color:#dc2626}.os-check{display:flex;align-items:center;gap:8px;font-weight:600;font-size:14px}
 .os-send{padding:9px 20px;border:0;border-radius:8px;background:#1d4ed8;color:#fff;font:inherit;font-weight:600;cursor:pointer}
-.os-score{font-size:18px;margin:0}.os-note{padding:12px 14px;border-radius:8px;margin:0 0 14px;font-size:14px}.os-ok{background:#dcfce7;color:#166534}.os-bad{background:#fef3c7;color:#92400e}`;
+.os-note{padding:12px 14px;border-radius:8px;margin:0 0 14px;font-size:14px}.os-ok{background:#dcfce7;color:#166534}.os-bad{background:#fef3c7;color:#92400e}`;
 
-type FormView = { fields: { key: string; name: string; type: string; options?: string[]; required: boolean }[]; state: string; token: string; thanks: string; result?: { score: number; max: number; level: string | null } | null; preview?: boolean } | null;
-type PreviewResult = { score: number; max: number; level: string | null } | "none" | null;
+type FormView = { fields: { key: string; name: string; type: string; options?: string[]; required: boolean }[]; state: string; token: string; thanks: string; preview?: boolean } | null;
+type PreviewResult = "none" | null;
 
 const NOTES: Record<string, string> = {
   required: "أكمل الحقول المطلوبة ثم أرسل.",
@@ -87,18 +89,12 @@ function formHtml(slug: string, form: FormView, note: string | null, previewed: 
   const head = `<h2>شاركنا رأيك</h2>`;
   if (form.preview) {
     const banner = `<p class="os-note os-bad">معاينة: هذه صفحتك كما يراها غيرك. ما ترسله هنا لا يُحفظ ولا يُحسب رداً.</p>`;
-    const got = previewed
-      ? previewed === "none"
-        ? `<p class="os-note os-ok">وصل الرد (للتجربة، ولم يُحفظ).</p>`
-        : `<p class="os-note os-ok">نتيجة التجربة (لم تُحفظ): <b>${previewed.score}</b> من ${previewed.max}${previewed.level ? ` · المستوى: <b>${esc(previewed.level)}</b>` : ""}</p>`
-      : "";
+    const got = previewed ? `<p class="os-note os-ok">وصل الرد (للتجربة، ولم يُحفظ).</p>` : "";
     const msg = note && NOTES[note] ? `<p class="os-note os-bad">${NOTES[note]}</p>` : "";
     return `<form class="os-form" method="post" action="/f/${esc(slug)}?preview=1">${head}${banner}${got}${msg}<input type="hidden" name="_t" value="${esc(form.token)}">${form.fields.map(fieldHtml).join("")}<button class="os-send" type="submit">أرسل (تجربة)</button></form>`;
   }
-  const r = form.result ?? (previewed && previewed !== "none" && !form.preview ? previewed : null);
-  const result = r ? `<p class="os-score">درجتك: <b>${r.score}</b> من ${r.max}${r.level ? ` · المستوى: <b>${esc(r.level)}</b>` : ""}</p>` : "";
-  if (note === "sent") return `<section class="os-form">${head}<p class="os-note os-ok">${esc(form.thanks)}</p>${result}</section>`;
-  if (form.state !== "open") return `<section class="os-form">${head}<p class="os-note os-bad">${NOTES[form.state]}</p>${form.state === "answered" ? result : ""}</section>`;
+  if (note === "sent") return `<section class="os-form">${head}<p class="os-note os-ok">${esc(form.thanks)}</p></section>`;
+  if (form.state !== "open") return `<section class="os-form">${head}<p class="os-note os-bad">${NOTES[form.state]}</p></section>`;
   const msg = note && NOTES[note] ? `<p class="os-note os-bad">${NOTES[note]}</p>` : "";
   return `<form class="os-form" method="post" action="/f/${esc(slug)}">${head}${msg}<input type="hidden" name="_t" value="${esc(form.token)}">${form.fields.map(fieldHtml).join("")}<button class="os-send" type="submit">أرسل</button></form>`;
 }
@@ -108,7 +104,77 @@ export function pageHtml(p: { title: string; kind: string; content: string; spac
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${esc(p.title)}</title><style>${BASE_STYLE}${PAGE_STYLE}</style></head><body>${body}${formHtml(slug, p.form ?? null, note, previewed)}<p class="os-pub-foot">نُشر من مساحة${p.spaceName ? ` · ${esc(p.spaceName)}` : ""}</p><script>${TABLE_TOOLS}</script></body></html>`;
 }
 
+function appResponse(origin: string, files: Record<string, string>, cfg: PageConfig, title: string, spaceName: string, isPublic: boolean) {
+  const { html, csp } = bundlePage(files, cfg, { title, footer: `${cfg.test ? "تجربة: ما يُرسل هنا لا يُحفظ · " : ""}نُشر من مساحة${spaceName ? ` · ${spaceName}` : ""}`, origin });
+  return new Response(html, {
+    headers: {
+      "Content-Type": "text/html; charset=utf-8",
+      "Content-Security-Policy": csp,
+      "X-Content-Type-Options": "nosniff",
+      "Referrer-Policy": "no-referrer",
+      "Cache-Control": isPublic ? "no-cache" : "private, no-store",
+      "X-Robots-Tag": "noindex, nofollow",
+      "Cross-Origin-Opener-Policy": "same-origin",
+    },
+  });
+}
+
+/** The data API's answers: JSON any (opaque, sandboxed) page may read; nothing is sent with credentials. */
+const apiJson = (body: unknown, status = 200) =>
+  new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json; charset=utf-8", "Access-Control-Allow-Origin": "*", "Cache-Control": "no-store", "X-Content-Type-Options": "nosniff" } });
+
 export function registerPublicationRoutes(http: HttpRouter) {
+  // A test link (plans/13 §4): a draft app, or a publication's «جرّبها», with every write dry-run.
+  http.route({
+    pathPrefix: "/t/",
+    method: "GET",
+    handler: httpAction(async (ctx, request) => {
+      const origin = publishOrigin();
+      if (!origin || requestHost(request) !== new URL(origin).host) return notFound();
+      const token = new URL(request.url).pathname.slice(3).replace(/\/+$/, "");
+      if (!/^[A-Za-z0-9_-]{20,80}$/.test(token)) return notFound();
+      const t = await ctx.runQuery(internal.apps.testPage, { token });
+      if (!t) return new Response("انتهت صلاحية رابط التجربة.", { status: 410, headers: { "Content-Type": "text/plain; charset=utf-8", "Cache-Control": "no-store" } });
+      return appResponse(origin, t.files, { api: `${origin}/a/test`, token, visitor: t.visitor, lists: t.lists, test: true }, t.title, "", false);
+    }),
+  });
+
+  // An app's data API (plans/13 §2–3): append, mine, stats, call. The body is text/plain JSON (no preflight).
+  http.route({
+    pathPrefix: "/a/",
+    method: "POST",
+    handler: httpAction(async (ctx, request) => {
+      const origin = publishOrigin();
+      if (!origin || requestHost(request) !== new URL(origin).host) return notFound();
+      const target = new URL(request.url).pathname.slice(3).replace(/\/+$/, "");
+      if (target !== "test" && !SLUG.test(target)) return notFound();
+      if (Number(request.headers.get("content-length") ?? 0) > 64 * 1024) return apiJson({ ok: false, error: "الطلب أكبر من المسموح" }, 413);
+      let body: any;
+      try {
+        const text = await request.text();
+        if (text.length > 64 * 1024) return apiJson({ ok: false, error: "الطلب أكبر من المسموح" }, 413);
+        body = JSON.parse(text);
+      } catch {
+        return apiJson({ ok: false, error: "طلب غير صالح" }, 400);
+      }
+      const token = String(body?.t ?? "").slice(0, 200);
+      const op = String(body?.op ?? "");
+      const ip = clientIp(request);
+      if (op === "call") {
+        const handler = String(body?.handler ?? "").slice(0, 40);
+        if (!/^[A-Za-z][A-Za-z0-9_]*$/.test(handler)) return apiJson({ ok: false, error: "اسم معالج غير صالح" }, 400);
+        const start = await ctx.runMutation(internal.apps.handlerStart, { target, token, ip, handler });
+        if (!start.ok) return apiJson({ ok: false, error: start.error }, start.status);
+        const outcome = await runHandler(start.files, handler, { payload: body?.payload ?? null, visitor: start.visitor, test: start.test });
+        const r = await ctx.runMutation(internal.apps.handlerFinish, { target, token, handler, payload: body?.payload ?? null, outcome });
+        return r.ok ? apiJson({ ok: true, value: r.value }) : apiJson({ ok: false, error: r.error }, r.status);
+      }
+      if (op !== "append" && op !== "mine" && op !== "stats") return apiJson({ ok: false, error: `عملية غير معروفة: ${op}` }, 400);
+      const r = await ctx.runMutation(internal.apps.apiData, { target, token, ip, op, list: String(body?.list ?? "").slice(0, 40), ...(op === "append" ? { row: body?.row && typeof body.row === "object" ? body.row : {} } : {}) });
+      return r.ok ? apiJson({ ok: true, value: r.value }) : apiJson({ ok: false, error: r.error }, r.status);
+    }),
+  });
+
   http.route({
     pathPrefix: "/p/",
     method: "GET",
@@ -152,11 +218,14 @@ export function registerPublicationRoutes(http: HttpRouter) {
         }
       }
       if (!page) return toApp();
+      if ("app" in page && page.app) {
+        // An app (plans/13): one bundled document, its scripts by hash, its only connection its own API.
+        const a = page.app;
+        return appResponse(origin, a.files, { api: `${origin}/a/${a.test ? "test" : slug}`, token: a.token, visitor: a.visitor, lists: a.lists, test: a.test }, page.title, page.spaceName, isPublic);
+      }
       const note = url.searchParams.get("sent") ? "sent" : url.searchParams.get("err");
-      // A preview's result comes back in the URL: it is the previewer's own, and nothing was saved.
-      const ps = url.searchParams.get("ps");
-      const previewed: PreviewResult = ps === "none" ? "none" : ps && /^\d+(\.\d+)?$/.test(ps) ? { score: Number(ps), max: Number(url.searchParams.get("pm") ?? 0), level: (url.searchParams.get("pl") ?? "").slice(0, 60) || null } : null;
-      return new Response(pageHtml(page, slug, note && /^[a-z]{3,12}$/.test(note) ? note : null, previewed), {
+      const previewed: PreviewResult = url.searchParams.get("ps") === "none" ? "none" : null;
+      return new Response(pageHtml(page as Parameters<typeof pageHtml>[0], slug, note && /^[a-z]{3,12}$/.test(note) ? note : null, previewed), {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
           "Content-Security-Policy": pageCsp(origin),
@@ -199,7 +268,7 @@ export function registerPublicationRoutes(http: HttpRouter) {
         if (pr !== "gone") {
           if (typeof pr === "string") to = `/p/${slug}?err=${pr}`;
           else {
-            to = `/p/${slug}?sent=1${pr ? `&ps=${pr.score}&pm=${pr.max}${pr.level ? `&pl=${encodeURIComponent(pr.level)}` : ""}` : ""}`;
+            to = `/p/${slug}?sent=1`;
             setCookie = `${doneCookie(slug)}=1; Path=/; Max-Age=31536000; SameSite=Lax${origin.startsWith("https:") ? "; Secure" : ""}`;
           }
           return new Response(null, { status: 303, headers: { Location: to, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer", ...(setCookie ? { "Set-Cookie": setCookie } : {}) } });
@@ -207,8 +276,7 @@ export function registerPublicationRoutes(http: HttpRouter) {
       }
       if (r === "expired") to = `${app}/#/open/${slug}`;
       else if (typeof r === "string") to = `/p/${slug}?${preview ? "preview=1&" : ""}err=${r}`;
-      else if (r && "previewed" in r) to = `/p/${slug}?preview=1&ps=none`;
-      else if (r) to = `/p/${slug}?preview=1&ps=${r.score}&pm=${r.max}${r.level ? `&pl=${encodeURIComponent(r.level)}` : ""}`;
+      else if (r) to = `/p/${slug}?preview=1&ps=none`;
       else to = `/p/${slug}?sent=1`;
       return new Response(null, { status: 303, headers: { Location: to, "Cache-Control": "no-store", "Referrer-Policy": "no-referrer" } });
     }),

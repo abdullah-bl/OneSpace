@@ -15,11 +15,11 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalMutation, internalQuery, mutation, query } from "./_generated/server";
 import { requireAdmin, requireUserId, actorFor } from "./access";
-import { embedConfigFromDb, embeddingSignature, ensureEmbeddingIndex, envEmbed, envTargets, GEMMA_PREFIXES, INDEX_DIMENSIONS, setAiOverrides, type Overrides, type RoleName } from "./ai";
+import { decideFromEnv, embedConfigFromDb, embeddingSignature, ensureEmbeddingIndex, envEmbed, envTargets, GEMMA_PREFIXES, INDEX_DIMENSIONS, setAiOverrides, type DecisionSwitches, type Overrides, type RoleName } from "./ai";
 import { writeAudit } from "./audit";
 import { scheduleIngest } from "./ingest";
 
-const ROLES: RoleName[] = ["main", "fast", "vision"];
+const ROLES: RoleName[] = ["main", "fast", "vision", "decide"];
 type RoleChoice = { providerId: Id<"aiProviders">; model: string };
 type EmbedChoice = RoleChoice & { sendDimensions?: boolean; queryPrefix?: string; docPrefix?: string };
 type Roles = Partial<Record<RoleName, RoleChoice>> & { embed?: EmbedChoice };
@@ -34,6 +34,12 @@ export function cleanBaseUrl(raw: string): string {
   if (u.protocol !== "http:" && u.protocol !== "https:") throw new OneBaseError("العنوان يجب أن يبدأ بـ http أو https");
   if (u.username || u.password) throw new OneBaseError("ضع المفتاح في حقل المفتاح، لا في العنوان");
   return u.toString().replace(/\/+$/, "");
+}
+
+/** The decision switches (plans/12): aiSettings "decisions"; missing = on. */
+async function readDecisions(ctx: { db: any }): Promise<DecisionSwitches> {
+  const row = await ctx.db.query("aiSettings").withIndex("by_key", (q: any) => q.eq("key", "decisions")).unique();
+  return (row?.value as DecisionSwitches) ?? {};
 }
 
 async function readRoles(ctx: { db: any }): Promise<Roles> {
@@ -51,13 +57,33 @@ export const list = query({
     await requireAdmin(ctx);
     const providers = await ctx.db.query("aiProviders").collect();
     const roles = await readRoles(ctx);
+    const decisionsRow = await readDecisions(ctx);
     const env = envTargets();
     return {
       providers: providers.map(view),
       roles: Object.fromEntries(ROLES.map((r) => [r, roles[r] ?? null])) as Record<RoleName, RoleChoice | null>,
       env: Object.fromEntries(ROLES.map((r) => [r, { configured: !!env[r].baseUrl, model: env[r].model, host: env[r].baseUrl ? new URL(env[r].baseUrl!).host : null }])) as Record<RoleName, { configured: boolean; model: string; host: string | null }>,
       embed: await embedStatus(ctx, roles),
+      // An unset decision model is the fast one (unless the environment names its own server).
+      decideFollowsFast: !roles.decide && !decideFromEnv(),
+      decisions: (() => {
+        const d = decisionsRow;
+        return { route: d.route !== false, cite: d.cite !== false, guard: d.guard !== false };
+      })(),
     };
+  },
+});
+
+/** Turns one decision (plans/12) on or off; off returns it to the code it replaced. */
+export const setDecision = mutation({
+  args: { kind: v.union(v.literal("route"), v.literal("cite"), v.literal("guard")), on: v.boolean() },
+  handler: async (ctx, { kind, on }) => {
+    const me = await requireAdmin(ctx);
+    const value = { ...(await readDecisions(ctx)), [kind]: on };
+    const row = await ctx.db.query("aiSettings").withIndex("by_key", (q) => q.eq("key", "decisions")).unique();
+    if (row) await ctx.db.patch(row._id, { value, updatedAt: Date.now() });
+    else await ctx.db.insert("aiSettings", { key: "decisions", value, updatedAt: Date.now() });
+    await writeAudit(ctx, { userId: me.userId, action: "provider.decision", resourceType: "aiSettings", resourceId: kind, detail: { kind, on } });
   },
 });
 
@@ -115,7 +141,7 @@ async function embedStatus(ctx: { db: any }, roles: Roles) {
 
 /** Points a role at a provider's model, or back at the environment (providerId null). */
 export const setRole = mutation({
-  args: { role: v.union(v.literal("main"), v.literal("fast"), v.literal("vision")), providerId: v.union(v.string(), v.null()), model: v.optional(v.string()) },
+  args: { role: v.union(v.literal("main"), v.literal("fast"), v.literal("vision"), v.literal("decide")), providerId: v.union(v.string(), v.null()), model: v.optional(v.string()) },
   handler: async (ctx, { role, providerId, model }) => {
     const me = await requireAdmin(ctx);
     const roles = await readRoles(ctx);
@@ -142,7 +168,7 @@ export const resolved = internalQuery({
   args: {},
   handler: async (ctx): Promise<Overrides> => {
     const roles = await readRoles(ctx);
-    const out: Overrides = {};
+    const out: Overrides = { decisions: await readDecisions(ctx) };
     if (roles.embed) {
       const p = await ctx.db.get(roles.embed.providerId);
       if (p?.enabled) out.embed = await embedConfigFromDb(ctx.db);

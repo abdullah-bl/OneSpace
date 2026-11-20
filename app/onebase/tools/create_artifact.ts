@@ -20,8 +20,8 @@ export const create_artifact: AppTool<Args> = {
     "make a table output (or an HTML page with a <table>) — never paste page code into the chat. For a whole spreadsheet, use run_analysis to write the HTML/CSV to /output. " +
     "List the files/record sets/artifacts it was built from in `sources`; it is saved in their space (or the user's personal space). " +
     "Outputs are not official documents: certificates are only produced with fill_template. " +
-    "Anything people must answer or fill in (a quiz, placement test, survey, registration, feedback) is NOT an HTML page with inputs or buttons (they don't work): " +
-    "make a list of the questions (create_list), this output as the intro page only, then publish_output with a form (and quiz key) bound to that list.",
+    "Anything people must answer, fill in, choose or compute (a quiz, placement test, survey, registration, calculator) is NOT an output: its scripts don't run here. " +
+    "Build it as an app with write_app (it runs its own JavaScript and server-side handlers), test it with test_app, then publish_output.",
   requiresConfirmation: true,
   parameters: {
     type: "object",

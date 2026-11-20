@@ -237,6 +237,7 @@ is loaded, so they must be in the server's **process** environment at start-up.
 |---|---|---|
 | `LLM_BASE_URL`, `LLM_MODEL`, `LLM_API_KEY` | `http://127.0.0.1:8401/v1`, `qwen3.8-27b` | answers, tools, OCR (mmproj) |
 | `LLM_FAST_BASE_URL`, `LLM_FAST_MODEL` | `http://127.0.0.1:8402/v1`, `lfm3-1.7b` | follow-up rewriting (JSON-schema constrained) |
+| `LLM_DECIDE_BASE_URL`, `LLM_DECIDE_MODEL` | unset → the fast model | decision model (plans/12): routing a turn, checking citations, the guard on outside text. A decision slower than `LLM_DECIDE_TIMEOUT_MS` (1500) or with bad JSON falls back to the code |
 | `EMBED_BASE_URL`, `EMBED_MODEL`, `EMBED_DIMENSIONS` | `http://127.0.0.1:8403/v1`, `embeddinggemma-2`, `768` | measured: 768 |
 | `EMBED_QUERY_PREFIX`, `EMBED_DOC_PREFIX` | defaults: `task: search result \| query: ` / `title: {title} \| text: ` ({title} = document name) | set to empty to turn off |
 | `RERANK_BASE_URL`, `RERANK_MODEL` | `http://127.0.0.1:8404/v1`, `qwen3-reranker-0.6b` | optional; unset = no rerank |

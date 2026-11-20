@@ -1,6 +1,7 @@
-// Agent tool (plans/11 step 4): publishes an output at a fixed link (its space, or the whole
-// workspace), optionally with a form under it whose replies become rows of a list, or a quiz that
-// code marks against a key (score and level written to the list). Always a card the user confirms.
+// Agent tool (plans/11 step 4, plans/13): publishes an output at a fixed link (its space, the whole
+// workspace, or the public). An app publishes with the lists it may use (its grants); a plain page
+// may carry a declared form whose replies become rows of a list. Always a card the user confirms:
+// `prepare` pins the version and puts the app's grants on the card, so what is approved goes live.
 
 import { internal } from "../_generated/api";
 import { toolErrorText } from "./errors";
@@ -9,7 +10,10 @@ import type { AppTool, ToolContext, ToolResult } from "./types";
 type Args = {
   artifactId: string;
   audience?: "space" | "workspace" | "public";
-  form?: { listId: string; questions?: string[]; required?: boolean; onePerReader?: boolean; thanks?: string; quiz?: { answers: Record<string, string>; points?: number; levels?: { min: number; label: string }[]; showResult?: boolean } };
+  form?: { listId: string; questions?: string[]; required?: boolean; onePerReader?: boolean; thanks?: string };
+  /** Set by prepare (not the model): the version on the card, and the app's grants in words. */
+  version?: number;
+  grants?: string[];
 };
 
 export const publish_output: AppTool<Args> = {
@@ -17,14 +21,10 @@ export const publish_output: AppTool<Args> = {
   label: "ينشر برابط…",
   requiresConfirmation: true,
   description:
-    "Publishes an output (from create_artifact) at a fixed link: audience \"space\" (the output's space) or \"workspace\" (every employee), who open it with their account; " +
-    "or \"public\" (anyone with the link, no sign-in) only when the user asks for people outside the organisation and the admin allows it — never for personal or sensitive data. " +
-    "Published pages never run scripts, so interactive buttons written in HTML do nothing: anything people ANSWER (a survey, registration, feedback, a quiz or placement test) is done with a form: " +
-    "1) create_list with one column per question (select with the options for multiple choice, text for open answers), 2) create_artifact with the intro/instructions page (no questions or inputs in it), " +
-    "3) publish_output with form.listId = that list. Each reply becomes a row of the list, so the user sees every answer and the assistant can read them later (read_list). " +
-    "For a quiz or placement test add form.quiz: answers = { column name: correct option }, optional points per question, optional levels [{min, label}] (the level is the highest band reached), " +
-    "showResult (default true) shows the taker their score. Marking is done by code; the score and level are written to the list. " +
-    "Name columns exactly as in the list. The intro page must never show the answers or an answer key (takers see it): keep the key only in form.quiz and tell the user in chat. " +
+    "Publishes an output or an app (artifactId = its id / appId) at a fixed link: audience \"space\" (the output's space) or \"workspace\" (every employee), who open it with their account; " +
+    "or \"public\" (anyone with the link, no sign-in) only when the user asks for people outside the organisation (or e.g. students without accounts) and the admin allows it — never for personal or sensitive data. " +
+    "An app (write_app) publishes with exactly the list grants it declares; the user sees them on the card. Test an app with test_app before publishing it. " +
+    "For a simple reply form under a static page you may pass form.listId (each reply becomes a row of that list); anything interactive, marked, computed or validated is an app. " +
     "Never send people to outside services (Google Forms, GitHub Pages) for this.",
   parameters: {
     type: "object",
@@ -43,51 +43,36 @@ export const publish_output: AppTool<Args> = {
           required: { type: "boolean" },
           onePerReader: { type: "boolean" },
           thanks: { type: "string" },
-          quiz: {
-            type: "object",
-            additionalProperties: false,
-            required: ["answers"],
-            properties: {
-              answers: { type: "object", description: "{ column name: correct option text }" },
-              points: { type: "number" },
-              levels: { type: "array", items: { type: "object", additionalProperties: false, required: ["min", "label"], properties: { min: { type: "number" }, label: { type: "string" } } } },
-              showResult: { type: "boolean" },
-            },
-          },
         },
       },
     },
   },
+  async prepare(t: ToolContext, a: Args): Promise<Args> {
+    const r = await t.ctx.runQuery(internal.publications.publishPreview, { userId: t.userId, artifactId: String(a?.artifactId ?? "") });
+    if (!r) return { ...a, version: undefined, grants: undefined };
+    return { ...a, version: r.version, ...(r.grants ? { grants: r.grants } : { grants: undefined }) };
+  },
   async run(t: ToolContext, a: Args): Promise<ToolResult> {
     const f = a?.form;
-    let r: { url: string; state: "live" | "pending"; spaceId: string; note: string };
+    let r: { url: string; state: "live" | "pending"; spaceId: string; note: string; version: number };
     try {
       r = await t.ctx.runMutation(internal.publications.publishFromTool, {
-      userId: t.userId,
-      scopeSpaceIds: t.scopeSpaceIds as string[],
-      artifactId: String(a?.artifactId ?? ""),
-      audience: a?.audience === "workspace" || a?.audience === "public" ? a.audience : "space",
-      ...(f && f.listId
-        ? {
-            form: {
-              listId: String(f.listId),
-              ...(Array.isArray(f.questions) ? { questions: f.questions.map(String).slice(0, 100) } : {}),
-              ...(typeof f.required === "boolean" ? { required: f.required } : {}),
-              ...(typeof f.onePerReader === "boolean" ? { onePerReader: f.onePerReader } : {}),
-              ...(f.thanks ? { thanks: String(f.thanks).slice(0, 500) } : {}),
-              ...(f.quiz && typeof f.quiz.answers === "object"
-                ? {
-                    quiz: {
-                      answers: Object.fromEntries(Object.entries(f.quiz.answers).map(([k, val]) => [String(k), String(val)])),
-                      ...(typeof f.quiz.points === "number" ? { points: f.quiz.points } : {}),
-                      ...(Array.isArray(f.quiz.levels) ? { levels: f.quiz.levels.filter((l) => l && typeof l === "object").map((l) => ({ min: Number(l.min) || 0, label: String(l.label ?? "") })) } : {}),
-                      ...(typeof f.quiz.showResult === "boolean" ? { showResult: f.quiz.showResult } : {}),
-                    },
-                  }
-                : {}),
-            },
-          }
-        : {}),
+        userId: t.userId,
+        scopeSpaceIds: t.scopeSpaceIds as string[],
+        artifactId: String(a?.artifactId ?? ""),
+        audience: a?.audience === "workspace" || a?.audience === "public" ? a.audience : "space",
+        ...(typeof a?.version === "number" ? { version: a.version } : {}),
+        ...(f && f.listId
+          ? {
+              form: {
+                listId: String(f.listId),
+                ...(Array.isArray(f.questions) ? { questions: f.questions.map(String).slice(0, 100) } : {}),
+                ...(typeof f.required === "boolean" ? { required: f.required } : {}),
+                ...(typeof f.onePerReader === "boolean" ? { onePerReader: f.onePerReader } : {}),
+                ...(f.thanks ? { thanks: String(f.thanks).slice(0, 500) } : {}),
+              },
+            }
+          : {}),
       });
     } catch (e) {
       // Nothing was saved (the mutation rolled back); the model gets the reason to fix and retry.
@@ -98,8 +83,8 @@ export const publish_output: AppTool<Args> = {
     return {
       content:
         `${head}${r.note} الرابط: ${r.url}\n` +
-        "اشرح للمستخدم في سطرين: يرسل الرابط لمن يريد (يفتحه بحسابه)، ويجرّب الصفحة بنفسه من زر «جرّبها» في البطاقة (ما يرسله فيها لا يُحفظ)، ويرى الردود" +
-        (f?.listId ? ` في القائمة (زر «الردود»، أو [القائمة](#/list/${f.listId}))` : "") +
+        "اشرح للمستخدم في سطرين: يرسل الرابط لمن يريد، ويجرّب الصفحة بنفسه من زر «جرّبها» في البطاقة (ما يرسله فيها لا يُحفظ)، ويرى النتائج" +
+        (f?.listId ? ` في القائمة ([القائمة](#/list/${f.listId}))` : " في قائمة التطبيق") +
         " وفي «منشوراتي». لا تعِد كتابة الأسئلة أو الإجابات في ردّك.",
       display: `${head}${r.note} ${r.url}`,
       spaceIds: [r.spaceId],

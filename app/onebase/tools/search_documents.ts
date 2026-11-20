@@ -26,7 +26,7 @@ export const searchDocumentsTool: AppTool<{ query: string; spaces?: string[] }> 
     const wanted = Array.isArray(args?.spaces) ? args.spaces.map(String) : [];
     const spaceIds = wanted.length ? t.scopeSpaceIds.filter((s) => wanted.includes(s)) : t.scopeSpaceIds;
     const r = await searchDocuments(t.ctx, { userId: t.userId, spaceIds, fileIds: t.scopeFileIds, query });
-    const citations: Citation[] = r.hits.map((h) => ({ fileId: h.fileId, fileName: h.fileName, page: h.page, section: h.section, quote: h.text }));
+    const citations: Citation[] = r.hits.map((h) => ({ fileId: h.fileId, fileName: h.fileName, page: h.page, section: h.section, quote: h.text, ...(h.steering ? { steering: true } : {}) }));
     return {
       content: citations.length ? `وُجد ${citations.length} مقطعاً مرتبطاً، نصوصها أدناه مرقّمة كمصادر.` : "لم يُعثر على مقاطع مرتبطة في المستندات المتاحة.",
       citations,

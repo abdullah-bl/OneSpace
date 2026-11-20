@@ -11,9 +11,11 @@ import { PLATFORM_COVERED } from "./platform.coverage";
 import { MEMORY_COVERED } from "./memory.coverage";
 import { LISTS_COVERED } from "./lists.coverage";
 import { PUBLICATIONS_COVERED } from "./publications.coverage";
+import { APPS_COVERED } from "./apps.coverage";
 import { PHASE2_COVERED } from "./phase2-covered";
 import { PHASE6_COVERED } from "./phase6.coverage";
 import { UX_COVERED } from "./ux.coverage";
+import { DECISIONS_COVERED } from "./decisions.coverage";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -323,7 +325,9 @@ describe("workspace-level functions", () => {
       ...MEMORY_COVERED, // checked in memory.test.ts
       ...LISTS_COVERED, // checked in lists.test.ts
       ...PUBLICATIONS_COVERED, // checked in publications.test.ts
+      ...APPS_COVERED, // checked in apps.test.ts
       ...PLATFORM_COVERED, // checked in platform.test.ts
+      ...DECISIONS_COVERED, // checked in decisions.test.ts
     ]);
     expect(publicFns.filter((n) => !covered.has(n))).toEqual([]);
     // Nothing public writes or deletes audit rows, and no component function is exposed.
