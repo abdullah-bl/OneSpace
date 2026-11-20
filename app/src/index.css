@@ -143,6 +143,12 @@
   vertical-align: 2px; cursor: pointer; font-variant-numeric: tabular-nums;
 }
 .md .cite:hover { background: #dde1ff; }
+/* a long text previewed inside a card (an action's instructions): its own headings stay small */
+.md-compact { font-size: 13px; line-height: 1.75; }
+.md-compact h1, .md-compact h2, .md-compact h3, .md-compact h4 { font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+.md-compact > :first-child { margin-top: 0; }
+.md-compact p, .md-compact ul, .md-compact ol { margin: 4px 0; }
+
 /* plans/12: the citation check doubts this source (the answer text is unchanged) */
 .md .cite-unrelated { background: var(--color-warning-soft); color: var(--color-warning); }
 .md .cite-contradicts { background: var(--color-negative-soft); color: var(--color-negative); }
