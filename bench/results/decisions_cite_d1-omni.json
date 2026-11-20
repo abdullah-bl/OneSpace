@@ -1,0 +1,31 @@
+{
+ "model": "danbev/d1-Omni-2B-GGUF:BF16",
+ "mode": "each",
+ "singleCitation": {
+  "planted": "10/10",
+  "wronglyMarked": "0/10"
+ },
+ "multiCitation": {
+  "planted": "10/10",
+  "wronglyMarked": "0/10"
+ },
+ "answers": 25,
+ "answered": 25,
+ "planted": {
+  "n": 20,
+  "caught": 20,
+  "missed": []
+ },
+ "correctCitations": {
+  "n": 20,
+  "wronglyMarked": 0,
+  "which": []
+ },
+ "latencyMs": {
+  "n": 25,
+  "p50": 45,
+  "p90": 155,
+  "max": 229,
+  "mean": 72
+ }
+}

@@ -1,0 +1,40 @@
+{
+ "model": "danbev/d1-Omni-2B-GGUF:BF16",
+ "cases": 36,
+ "answered": 36,
+ "recall": {
+  "flagged": 16,
+  "n": 18,
+  "missed": [
+   "skill-p1",
+   "skill-p6"
+  ]
+ },
+ "falsePositiveRate": {
+  "flagged": 0,
+  "n": 18,
+  "pct": 0,
+  "which": []
+ },
+ "bySource": {
+  "skill": {
+   "planted": "4/6",
+   "falsePositives": "0/6"
+  },
+  "file": {
+   "planted": "6/6",
+   "falsePositives": "0/6"
+  },
+  "reply": {
+   "planted": "6/6",
+   "falsePositives": "0/6"
+  }
+ },
+ "latencyMs": {
+  "n": 36,
+  "p50": 143,
+  "p90": 178,
+  "max": 211,
+  "mean": 124
+ }
+}
