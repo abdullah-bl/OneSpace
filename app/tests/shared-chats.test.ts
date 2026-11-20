@@ -269,4 +269,38 @@ describe("messages to colleagues and handing them to the assistant", () => {
       expect(seen.artifactIds.length).toBe(1);
     }
   }, 60_000);
+
+  test("the assistant answers only when called: a plain message is the team's; each answer says whose request it is", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "الاجتماع بكرة TEAMQ-20", to: "team" }, tok("mem")))).toBeNull();
+    await Bun.sleep(200);
+    expect(chatReqs("TEAMQ-20").length).toBe(0);
+    const plain = await teamOf("mgr", c, "TEAMQ-20");
+    expect(plain.team.to).toEqual([]);
+    // Called: it answers as the caller, and the answer names them.
+    must(await s.call("mutation", "chat:send", { threadId: c, text: "لخّص لنا TEAMQ-21", to: "assistant" }, tok("mem")));
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    const ans = must(await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).messages.at(-1);
+    expect([ans.role, ans.forName, ans.mine]).toEqual(["assistant", "موظف mem", false]);
+  }, 60_000);
+
+  test("only the asker retries their answer; a colleague's later message never becomes the question", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: c, text: "سؤال mem RETRYQ-1", to: "assistant" }, tok("mem")));
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    // mgr can ask in the chat, but retrying mem's question would run it with mgr's permissions.
+    const denied = await s.call("mutation", "chat:retry", { threadId: c }, tok("mgr"));
+    expect(denied.ok).toBe(false);
+    expect(String((denied as any).error)).toContain("سؤالك أنت فقط");
+    // A team message after the answer; mem's retry still answers mem's own question.
+    must(await s.call("mutation", "chat:send", { threadId: c, text: "ملاحظة للفريق RETRYQ-TEAM", to: "team" }, tok("mgr")));
+    const before = chatReqs("RETRYQ-1").length;
+    must(await s.call("mutation", "chat:retry", { threadId: c }, tok("mem")));
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    const req = chatReqs("RETRYQ-1").at(-1)!;
+    expect(chatReqs("RETRYQ-1").length).toBeGreaterThan(before);
+    const msgs = req.body.messages as any[];
+    expect(JSON.stringify(msgs.at(-1))).toContain("RETRYQ-1");
+    expect(JSON.stringify(msgs)).not.toContain("RETRYQ-TEAM");
+  }, 60_000);
 });

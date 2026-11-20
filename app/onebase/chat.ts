@@ -596,7 +596,7 @@ export const messages = query({
         askedBy.set(mm.messageId, mm.userId);
         teamIds.push(...mm.team.to.map((t) => t.userId));
       }
-    const askers = shared ? await namesOf(ctx, [...askedBy.values(), ...teamIds]) : new Map<string, string>();
+    const askers = shared ? await namesOf(ctx, [...askedBy.values(), ...teamIds, ...[...metas.values()].map((mm) => mm.userId)]) : new Map<string, string>();
     for (const t of allTurns) {
       if (!t.userMessageId || !t.mentions?.length) continue;
       const list: { kind: "file" | "space"; name: string }[] = [];
@@ -666,6 +666,8 @@ export const messages = query({
           // plans/16: a message to colleagues (who it's for, what each did with it), or a question that hands one to the assistant.
           team: mm?.team ? { to: mm.team.to.map((t) => ({ userId: t.userId as string, name: askers.get(t.userId) ?? "زميل", state: t.state, mine: t.userId === me.userId })) } : null,
           handoffOf: mm?.handoffOf ?? null,
+          // plans/16: in a shared chat each answer says whose request it is (it ran with their permissions).
+          forName: shared && m.role === "assistant" && mm ? (askers.get(mm.userId) ?? null) : null,
         };
       });
     const last = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).order("desc").first();
@@ -873,15 +875,16 @@ export const send = mutation({
     const narrow = await checkMentions(ctx, me.userId, meta, mentions ?? []);
     meta = (await ctx.db.get(meta._id))!;
     // plans/16: in a shared chat, a message to colleagues is theirs, not a question for the assistant.
-    if (isSharedThread(meta) && people?.length && to !== "assistant") {
-      if (people.length > 20) throw new OneBaseError("إشارات كثيرة في رسالة واحدة");
-      const recipients = await teamRecipients(ctx, me.userId, meta, people);
-      if (!recipients.length) throw new OneBaseError("من ذكرتهم لا يرون هذه المحادثة");
+    // The app sends `to` in every shared chat: «team» unless @المساعد is in the message.
+    if (isSharedThread(meta) && (to === "team" || (to === undefined && people?.length))) {
+      if ((people?.length ?? 0) > 20) throw new OneBaseError("إشارات كثيرة في رسالة واحدة");
+      const recipients = people?.length ? await teamRecipients(ctx, me.userId, meta, people) : [];
+      if (people?.length && !recipients.length) throw new OneBaseError("من ذكرتهم لا يرون هذه المحادثة");
       const messageId = await ctx.components.chat.saveMessage({ threadId, role: "user", text: question });
       await ctx.db.insert("messageMeta", { messageId, threadId, userId: me.userId, citations: [], toolRuns: [], abstained: false, team: { to: recipients.map((userId) => ({ userId, state: "pending" as const })) } });
       const firstMessage = meta.title === "محادثة جديدة";
       await ctx.db.patch(meta._id, { lastAt: Date.now(), ...(firstMessage ? { title: question.replace(/\s+/g, " ").slice(0, 60) } : {}) });
-      await mentionInChat(ctx, me, meta, people, question);
+      if (people?.length) await mentionInChat(ctx, me, meta, people, question);
       return null;
     }
     const agent = await resolveAgent(ctx, me.userId, meta);
@@ -916,12 +919,15 @@ export const retry = mutation({
     const meta = await useThread(ctx, me.userId, threadId, "write");
     await assertIdle(ctx, threadId);
     const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const lastUser = page.page.filter((m) => m.role === "user" && m.text).at(-1);
-    if (!lastUser) throw new OneBaseError("لا يوجد سؤال لإعادته");
+    const prev = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).order("desc").first();
+    // plans/16: an answer belongs to whoever asked for it. Retrying someone else's question would
+    // run it again with my permissions, so only the asker retries; anyone else asks themselves.
+    if (prev && prev.userId !== me.userId) throw new OneBaseError("تعيد المحاولة على سؤالك أنت فقط؛ اسأل المساعد بنفسك إن أردت");
+    const question = prev?.userMessageId ? page.page.find((m) => m.id === prev.userMessageId) : page.page.filter((m) => m.role === "user" && m.text).at(-1);
+    if (!question?.text) throw new OneBaseError("لا يوجد سؤال لإعادته");
     const agent = await resolveAgent(ctx, me.userId, meta);
     if ("error" in agent) throw new OneBaseError(agent.error);
-    const prev = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).order("desc").first();
-    const turnId = await queueTurn(ctx, { threadId, userId: me.userId, text: lastUser.text!, agentId: agent.agentId, agentVersion: agent.version, mentions: prev?.mentions, saveUser: false, skipLimit: !!prev?.afterProposal, afterProposal: prev?.afterProposal, skillId: prev?.skillId, effort: prev?.effort });
+    const turnId = await queueTurn(ctx, { threadId, userId: me.userId, text: question.text, agentId: agent.agentId, agentVersion: agent.version, mentions: prev?.mentions, saveUser: false, userMessageId: prev?.userMessageId, handoffOf: prev?.handoffOf, skipLimit: !!prev?.afterProposal, afterProposal: prev?.afterProposal, skillId: prev?.skillId, effort: prev?.effort });
     await ctx.db.patch(meta._id, { lastAt: Date.now() });
     return turnId;
   },
@@ -1124,9 +1130,13 @@ export const turnContext = internalQuery({
     );
     const kept = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text);
     const msgs = kept.map((m) => ({ role: m.role as "user" | "assistant", text: m.text! + (notes.has(m.id) ? `\n(تفاصيل للنموذج: ${notes.get(m.id)})` : "") }));
+    // plans/16: the question is this turn's own message (a retry names it), never a colleague's
+    // message posted after it; messages between colleagues are never the question.
+    const teamMsgIds = new Set((await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect()).filter((x) => x.team).map((x) => x.messageId));
+    const ownIdx = turn.userMessageId ? kept.findIndex((m) => m.id === turn.userMessageId) : -1;
     // Shared chats: earlier questions carry their asker's name (the current one is named in the context).
     const withAsker = (from: number, to: number) => msgs.slice(from, to).map((m, i) => (askers.has(kept[from + i]!.id) ? { ...m, text: `[${askers.get(kept[from + i]!.id)}]: ${m.text}` } : m));
-    const lastUser = msgs.map((m) => m.role).lastIndexOf("user");
+    const lastUser = ownIdx >= 0 ? ownIdx : kept.map((m, i) => (m.role === "user" && !teamMsgIds.has(m.id) ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
     const sum = meta.summary && meta.summary.covered <= Math.max(0, lastUser) ? meta.summary : null;
     const covered = sum?.covered ?? 0;
     const modelRole = level.model === "fast" ? ("fast" as const) : agent.config.modelRole;
