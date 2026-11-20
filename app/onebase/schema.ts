@@ -620,6 +620,8 @@ export default defineSchema({
     apiKey: v.optional(v.string()),
     enabled: v.boolean(),
     models: v.array(v.string()), // from the last successful check
+    modelInfo: v.optional(v.array(v.object({ id: v.string(), kinds: v.array(v.string()) }))), // what each model can do, as far as the server says (lib/modelServers.ts)
+    flavor: v.optional(v.string()), // the kind of server: openrouter, ollama, lmstudio, llamacpp, vllm, openai
     lastCheck: v.optional(v.object({ ok: v.boolean(), at: v.number(), error: v.optional(v.string()) })),
     createdBy: v.id("users"),
     createdAt: v.number(),

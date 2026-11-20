@@ -128,6 +128,17 @@ describe("model providers", () => {
     expect(viaSecond.length).toBeGreaterThan(0);
     expect(viaSecond.every((x) => x.body.model === "fake")).toBe(true);
 
+    // «جرّب واحفظ»: tried with a short chat, saved only if it answered; a dead server is explained in Arabic.
+    must(await s.call("action", "providers:tryRole", { role: "fast", providerId: id, model: "fake" }, tok("admin")));
+    expect(must(await s.call("query", "providers:list", {}, tok("admin"))).roles.fast).toMatchObject({ model: "fake" });
+    must(await s.call("mutation", "providers:setRole", { role: "fast", providerId: null }, tok("admin")));
+    const dead = must(await s.call("mutation", "providers:save", { name: "متوقف", baseUrl: "http://127.0.0.1:9/v1", enabled: true }, tok("admin")));
+    const tried = await s.call("action", "providers:tryRole", { role: "fast", providerId: dead, model: "fake" }, tok("admin"));
+    expect(tried.ok).toBe(false);
+    expect(String((tried as any).error)).toContain("تعذّر الوصول إلى الخادم");
+    expect(must(await s.call("query", "providers:list", {}, tok("admin"))).roles.fast).toBeNull();
+    must(await s.call("mutation", "providers:remove", { providerId: dead }, tok("admin")));
+
     // Back to the environment.
     must(await s.call("mutation", "providers:setRole", { role: "main", providerId: null }, tok("admin")));
     must(await s.call("mutation", "providers:remove", { providerId: id }, tok("admin")));
@@ -322,6 +333,7 @@ describe("permission matrix: providers, data sources, overview, palette", () => 
       expect((await s.call("mutation", "providers:save", { name: "x", baseUrl: ai2.url, enabled: true }, tok(a))).ok).toBe(false);
       expect((await s.call("mutation", "providers:save", { providerId: pid, name: "x", baseUrl: "http://evil.example/v1", enabled: true }, tok(a))).ok).toBe(false);
       expect((await s.call("mutation", "providers:setRole", { role: "main", providerId: pid, model: "fake" }, tok(a))).ok).toBe(false);
+      expect((await s.call("action", "providers:tryRole", { role: "main", providerId: pid, model: "fake" }, tok(a))).ok).toBe(false);
       expect((await s.call("mutation", "providers:remove", { providerId: pid }, tok(a))).ok).toBe(false);
       expect((await s.call("action", "providers:check", { providerId: pid }, tok(a))).ok).toBe(false);
       expect((await s.call("action", "providers:setEmbedding", { providerId: pid, model: "x" }, tok(a))).ok).toBe(false);

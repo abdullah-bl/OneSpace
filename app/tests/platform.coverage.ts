@@ -8,6 +8,7 @@ export const PLATFORM_COVERED = [
   "providers:save",
   "providers:remove",
   "providers:setRole",
+  "providers:tryRole",
   "providers:check",
   "providers:setEmbedding",
   "providers:reindex",
