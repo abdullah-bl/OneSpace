@@ -6,9 +6,11 @@
 //    intersected with readable ∩ agent scope ∩ thread scope).
 //    In a chat that belongs to a shared space (threadMeta.spaceId), "@" also lists the space's
 //    named members: "tell a colleague what I'm working on". On send (chat.send → mentionInChat)
-//    each one gets a notification and a "الإشارات" row holding that one message's text only. The
-//    chat stays private: no thread id is stored or shown, never the answer, and the row opens the
-//    space, not the chat. The assistant answers the message as usual.
+//    each one gets a notification and a "الإشارات" row holding that one message's text only. A
+//    private chat stays private: no thread id is stored or shown, never the answer, and the row
+//    opens the space. A shared chat (plans/14) is linked: the row and the notification open the
+//    chat itself, while the reader can read it (made private later → the row opens the space).
+//    The assistant answers the message as usual.
 //  - In a task comment, "@" lists people: the task space's named members who can view the task.
 //    A mention notifies them and lands in their "الإشارات" list, shown only while they can still
 //    view the task (re-checked on every read, fail-closed). Mentioning someone who can't see the
@@ -20,7 +22,7 @@
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertCan, assertTaskCan, currentSpaceRole, Denied, namedReader, readableSpaceIds, requireActive, taskRoleAllows, type Actor } from "./access";
+import { assertCan, assertTaskCan, currentSpaceRole, Denied, isSharedThread, namedReader, readableSpaceIds, requireActive, taskRoleAllows, threadAllows, type Actor } from "./access";
 import { notify } from "./notifications";
 
 const norm = (s: string) => s.toLowerCase().replace(/[ً-ْـ]/g, "").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
@@ -97,8 +99,11 @@ export async function mentionInChat(ctx: MutationCtx, me: Actor, meta: Doc<"thre
   for (const raw of new Set(people)) {
     const uid = ctx.db.normalizeId("users", raw);
     if (!uid || uid === me.userId || !(await namedReader(ctx, uid, space))) continue;
-    await ctx.db.insert("mentions", { userId: uid, byId: me.userId, source: "chat", spaceId: space._id, excerpt, createdAt: now });
-    await notify(ctx, uid, { kind: "chat.mention", title: `أشار إليك ${by} في محادثة · ${space.name}`, body: preview, spaceId: space._id });
+    // A shared chat they can read is linked; a private one never is.
+    const threadId = isSharedThread(meta) && (await threadAllows(ctx, uid, meta, "read")) ? meta.threadId : undefined;
+    await ctx.db.insert("mentions", { userId: uid, byId: me.userId, source: "chat", spaceId: space._id, threadId, excerpt, createdAt: now });
+    const where = threadId ? `«${meta.title === "محادثة جديدة" ? text.replace(/\s+/g, " ").slice(0, 50) : meta.title}»` : "محادثة";
+    await notify(ctx, uid, { kind: "chat.mention", title: `أشار إليك ${by} في ${where} · ${space.name}`, body: preview, spaceId: space._id, ...(threadId ? { threadId } : {}) });
   }
 }
 
@@ -142,7 +147,17 @@ async function visibleMentions(ctx: QueryCtx, userId: Id<"users">, limit: number
       // A chat mention: shown while I'm still a named member who can read the space.
       const space = await ctx.db.get(r.spaceId);
       if (!space || !(await namedReader(ctx, userId, space))) continue;
-      out.push({ id: r._id, source: "chat" as const, taskId: null, taskTitle: null, spaceId: space._id, spaceName: space.name, by: await by(r.byId), excerpt: r.excerpt, createdAt: r.createdAt, read: !!r.readAt });
+      // A shared chat's mention opens the chat while I can read it; otherwise the space.
+      let threadId: string | null = null;
+      let threadTitle: string | null = null;
+      if (r.threadId) {
+        const t = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", r.threadId!)).unique();
+        if (t && isSharedThread(t) && (await threadAllows(ctx, userId, t, "read"))) {
+          threadId = t.threadId;
+          threadTitle = t.title;
+        }
+      }
+      out.push({ id: r._id, source: "chat" as const, taskId: null, taskTitle: null, threadId, threadTitle, spaceId: space._id, spaceName: space.name, by: await by(r.byId), excerpt: r.excerpt, createdAt: r.createdAt, read: !!r.readAt });
       continue;
     }
     let task: Doc<"tasks"> | null = null;
@@ -161,6 +176,8 @@ async function visibleMentions(ctx: QueryCtx, userId: Id<"users">, limit: number
       source: "task" as const,
       taskId: task._id,
       taskTitle: task.title,
+      threadId: null,
+      threadTitle: null,
       spaceId: task.spaceId,
       spaceName: space?.name ?? "",
       by: await by(r.byId),

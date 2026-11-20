@@ -52,6 +52,9 @@ export default defineComponents({
       publicView: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 30 },
       publicReply: { kind: "token bucket", rate: 4, period: MINUTE, capacity: 3 },
       publicReplyPerPage: { kind: "token bucket", rate: 120, period: MINUTE, capacity: 60 },
+      // Apps (plans/13): data-API calls from a public page per address, and from a signed-in reader (or a test).
+      appCall: { kind: "token bucket", rate: 30, period: MINUTE, capacity: 20 },
+      appCallUser: { kind: "token bucket", rate: 60, period: MINUTE, capacity: 40 },
     },
   }),
 });

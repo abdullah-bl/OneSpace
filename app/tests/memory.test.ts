@@ -26,7 +26,8 @@ afterAll(async () => {
 });
 
 async function ask(token: string, text: string, spaceId?: string) {
-  const t = must(await s.call("mutation", "chat:createThread", spaceId ? { spaceId } : {}, token));
+  // Private chats: a chat shared with a space leaves personal memory out (plans/14, shared-chats.test.ts).
+  const t = must(await s.call("mutation", "chat:createThread", spaceId ? { spaceId, shared: false } : {}, token));
   return await askIn(token, t, text);
 }
 async function askIn(token: string, threadId: string, text: string) {

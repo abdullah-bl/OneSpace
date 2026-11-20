@@ -9,6 +9,8 @@ const ACTION_LABELS: Record<string, string> = {
   "user.disable": "تعطيل موظف",
   "user.role": "تغيير دور في مساحة العمل",
   "space.create": "إنشاء مساحة",
+  "chat.share": "مشاركة محادثة أو إخفاؤها",
+  "chat.delete": "حذف محادثة زميل",
   "space.create_personal": "إنشاء مساحة خاصة",
   "space.update": "تعديل إعدادات مساحة",
   "member.add": "إضافة عضو",

@@ -1,6 +1,7 @@
 // "الإشارات": where colleagues mentioned me (mentions.ts): in a task comment (shown while I can
-// still see the task; opens the task) or in their chat of a shared space (only that message's
-// text, shown while I can still read the space; opens the space, never their private chat).
+// still see the task; opens the task) or in a chat of a shared space (only that message's text,
+// shown while I can still read the space; a shared chat I can read opens the chat itself, a
+// private one opens the space).
 
 import { useMutation, useQuery } from "onebase/react";
 import { api } from "./lib";
@@ -33,17 +34,17 @@ export function MentionsPage({ go }: { go: (path: string) => void }) {
               className="flex w-full items-start gap-3 border-b border-rule px-2 py-3 text-start hover:bg-sunken"
               onClick={() => {
                 if (!m.read) void markRead({ ids: [m.id] });
-                go(m.source === "chat" ? `/space/${m.spaceId}` : `/tasks/${m.taskId}`);
+                go(m.source === "task" ? `/tasks/${m.taskId}` : m.threadId ? `/chat/${m.threadId}` : `/space/${m.spaceId}`);
               }}
             >
               <span className={`mt-2 h-1.5 w-1.5 shrink-0 rounded-full ${m.read ? "bg-transparent" : "bg-ink"}`} aria-label={m.read ? undefined : "غير مقروءة"} />
               <span className="min-w-0 flex-1">
                 <span className={`block ${m.read ? "" : "font-medium"}`}>
-                  {m.source === "chat" ? <>{m.by ?? "زميل"} أشار إليك في محادثة</> : <>{m.by ?? "زميل"} أشار إليك في «{m.taskTitle}»</>}
+                  {m.source === "chat" ? <>{m.by ?? "زميل"} أشار إليك في {m.threadTitle ? `«${m.threadTitle}»` : "محادثة"}</> : <>{m.by ?? "زميل"} أشار إليك في «{m.taskTitle}»</>}
                 </span>
                 <span className="mt-0.5 block whitespace-pre-line text-sm text-ink">{m.excerpt}</span>
                 <span className="mt-0.5 flex items-center gap-1.5 text-xs text-muted">
-                  <span className="badge">{m.source === "chat" ? "محادثة" : "مهمة"}</span>
+                  <span className="badge">{m.source === "chat" ? (m.threadId ? "محادثة مشتركة" : "محادثة") : "مهمة"}</span>
                   {m.spaceName}
                 </span>
               </span>

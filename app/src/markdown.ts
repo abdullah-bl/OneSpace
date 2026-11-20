@@ -30,11 +30,19 @@ const md = new Marked({
 });
 
 /** Renders answer text to safe HTML. `cites` = the source numbers that exist (others stay plain text). */
-export function renderAnswer(text: string, cites: Set<number>): string {
+function citeChip(n: number, check?: "unrelated" | "contradicts") {
+  if (!check) return `<button type="button" class="cite" data-cite="${n}" aria-label="المصدر ${n}">${n}</button>`;
+  return `<button type="button" class="cite cite-${check}" data-cite="${n}" aria-label="المصدر ${n}: ${CITE_CHECK[check]}" title="${CITE_CHECK[check]}">${n}<span aria-hidden="true">؟</span></button>`;
+}
+
+/** plans/12: a citation the check doubted gets a mark on its chip (the text stays as written). */
+export const CITE_CHECK: Record<"unrelated" | "contradicts", string> = { unrelated: "المقطع لا يذكر هذا بوضوح", contradicts: "المقطع يقول خلاف هذا" };
+
+export function renderAnswer(text: string, cites: Set<number>, checks?: Map<number, "unrelated" | "contradicts">): string {
   const html = md.parse(text) as string;
   // Only touch text between tags, never attributes.
   return html.replace(/(^|>)([^<]+)/g, (_, open: string, body: string) =>
     open +
-    body.replace(/\[(\d{1,3})\]/g, (m, n: string) => (cites.has(Number(n)) ? `<button type="button" class="cite" data-cite="${n}" aria-label="المصدر ${n}">${n}</button>` : m)),
+    body.replace(/\[(\d{1,3})\]/g, (m, n: string) => (cites.has(Number(n)) ? citeChip(Number(n), checks?.get(Number(n))) : m)),
   );
 }

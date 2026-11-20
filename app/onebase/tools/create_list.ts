@@ -20,8 +20,8 @@ export const create_list: AppTool<Args> = {
     "rows: objects keyed by column name. Keep it lean: the columns the user needs, at most ~8. It is saved in the chat's space (or the user's personal space). " +
     "After it is made, give the user its link as a markdown link [title](#/list/<listId>) with a sentence or two; don't repeat its rows as a table in your answer (the list is the table). " +
     "For later changes, use update_list on the same list instead of making a new one. " +
-    "A list is also where a published form's replies go (publish_output): for a quiz or survey, one select column per multiple-choice question (options = the choices) and text columns for open answers; " +
-    "the score and level columns are added for a quiz automatically.",
+    "A list is also where an app's results go (write_app data grants) or a published form's replies: one column per value to keep (select with the options for a choice, number for a score, text for open answers), " +
+    "plus a person column «المرسل» when who sent it matters.",
   parameters: {
     type: "object",
     additionalProperties: false,

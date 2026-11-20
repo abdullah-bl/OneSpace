@@ -8,22 +8,22 @@
 // copied or retried. Write tools arrive as proposal cards ("نفّذ"); their outputs open in a side
 // panel. Threads opened from a task, test threads and scheduled-task threads use the same screen.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
 import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
 import { openSkillDraft } from "./SkillsView";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
-import { renderAnswer } from "./markdown";
+import { CITE_CHECK, renderAnswer } from "./markdown";
 
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
 // "person": a named member of this shared space's chat, told this one message (mentions.mentionInChat).
 type Mention = { kind: "file" | "space" | "agent" | "person"; id: string; name: string; spaceId?: string };
-type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string };
-type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
+type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
+type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean };
 type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
@@ -124,6 +124,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   const scrollRef = useRef<HTMLDivElement>(null);
   const homeSpace = threadId ? (data?.spaceId ?? null) : (spaceId ?? null);
   const space = homeSpace ? spaces.find((s) => s._id === homeSpace) : undefined;
+  // plans/14: a new chat in a shared space is shared with its members unless I make it private.
+  const canShareNew = !threadId && space?.kind === "shared" && space.canWrite;
+  const [newShared, setNewShared] = useState(true);
   const turn = data?.turn ?? null;
   const working = !!turn && (turn.state === "queued" || turn.state === "running");
   const agentId = threadId ? ((data?.agentId as string | null) ?? null) : draftAgent;
@@ -141,7 +144,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     setError("");
     try {
       let id = threadId;
-      if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace } : {}) })) as string;
+      if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace, shared: !!canShareNew && newShared } : {}) })) as string;
       const scope = mentions.filter((m): m is Mention & { kind: "file" | "space" } => m.kind === "file" || m.kind === "space");
       const people = mentions.filter((m) => m.kind === "person").map((m) => m.id);
       await send({ threadId: id, text, mentions: scope.map((m) => ({ kind: m.kind, id: m.id })), ...(people.length ? { people } : {}), ...(skill ? { skillId: skill.id } : {}), effort });
@@ -186,6 +189,11 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                 {data.task.title}
               </a>
             )}
+            {data?.shared && (
+              <span className="flex shrink-0 items-center gap-1 rounded bg-raised px-2 py-0.5 text-xs text-muted" title="يراها أعضاء المساحة ويسألون فيها">
+                <Icon name="users" size={13} /> مشتركة{data.ownerName ? ` · بدأها ${data.ownerName}` : ""}
+              </span>
+            )}
             {data?.scheduled && <span className="shrink-0 rounded px-2 py-0.5 text-xs text-muted bg-raised">مهمة مجدولة</span>}
             {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
@@ -195,7 +203,15 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                 <Icon name="memory" size={13} /> بلا ذاكرة
               </span>
             )}
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} noMemory={!!data?.noMemory} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            <ThreadMenu
+              threadId={threadId!}
+              title={data?.title ?? ""}
+              pinned={!!data?.pinned}
+              noMemory={!!data?.noMemory}
+              access={{ isOwner: data?.isOwner ?? true, shared: !!data?.shared, shareable: !!data?.shareable, canManage: !!data?.canManage }}
+              go={go}
+              onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")}
+            />
           </header>
         )}
         <div
@@ -211,25 +227,53 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               <div className="mb-6">
                 <h1 className="overflow-hidden pb-1 text-[clamp(28px,2.4vw+18px,44px)] leading-tight font-bold tracking-tight"><span key={title} className="block animate-mask">{title}</span></h1>
                 <p className="mt-2 text-muted">
-                  {space
+                  {canShareNew
+                    ? newShared
+                      ? "يراها أعضاء المساحة ويسألون فيها، وتعرف تعليمات المساحة وملفاتها. لا يدخلها شيء من ذاكرتك أو سجلاتك الخاصة."
+                      : "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
+                    : space
                     ? "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
                     : "بماذا أساعدك اليوم؟ اسأل عن أي شيء، أو اطلب كتابة أو ترجمة أو تلخيصاً. اكتب @ لتحدد ملفاً أو مساحة، و/ لمهاراتك."}
                 </p>
+                {canShareNew && (
+                  <div className="mt-3 inline-flex rounded-lg border border-line bg-surface p-0.5 text-sm" role="radiogroup" aria-label="من يرى المحادثة">
+                    {[
+                      { on: true, icon: "users" as const, label: "مشتركة مع المساحة" },
+                      { on: false, icon: "lock" as const, label: "خاصة بي" },
+                    ].map((o) => (
+                      <button
+                        key={o.label}
+                        role="radio"
+                        aria-checked={newShared === o.on}
+                        className={`flex h-8 items-center gap-1.5 rounded-md px-3 ${newShared === o.on ? "bg-active text-ink" : "text-muted hover:text-ink"}`}
+                        onClick={() => setNewShared(o.on)}
+                      >
+                        <Icon name={o.icon} size={14} /> {o.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {data?.agent?.error && <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">{data.agent.error}</div>}
             {messages.map((m) => (
-              <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+              <MessageView key={m.id} m={m} canWrite={data?.canWrite ?? true} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
-            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} />}
+            {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} shared={!!canShareNew && newShared} />}
           </div>
         </div>
         {!empty && (
           <div className="shrink-0 px-4 pb-4">
             <div className="mx-auto w-full max-w-[760px]">
               {error && <p className="mb-2 text-sm text-negative">{error}</p>}
-              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
+              {data && !data.canWrite ? (
+                <p className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-control p-4 text-center text-sm text-muted">
+                  <Icon name="eye" size={15} /> دورك في المساحة قارئ: تقرأ المحادثة ولا تسأل فيها.
+                </p>
+              ) : (
+              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} shared={!!data?.shared} />
+              )}
             </div>
           </div>
         )}
@@ -240,18 +284,53 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   );
 }
 
-function ThreadMenu({ threadId, title, pinned, noMemory, onDeleted, go }: { threadId: string; title: string; pinned: boolean; noMemory: boolean; onDeleted: () => void; go: (path: string) => void }) {
+type ThreadAccess = { isOwner: boolean; shared: boolean; shareable: boolean; canManage: boolean };
+
+function ThreadMenu({ threadId, title, pinned, noMemory, access, onDeleted, go }: { threadId: string; title: string; pinned: boolean; noMemory: boolean; access: ThreadAccess; onDeleted: () => void; go: (path: string) => void }) {
+  const setShared = useMutation(api.chat.setShared);
   const rename = useMutation(api.chat.rename);
   const setNoMemory = useMutation(api.chat.setNoMemory);
   const setPinned = useMutation(api.chat.setPinned);
-  const del = useMutation(api.chat.deleteThread);
+  const delThread = useMutation(api.chat.deleteThread);
   const draftSkill = useAction(api.skills.draftFromThread);
   const [drafting, setDrafting] = useState(false);
+  const share = async () => {
+    const ok = await ask("مشاركة المحادثة مع أعضاء المساحة؟ سيرون المحادثة كاملة من أولها ويسألون فيها.", { confirmLabel: "شارك" });
+    if (ok) await setShared({ threadId, shared: true }).catch((e) => void tell(errorText(e)));
+  };
+  const unshare = async () => {
+    const ok = await ask(access.isOwner ? "جعل المحادثة خاصة بك؟ لن يراها أعضاء المساحة بعد الآن." : "إخفاء المحادثة عن أعضاء المساحة؟ تبقى لمن بدأها وحده.", { confirmLabel: "اجعلها خاصة" });
+    if (ok) await setShared({ threadId, shared: false }).catch((e) => void tell(errorText(e)));
+  };
+  const del = () =>
+    void ask(access.shared ? "حذف هذه المحادثة نهائياً؟ تُحذف عند كل أعضاء المساحة." : "حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => {
+      if (ok) void delThread({ threadId }).then(onDeleted).catch((e) => void tell(errorText(e)));
+    });
+  // A colleague's shared chat: they can only make it private (a manager) or delete it.
+  if (!access.isOwner)
+    return access.canManage ? (
+      <Menu
+        label="خيارات المحادثة"
+        icon="dots"
+        items={[
+          { label: "إخفاؤها عن المساحة", icon: "lock", onSelect: () => void unshare() },
+          { label: "حذف المحادثة", danger: true, onSelect: del },
+        ]}
+      />
+    ) : null;
   return (
     <Menu
       label={drafting ? "يكتب مسودة المهارة…" : "خيارات المحادثة"}
       icon={drafting ? "clock" : "dots"}
       items={[
+        ...(access.shareable
+          ? [
+              access.shared
+                ? { label: "اجعلها خاصة بي", icon: "lock" as const, onSelect: () => void unshare() }
+                : { label: "شاركها مع أعضاء المساحة", icon: "users" as const, hint: "يرونها كاملة ويسألون فيها", onSelect: () => void share() },
+              "divider" as const,
+            ]
+          : []),
         {
           label: "اصنع مهارة من المحادثة",
           icon: "bot",
@@ -281,7 +360,7 @@ function ThreadMenu({ threadId, title, pinned, noMemory, onDeleted, go }: { thre
               if (t) void rename({ threadId, title: t });
             }),
         },
-        { label: "حذف المحادثة", danger: true, onSelect: () => void ask("حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void del({ threadId }).then(onDeleted); })},
+        { label: "حذف المحادثة", danger: true, onSelect: del },
       ]}
     />
   );
@@ -319,6 +398,7 @@ function Composer(props: {
   onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null) => Promise<boolean>;
   initial?: { mentions: Mention[]; text?: string; skill?: SkillRef } | null;
   starters?: boolean;
+  shared?: boolean; // a shared space chat (plans/14): its members read it, so @person links to it
   go?: (path: string) => void;
 }) {
   // Mentioned files and spaces live in the chips above the text, not in the text itself.
@@ -548,7 +628,11 @@ function Composer(props: {
         )}
         {visibleMentions.some((m) => m.kind === "person") && (
           <p className="px-3 pt-1.5 text-xs text-muted">
-            يصل نص هذه الرسالة وحده إلى {visibleMentions.filter((m) => m.kind === "person").map((m) => m.name).join("، ")} في «الإشارات». المحادثة والإجابة تبقيان خاصتين بك.
+            {props.shared ? (
+              <>تصل إشارة إلى {visibleMentions.filter((m) => m.kind === "person").map((m) => m.name).join("، ")} في «الإشارات» تفتح هذه المحادثة المشتركة.</>
+            ) : (
+              <>يصل نص هذه الرسالة وحده إلى {visibleMentions.filter((m) => m.kind === "person").map((m) => m.name).join("، ")} في «الإشارات». المحادثة والإجابة تبقيان خاصتين بك.</>
+            )}
           </p>
         )}
         <textarea
@@ -796,7 +880,7 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
   );
 }
 
-function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
+function MessageView({ m, isLast, canWrite, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; canWrite: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
   const feedback = useMutation(api.chat.feedback);
   const [showSteps, setShowSteps] = useState(false);
   const [showParts, setShowParts] = useState(false);
@@ -805,11 +889,13 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
   const [copied, setCopied] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations]);
-  const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys())) : ""), [m.text, byN, m.role]);
+  const checks = useMemo(() => new Map(m.citations.filter((c) => c.check).map((c) => [c.n, c.check!])), [m.citations]);
+  const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys()), checks) : ""), [m.text, byN, checks, m.role]);
 
   if (m.role === "user")
     return (
       <div className="flex animate-rise flex-col items-start gap-1.5">
+        {m.author && <span className="text-xs font-medium text-muted">{m.mine ? "أنت" : m.author}</span>}
         {m.attached?.length ? (
           <div className="flex max-w-[85%] flex-wrap gap-1.5">
             {m.attached.map((a, i) => (
@@ -865,6 +951,7 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{c.fileName}{c.page ? ` · ص ${c.page}` : ""}</span>
                   <span className="line-clamp-2 text-xs text-muted">{c.quote.split("\n").slice(1).join(" ")}</span>
+                  {c.check && <span className={`mt-0.5 block text-xs ${c.check === "contradicts" ? "text-negative" : "text-warning"}`}>{CITE_CHECK[c.check]}</span>}
                 </span>
               </button>
             </li>
@@ -873,9 +960,13 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
       )}
       <div className="flex items-center gap-1 text-xs text-muted">
         <IconButton label={copied ? "نُسخ" : "نسخ"} icon="copy" onClick={() => void navigator.clipboard?.writeText(m.text).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))} />
-        {isLast && <IconButton label="أعد المحاولة" icon="retry" onClick={onRetry} />}
-        <IconButton label="إجابة مفيدة" icon="thumbUp" on={m.feedback === "up"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "up" ? null : "up" })} />
-        <IconButton label="إجابة غير مفيدة" icon="thumbDown" on={m.feedback === "down"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "down" ? null : "down" })} />
+        {isLast && canWrite && <IconButton label="أعد المحاولة" icon="retry" onClick={onRetry} />}
+        {m.mine !== false && (
+          <>
+            <IconButton label="إجابة مفيدة" icon="thumbUp" on={m.feedback === "up"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "up" ? null : "up" })} />
+            <IconButton label="إجابة غير مفيدة" icon="thumbDown" on={m.feedback === "down"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "down" ? null : "down" })} />
+          </>
+        )}
         {sourceFiles.length > 0 && (
           <button className="ms-1 flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowSources(!showSources)} aria-expanded={showSources}>
             <Icon name="file" size={14} />
@@ -981,8 +1072,15 @@ function proposalSummary(p: Proposal): string[] {
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
   if (p.tool === "publish_output") {
     out.push(`لمن: ${a.audience === "public" ? "أي أحد معه الرابط (بلا تسجيل دخول)" : a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
-    if (a.form?.quiz) out.push(`اختبار يُصحَّح آلياً: ${Object.keys(a.form.quiz.answers ?? {}).length} سؤالاً`);
+    if (typeof a.version === "number") out.push(`النسخة: ${a.version}`);
+    if (Array.isArray(a.grants)) out.push(...(a.grants.length ? a.grants.map((g: string) => `يستطيع التطبيق: ${g}`) : ["التطبيق لا يكتب في أي قائمة ولا يقرأ منها"]));
     else if (a.form) out.push("نموذج تُحفظ ردوده في قائمة");
+    return out;
+  }
+  if (p.tool === "write_app") {
+    const files = a.files && typeof a.files === "object" ? Object.keys(a.files) : [];
+    if (files.length) out.push(`الملفات: ${files.join("، ")}`);
+    if (a.data && typeof a.data === "object") out.push(`القوائم: ${Object.keys(a.data).join("، ")}`);
     return out;
   }
   if (a.skill) out.push(`سكربت المهارة: /${a.skill}${a.script ? ` (${a.script})` : ""}`);
@@ -1017,6 +1115,109 @@ function PublishedLinks({ url, listId }: { url: string; listId?: string }) {
   );
 }
 
+/**
+ * How a waiting action reads on its card: what it is (noun, not the running label), what «نفّذ»
+ * will do, and the button's own verb. Tools not listed use their label and «نفّذ».
+ */
+/** A command or name in Latin letters inside Arabic text: isolated so it doesn't flip («/name»). */
+const Ltr = ({ children }: { children: ReactNode }) => (
+  <bdi dir="ltr" className="rounded bg-raised px-1 font-mono text-[0.92em]">
+    {children}
+  </bdi>
+);
+
+const ACTION_VIEW: Record<string, { icon: IconName; title: (a: any) => ReactNode; effect?: (a: any) => ReactNode; confirm: string; shown?: string[] }> = {
+  create_skill: {
+    icon: "bulb",
+    title: (a) => <>مهارة جديدة: {a.title || a.name}</>,
+    effect: (a) =>
+      a.scope === "space" ? (
+        "تُحفظ لكل أعضاء مساحة المحادثة، ويعتمدها مديرها إن لم تكن مديرها."
+      ) : (
+        <>
+          تُحفظ في «مهاراتي»، وتستدعيها متى شئت بكتابة <Ltr>/{a.name ?? "اسمها"}</Ltr>
+        </>
+      ),
+    confirm: "احفظ المهارة",
+    shown: ["title"],
+  },
+  remember: { icon: "memory", title: () => "حفظ في الذاكرة", effect: () => "يتذكّره المساعد في محادثاتك القادمة، وتستطيع حذفه من «الذاكرة».", confirm: "احفظ" },
+  create_artifact: { icon: "file", title: (a) => `مخرج جديد${a.title ? `: ${a.title}` : ""}`, effect: () => "يُنشأ المخرج ويُفتح في اللوحة الجانبية.", confirm: "أنشئه", shown: ["title"] },
+  update_artifact: { icon: "pencil", title: (a) => `تعديل المخرج${a.title ? `: ${a.title}` : ""}`, effect: () => "تُحفظ نسخة جديدة، وتبقى السابقة في سجل النسخ.", confirm: "احفظ التعديل", shown: ["title"] },
+  create_list: { icon: "table", title: (a) => `قائمة جديدة${a.title ? `: ${a.title}` : ""}`, confirm: "أنشئ القائمة", shown: ["title"] },
+  update_list: { icon: "table", title: () => "تحديث القائمة", confirm: "حدّث القائمة" },
+  export_document: { icon: "download", title: () => "تصدير مستند", confirm: "صدّر" },
+  fill_template: { icon: "file", title: () => "تعبئة قالب", confirm: "عبّئ القالب" },
+  run_analysis: { icon: "code", title: () => "تشغيل تحليل", effect: () => "يعمل الكود في بيئة معزولة على الملفات المذكورة فقط.", confirm: "شغّل" },
+  publish_output: { icon: "globe", title: (a) => `نشر صفحة${a.title ? `: ${a.title}` : ""}`, confirm: "انشر", shown: ["title"] },
+};
+
+/** Field names as the person reads them; ids and internal fields are left to «البيانات الخام». */
+const ARG_LABEL: Record<string, string> = {
+  name: "الاسم",
+  title: "العنوان",
+  description: "متى تُستخدم",
+  instructions: "التعليمات",
+  text: "النص",
+  content: "المحتوى",
+  code: "الكود",
+  note: "ملاحظة",
+};
+const HIDDEN_ARG = /(^|_)(id|ids)$|Id$|Ids$|^scope$|^kind$|^runIds$/;
+
+/** The readable preview of an action: short fields inline, long text rendered and folded. */
+function ActionArgs({ args, skip = [] }: { args: any; skip?: string[] }) {
+  const [raw, setRaw] = useState(false);
+  const fields = Object.entries(args ?? {}).filter(([k, v]) => ARG_LABEL[k] && !skip.includes(k) && typeof v === "string" && v.trim() && !HIDDEN_ARG.test(k)) as [string, string][];
+  const short = fields.filter(([k, v]) => v.length <= 160 && !v.includes("\n") && k !== "code");
+  const long = fields.filter((f) => !short.includes(f));
+  return (
+    <div className="mt-3 space-y-3 border-t border-rule pt-3">
+      {short.length > 0 && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          {short.map(([k, v]) => (
+            <Fragment key={k}>
+              <dt className="text-muted">{ARG_LABEL[k]}</dt>
+              <dd className="text-ink" dir="auto">
+                {/^[\x20-\x7e]+$/.test(v) ? <Ltr>{v}</Ltr> : v}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      {long.map(([k, v]) => (
+        <div key={k}>
+          <p className="mb-1 text-xs text-muted">{ARG_LABEL[k]}</p>
+          {k === "code" ? (
+            <pre className="max-h-64 overflow-auto rounded-md bg-sunken p-3 font-mono text-[11px] leading-5" dir="ltr">
+              {v}
+            </pre>
+          ) : (
+            <div className="md md-compact max-h-64 overflow-auto rounded-md bg-sunken px-3 py-2" dir="auto" dangerouslySetInnerHTML={{ __html: renderAnswer(v, new Set()) }} />
+          )}
+        </div>
+      ))}
+      <button className="text-xs text-faint hover:text-muted" onClick={() => setRaw(!raw)} aria-expanded={raw}>
+        {raw ? "أخفِ البيانات الخام" : "البيانات الخام"}
+      </button>
+      {raw && (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-sunken p-2 text-[11px]" dir="ltr">
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** «ينتهي بعد 23 ساعة»: the full date stays in the tooltip. */
+function expiresIn(at: number) {
+  const m = Math.max(0, Math.round((at - Date.now()) / 60_000));
+  if (m < 60) return `ينتهي بعد ${m} دقيقة`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `ينتهي بعد ${h} ساعة`;
+  return `ينتهي بعد ${Math.round(h / 24)} أيام`;
+}
+
 function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id: string) => void }) {
   const confirm = useAction(api.chat.confirmProposal);
   const cancel = useMutation(api.chat.cancelProposal);
@@ -1024,7 +1225,12 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
   const [kept, setKept] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const pending = p.state === "pending";
+  const [open, setOpen] = useState(pending);
   const st = PROPOSAL_STATE[p.state] ?? { label: p.state, tone: "bg-raised" };
+  const view = ACTION_VIEW[p.tool];
+  const title = view?.title(p.args ?? {}) ?? p.label.replace(/…$/, "");
+  const summary = proposalSummary(p).filter((l) => !l.startsWith("العنوان:") || !view);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -1037,68 +1243,85 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
     }
   };
   return (
-    <div className="rounded-lg border border-line bg-surface p-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">{p.label.replace(/…$/, "")}</span>
-        <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : st.label}</span>
-        {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
-        {p.tier === 3 && p.state === "pending" && <span className="badge-warning">حسّاس أو رسمي</span>}
-        {p.state === "pending" && <span className="ms-auto text-xs text-muted num">حتى {new Date(p.expiresAt).toLocaleString("ar-SA-u-nu-latn", { dateStyle: "short", timeStyle: "short" })}</span>}
+    <div className={`rounded-lg border bg-surface text-sm ${pending ? "border-warning/40 shadow-sm" : "border-line"}`}>
+      <div className="flex items-start gap-3 p-3">
+        <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md ${pending ? "bg-warning-soft text-warning" : "bg-raised text-muted"}`}>
+          <Icon name={view?.icon ?? "play"} size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium" dir="auto">
+              {title}
+            </span>
+            <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : pending ? (p.mine === false ? "ينتظر موافقة من طلبه" : "ينتظر موافقتك") : st.label}</span>
+            {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
+            {p.tier === 3 && pending && <span className="badge-warning">حسّاس أو رسمي</span>}
+          </div>
+          {pending && view?.effect && <p className="mt-1 text-xs text-muted">{view.effect(p.args ?? {})}</p>}
+          {summary.length > 0 && (
+            <ul className="mt-1 text-xs text-muted">
+              {summary.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button className="btn-ghost h-8 shrink-0 px-2 text-xs" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? "أخفِ المعاينة" : "معاينة"}
+          <Icon name={open ? "up" : "down"} size={13} />
+        </button>
       </div>
-      {proposalSummary(p).length > 0 && (
-        <ul className="mt-1 text-xs text-muted">
-          {proposalSummary(p).map((l) => (
-            <li key={l}>{l}</li>
-          ))}
-        </ul>
+      {open && (
+        <div className="px-3 pb-1">
+          <ActionArgs args={p.args} skip={view?.shown} />
+        </div>
       )}
-      <details className="mt-1 text-xs text-muted">
-        <summary className="cursor-pointer">التفاصيل</summary>
-        <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-raised p-2 text-[11px]" dir="ltr">
-          {JSON.stringify(p.args, null, 2)}
-        </pre>
-      </details>
-      {p.state === "executed" && p.display ? (
-        <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
-      ) : p.result &&
-        (p.state === "executed" ? (
-          <details className="mt-1 text-xs text-muted">
-            <summary className="cursor-pointer">الناتج</summary>
-            <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
-              {p.result}
-            </pre>
-          </details>
-        ) : (
-          <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
-        ))}
-      <div className="mt-2 flex flex-wrap gap-2">
-        {p.auto && p.state === "executed" && (
-          <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
-            <Icon name="retry" size={14} /> تراجع
-          </button>
-        )}
-        {p.state === "pending" && (
-          <>
-            <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
-              نفّذ
+      <div className="px-3 pb-3">
+        {p.state === "executed" && p.display ? (
+          <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
+        ) : p.result &&
+          (p.state === "executed" ? (
+            <details className="mt-1 text-xs text-muted">
+              <summary className="cursor-pointer">الناتج</summary>
+              <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
+                {p.result}
+              </pre>
+            </details>
+          ) : (
+            <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
+          ))}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {p.auto && p.state === "executed" && p.mine !== false && (
+            <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
+              <Icon name="retry" size={14} /> تراجع
             </button>
-            <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(() => cancel({ proposalId: p.id }))}>
-              إلغاء
-            </button>
-          </>
-        )}
-        {p.artifactIds.map((id) => (
-          <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
-        ))}
-        {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
-        {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
-          <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
-            <Icon name="table" size={14} /> افتح القائمة
-          </a>
-        )}
+          )}
+          {pending && p.mine !== false && (
+            <>
+              <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
+                <Icon name="check" size={14} /> {busy ? "يُنفَّذ…" : (view?.confirm ?? "نفّذ")}
+              </button>
+              <button className="btn-ghost h-8" disabled={busy} onClick={() => void run(() => cancel({ proposalId: p.id }))}>
+                لا، شكراً
+              </button>
+              <span className="ms-auto text-xs text-faint num" title={new Date(p.expiresAt).toLocaleString("ar-SA-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}>
+                {expiresIn(p.expiresAt)}
+              </span>
+            </>
+          )}
+          {p.artifactIds.map((id) => (
+            <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
+          ))}
+          {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
+          {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
+            <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
+              <Icon name="table" size={14} /> افتح القائمة
+            </a>
+          )}
+        </div>
+        {error && <p className="mt-1 text-xs text-negative">{error}</p>}
+        {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
       </div>
-      {error && <p className="mt-1 text-xs text-negative">{error}</p>}
-      {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
     </div>
   );
 }
@@ -1130,7 +1353,7 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px]">{t.title}</span>
                 <span className="block truncate text-xs text-muted">
-                  {[t.spaceName, t.taskId ? "مهمة" : null, t.scheduled ? "مهمة مجدولة" : null].filter(Boolean).join(" · ") || "محادثة حرّة"}
+                  {[t.spaceName, t.shared ? (t.mine ? "مشتركة" : `مشتركة · بدأها ${t.ownerName ?? "زميل"}`) : null, t.taskId ? "مهمة" : null, t.scheduled ? "مهمة مجدولة" : null].filter(Boolean).join(" · ") || "محادثة حرّة"}
                 </span>
               </span>
               <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>

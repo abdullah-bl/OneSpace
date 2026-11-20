@@ -277,56 +277,24 @@ describe("forms → a list", () => {
   });
 });
 
-// ---------------------------------------------------------------- quizzes and the publish tool (step 4)
+// ---------------------------------------------------------------- the publish tool (step 4)
+// Quizzes, marking and anything computed are apps now (plans/13, tests/apps.test.ts); a page may still
+// carry a plain declared form.
 
-import { findColumn, markQuiz, seededShuffle } from "../onebase/publications";
-import { makingRequest } from "../onebase/chat";
-
-describe("quiz marking", () => {
-  test("score from the key; the level is the highest band reached", () => {
-    const quiz = { answers: [{ key: "c1", correct: "b", points: 1 }, { key: "c2", correct: "a", points: 2 }], bands: [{ min: 0, label: "مبتدئ" }, { min: 2, label: "متوسط" }, { min: 3, label: "متقدم" }] };
-    expect(markQuiz(quiz, { c1: "b", c2: "a" })).toEqual({ score: 3, max: 3, level: "متقدم" });
-    expect(markQuiz(quiz, { c1: "x", c2: "a" })).toEqual({ score: 2, max: 3, level: "متوسط" });
-    expect(markQuiz(quiz, {})).toEqual({ score: 0, max: 3, level: "مبتدئ" });
-    expect(markQuiz({ ...quiz, bands: [] }, { c1: "b" }).level).toBeNull();
-  });
-
-  test("quiz choices: a stable order per page and question, the same items", () => {
-    const opts = ["الصحيح", "ب", "ج", "د"];
-    expect(seededShuffle(opts, "slugA:c2")).toEqual(seededShuffle(opts, "slugA:c2"));
-    expect([...seededShuffle(opts, "slugA:c2")].sort()).toEqual([...opts].sort());
-    const firsts = new Set(Array.from({ length: 20 }, (_, i) => seededShuffle(opts, `s${i}:c`)[0]));
-    expect(firsts.size).toBeGreaterThan(1); // the right answer isn't always first
-  });
-
-  test("columns are found the way the model names them", () => {
-    const cols = [{ key: "c1", name: "اسم الطالب" }, { key: "c2", name: "1) I ___ a student." }, { key: "c3", name: "5) Choose the correct sentence:" }];
-    expect(findColumn(cols, "I ___ a student.")?.key).toBe("c2");
-    expect(findColumn(cols, "Choose the correct sentence.")?.key).toBe("c3");
-    expect(findColumn(cols, "c1")?.key).toBe("c1");
-    expect(findColumn(cols, "غير موجود")).toBeUndefined();
-  });
-
-  test("a request to make something new doesn't pre-search the files", () => {
-    for (const q of ["سوي لي صفحة فيها اختبار تحديد مستوى", "ممكن تسوي لي قائمة مهام", "اكتب خطاب شكر"]) expect([q, makingRequest(q)]).toEqual([q, true]);
-    for (const q of ["سو لي اختبار من ملف التدريب", "وش تقول اللائحة عن الإجازات", "لخص الملف", "اكتب ملخص @تقرير"]) expect([q, makingRequest(q)]).toEqual([q, false]);
-  });
-});
-
-describe("a placement test through the publish tool", () => {
+describe("a reply form through the publish tool", () => {
   let list: string;
   let art: string;
   let slug: string;
   let k: Record<string, string>;
 
-  test("publish_output: a card first, then a page with a quiz bound to the list", async () => {
-    art = must(await s.call("mutation", "artifacts:create", { title: "اختبار تحديد المستوى", kind: "markdown", content: "# اختبار تحديد المستوى\nاختر الإجابة الصحيحة.", spaceId: f.spaces.S_every }, tok("mgr"))).artifactId;
-    list = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_every, title: "درجات الاختبار", columns: [{ name: "الاسم", type: "text" }, { name: "س1", type: "select", options: ["am", "is", "are"] }, { name: "س2", type: "select", options: ["a", "an"] }] }, tok("mgr")));
-    const call = `CALL_TOOL publish_output ${JSON.stringify({ artifactId: art, audience: "workspace", form: { listId: list, quiz: { answers: { "س1": "is", "س2": "an" }, levels: [{ min: 0, label: "مبتدئ" }, { min: 2, label: "متوسط" }] } } })}`;
+  test("publish_output: a card pinned to the version, then a page with a form bound to the list", async () => {
+    art = must(await s.call("mutation", "artifacts:create", { title: "استبيان", kind: "markdown", content: "# استبيان قصير", spaceId: f.spaces.S_every }, tok("mgr"))).artifactId;
+    list = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_every, title: "ردود الاستبيان", columns: [{ name: "الاسم", type: "text" }, { name: "الرضا", type: "select", options: ["راضٍ", "غير راضٍ"] }] }, tok("mgr")));
+    const call = `CALL_TOOL publish_output ${JSON.stringify({ artifactId: art, audience: "workspace", form: { listId: list } })}`;
     must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: call }, tok("mgr")));
     try {
       const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mgr")));
-      must(await s.call("mutation", "chat:send", { threadId: t, text: "انشر الاختبار QZ-1" }, tok("mgr")));
+      must(await s.call("mutation", "chat:send", { threadId: t, text: "انشر الاستبيان FRM-1" }, tok("mgr")));
       let prop: any;
       for (let i = 0; i < 800 && !prop; i++) {
         const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mgr")));
@@ -334,38 +302,37 @@ describe("a placement test through the publish tool", () => {
         if (!prop) await Bun.sleep(25);
       }
       expect(prop.state).toBe("pending");
+      expect(prop.args.version).toBe(1); // pinned on the card
+      // A newer version after the card was shown doesn't go live with it.
+      must(await s.call("mutation", "artifacts:edit", { artifactId: art, content: "# استبيان قصير (نسخة 2)" }, tok("mgr")));
       const done = must(await s.call("action", "chat:confirmProposal", { proposalId: prop.id }, tok("mgr")));
       expect(done.ok).toBe(true);
       slug = /\/p\/([A-Za-z0-9_-]+)/.exec(done.result)![1]!;
     } finally {
       must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: "" }, tok("mgr")));
     }
+    expect(must(await s.call("query", "publications:forArtifact", { artifactId: art }, tok("mgr"))).publications[0].version).toBe(1);
     const g = must(await s.call("query", "lists:get", { listId: list }, tok("mgr")));
     k = Object.fromEntries(g.list.columns.map((c: any) => [c.name, c.key]));
-    expect(Object.keys(k)).toEqual(expect.arrayContaining(["الدرجة", "المستوى", "المرسل"]));
+    expect(Object.keys(k)).toEqual(expect.arrayContaining(["المرسل"]));
   }, 60_000);
 
-  test("a taker outside the space answers; code marks it; they see their score; the list has it", async () => {
+  test("a reader outside the space answers; the list has the row", async () => {
     const cookie = await openAs("out", slug);
     const html = await (await page(`/p/${slug}`, cookie)).text();
-    expect(html).not.toContain(`name="f_${k["الدرجة"]}"`); // the score is never asked
     const token = /name="_t" value="([^"]+)"/.exec(html)![1]!;
     const res = await fetch(`${s.url}/f/${slug}`, {
       method: "POST",
       redirect: "manual",
       headers: { "X-Forwarded-Host": PUB, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ _t: token, [`f_${k["الاسم"]}`]: "طالب", [`f_${k["س1"]}`]: "is", [`f_${k["س2"]}`]: "a", [`f_${k["الدرجة"]}`]: "99" }).toString(),
+      body: new URLSearchParams({ _t: token, [`f_${k["الاسم"]}`]: "قارئ", [`f_${k["الرضا"]}`]: "راضٍ" }).toString(),
     });
     expect(res.headers.get("location")).toBe(`/p/${slug}?sent=1`);
-    const after = await (await page(`/p/${slug}?sent=1`, cookie)).text();
-    expect(after).toContain("درجتك: <b>1</b> من 2");
-    expect(after).toContain("مبتدئ");
-    const row = must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).rows.find((r: any) => r.cells[k["الاسم"]] === "طالب");
-    expect(row.cells[k["الدرجة"]]).toBe(1); // marked by code, not the posted 99
-    expect(row.cells[k["المستوى"]]).toBe("مبتدئ");
+    const row = must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).rows.find((r: any) => r.cells[k["الاسم"]] === "قارئ");
+    expect(row.cells[k["الرضا"]]).toBe("راضٍ");
   });
 
-  test("«جرّبها»: the manager's preview marks a reply and saves nothing; for others it's the normal page", async () => {
+  test("«جرّبها»: the manager's preview saves nothing; for others it's the normal page", async () => {
     const before = must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).rows.length;
     const r = must(await s.call("mutation", "publications:openTicket", { slug }, tok("mgr")));
     const u = new URL(r);
@@ -374,46 +341,23 @@ describe("a placement test through the publish tool", () => {
     const cookie = res.headers.get("set-cookie")!.split(";")[0]!;
     const html = await (await page(`/p/${slug}?preview=1`, cookie)).text();
     expect(html).toContain("معاينة");
-    expect(html).toContain(`action="/f/${slug}?preview=1"`);
     const token = /name="_t" value="([^"]+)"/.exec(html)![1]!;
     const sent = await fetch(`${s.url}/f/${slug}?preview=1`, {
       method: "POST",
       redirect: "manual",
       headers: { "X-Forwarded-Host": PUB, "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ _t: token, [`f_${k["الاسم"]}`]: "مجرّب", [`f_${k["س1"]}`]: "is", [`f_${k["س2"]}`]: "an" }).toString(),
+      body: new URLSearchParams({ _t: token, [`f_${k["الاسم"]}`]: "مجرّب", [`f_${k["الرضا"]}`]: "راضٍ" }).toString(),
     });
-    expect(sent.headers.get("location")).toBe(`/p/${slug}?preview=1&ps=2&pm=2&pl=${encodeURIComponent("متوسط")}`);
-    expect(await (await page(sent.headers.get("location")!, cookie)).text()).toContain("نتيجة التجربة (لم تُحفظ)");
+    expect(sent.headers.get("location")).toBe(`/p/${slug}?preview=1&ps=none`);
+    expect(await (await page(sent.headers.get("location")!, cookie)).text()).toContain("للتجربة، ولم يُحفظ");
     expect(must(await s.call("query", "lists:get", { listId: list }, tok("mgr"))).rows.length).toBe(before);
-    // A reader who doesn't manage the page gets no preview.
     const other = await openAs("rdr", slug);
     expect(await (await page(`/p/${slug}?preview=1`, other)).text()).not.toContain("معاينة");
   });
 
-  test("a quiz whose intro page shows the answers is refused", async () => {
-    const leaky = must(await s.call("mutation", "artifacts:create", { title: "مع المفتاح", kind: "markdown", content: "| السؤال | الإجابة |\n|---|---|\n| س1 | is |\n| س2 | an |", spaceId: f.spaces.S_every }, tok("mgr"))).artifactId;
-    const call = `CALL_TOOL publish_output ${JSON.stringify({ artifactId: leaky, audience: "space", form: { listId: list, quiz: { answers: { "س1": "is", "س2": "an" } } } })}`;
-    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: call }, tok("mgr")));
-    try {
-      const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mgr")));
-      must(await s.call("mutation", "chat:send", { threadId: t, text: "انشر LEAK-1" }, tok("mgr")));
-      let prop: any;
-      for (let i = 0; i < 800 && !prop; i++) {
-        prop = must(await s.call("query", "chat:messages", { threadId: t }, tok("mgr"))).messages.flatMap((m: any) => m.proposals ?? []).find((p: any) => p.tool === "publish_output");
-        if (!prop) await Bun.sleep(25);
-      }
-      const done = must(await s.call("action", "chat:confirmProposal", { proposalId: prop.id }, tok("mgr")));
-      expect(done.result).toContain("تعرض الإجابات الصحيحة");
-      // Refused as a whole: no publication was left behind.
-      expect(must(await s.call("query", "publications:forArtifact", { artifactId: leaky }, tok("mgr"))).publications).toEqual([]);
-    } finally {
-      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: "" }, tok("mgr")));
-    }
-  }, 60_000);
-
-  test("a quiz key must be one of the question's options", async () => {
+  test("the quiz mode is gone: a form with a key is refused by the API", async () => {
     const p = must(await s.call("query", "publications:forArtifact", { artifactId: art }, tok("mgr"))).publications[0];
-    const bad = await s.call("mutation", "publications:setForm", { publicationId: p._id, form: { listId: list, fields: [{ key: k["س1"], required: true }], recordSender: false, onePerReader: false, quiz: { answers: [{ key: k["س1"], correct: "were" }], showResult: true } } }, tok("mgr"));
+    const bad = await s.call("mutation", "publications:setForm", { publicationId: p._id, form: { listId: list, fields: [{ key: k["الرضا"], required: true }], recordSender: false, onePerReader: false, quiz: { answers: [{ key: k["الرضا"], correct: "راضٍ" }], showResult: true } } }, tok("mgr"));
     expect(bad.ok).toBe(false);
   });
 });
@@ -454,7 +398,7 @@ describe("public pages", () => {
     const r = must(await s.call("mutation", "publications:publish", { artifactId: art, audience: "public" }, tok("mgr")));
     pubId = r.id;
     slug = r.url.split("/p/")[1];
-    must(await s.call("mutation", "publications:setForm", { publicationId: pubId, form: { listId: list, fields: [{ key: k["الاسم"], required: true }, { key: k["س"], required: true }], recordSender: true, onePerReader: true, quiz: { answers: [{ key: k["س"], correct: "ب" }], showResult: true } } }, tok("mgr")));
+    must(await s.call("mutation", "publications:setForm", { publicationId: pubId, form: { listId: list, fields: [{ key: k["الاسم"], required: true }, { key: k["س"], required: true }], recordSender: true, onePerReader: true } }, tok("mgr")));
     const res = await anon(`/p/${slug}`, "10.0.0.1");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-security-policy")).toContain("sandbox allow-scripts allow-forms");
@@ -463,13 +407,13 @@ describe("public pages", () => {
     expect((await fetch(`${s.url}/p/${slug}`, { redirect: "manual", headers: { "X-Forwarded-Host": APP } })).status).toBe(404);
   });
 
-  test("an anonymous reply: a row with no sender, the score shown, once per browser", async () => {
+  test("an anonymous reply: a row with no sender, once per browser", async () => {
     const html = await (await anon(`/p/${slug}`, "10.0.0.2")).text();
     const token = /name="_t" value="([^"]+)"/.exec(html)![1]!;
     const r = await anonPost({ _t: token, [`f_${k["الاسم"]}`]: "زائر", [`f_${k["س"]}`]: "ب" }, "10.0.0.2");
-    expect(r.headers.get("location")).toBe(`/p/${slug}?sent=1&ps=1&pm=1`);
+    expect(r.headers.get("location")).toBe(`/p/${slug}?sent=1`);
     const cookie = r.headers.get("set-cookie")!.split(";")[0]!;
-    expect(await (await anon(`/p/${slug}?sent=1&ps=1&pm=1`, "10.0.0.2", cookie)).text()).toContain("درجتك: <b>1</b> من 1");
+    expect(await (await anon(`/p/${slug}?sent=1`, "10.0.0.2", cookie)).text()).toContain("وصل ردك");
     const g = must(await s.call("query", "lists:get", { listId: list }, tok("mgr")));
     const row = g.rows.find((x: any) => x.cells[k["الاسم"]] === "زائر");
     const sender = g.list.columns.find((c: any) => c.name === "المرسل");

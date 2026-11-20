@@ -10,6 +10,8 @@
 //   LLM_ANSWER_MAX_TOKENS=8192                    token budget of an agent step (tool-call code + answer)
 //   LLM_THINKING=1                                let Qwen think before answering (slower)
 //   VISION_BASE_URL, VISION_MODEL                 OCR model if not the main one
+//   LLM_DECIDE_BASE_URL, LLM_DECIDE_MODEL         decision model (plans/12): small JSON decisions; unset → fast
+//   LLM_DECIDE_TIMEOUT_MS=1500                    a decision slower than this falls back to code
 //
 // Plain helpers (chat, embed, rerank, ocr, health) are called from actions; the exported
 // functions below are the rag embedder and the health check the UI shows.
@@ -19,7 +21,7 @@ import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { actorFor, requireUserId } from "./access";
 
-export type Role = "main" | "fast";
+export type Role = "main" | "fast" | "decide";
 
 const env = (k: string) => {
   const val = process.env[k]?.trim();
@@ -27,10 +29,12 @@ const env = (k: string) => {
 };
 
 export type Target = { baseUrl?: string; model: string; apiKey?: string; provider?: string };
-export type RoleName = "main" | "fast" | "vision";
+export type RoleName = "main" | "fast" | "vision" | "decide";
 /** The embedding model. `dimensions` is fixed by the rag index (EMBED_DIMENSIONS when it was mounted). */
 export type EmbedTarget = { baseUrl?: string; model: string; apiKey?: string; dimensions: number; queryPrefix: string; docPrefix: string; sendDimensions?: boolean };
-export type Overrides = Partial<Record<RoleName, Target>> & { embed?: EmbedTarget };
+/** Which decisions (plans/12) run; off (or a failed call) returns that decision to code. Missing = on. */
+export type DecisionSwitches = { route?: boolean; cite?: boolean; guard?: boolean };
+export type Overrides = Partial<Record<RoleName, Target>> & { embed?: EmbedTarget; decisions?: DecisionSwitches };
 
 /** Vector size of the rag index: fixed when the docs component is mounted (components.ts). */
 export const INDEX_DIMENSIONS = Number(process.env.EMBED_DIMENSIONS || 768);
@@ -64,8 +68,15 @@ export function envTargets(): Record<RoleName, Target> {
     main,
     fast: { baseUrl: env("LLM_FAST_BASE_URL") ?? main.baseUrl, model: env("LLM_FAST_BASE_URL") ? (env("LLM_FAST_MODEL") ?? "default") : (env("LLM_FAST_MODEL") ?? main.model), apiKey: env("LLM_API_KEY") },
     vision: { baseUrl: env("VISION_BASE_URL") ?? main.baseUrl, model: env("VISION_MODEL") ?? main.model, apiKey: env("LLM_API_KEY") },
+    // Unset: the fast model's (shown as «مثل النموذج السريع»; aiConfig follows the admin's fast choice too).
+    decide: env("LLM_DECIDE_BASE_URL")
+      ? { baseUrl: env("LLM_DECIDE_BASE_URL"), model: env("LLM_DECIDE_MODEL") ?? "default", apiKey: env("LLM_DECIDE_API_KEY") ?? env("LLM_API_KEY") }
+      : { baseUrl: env("LLM_FAST_BASE_URL") ?? main.baseUrl, model: env("LLM_DECIDE_MODEL") ?? (env("LLM_FAST_BASE_URL") ? (env("LLM_FAST_MODEL") ?? "default") : (env("LLM_FAST_MODEL") ?? main.model)), apiKey: env("LLM_API_KEY") },
   };
 }
+
+/** True when the environment names its own decision server (else decide follows fast). */
+export const decideFromEnv = () => !!env("LLM_DECIDE_BASE_URL");
 
 export function envEmbed(): EmbedTarget {
   return {
@@ -96,9 +107,13 @@ export async function embedConfigFromDb(db: any): Promise<EmbedTarget> {
 export function aiConfig() {
   const base = envTargets();
   const main = overrides.main ?? base.main;
+  const fast = overrides.fast ?? base.fast;
   return {
     main,
-    fast: overrides.fast ?? base.fast,
+    fast,
+    decide: overrides.decide ?? (decideFromEnv() || env("LLM_DECIDE_MODEL") ? base.decide : fast),
+    decisions: { route: overrides.decisions?.route !== false, cite: overrides.decisions?.cite !== false, guard: overrides.decisions?.guard !== false },
+    decideTimeoutMs: Math.max(200, Number(env("LLM_DECIDE_TIMEOUT_MS") ?? 1500)),
     vision: overrides.vision ?? base.vision,
     embed: overrides.embed ?? envEmbed(),
     rerank: { baseUrl: env("RERANK_BASE_URL"), model: env("RERANK_MODEL") ?? "default", apiKey: env("RERANK_API_KEY") ?? env("LLM_API_KEY") },
@@ -155,7 +170,9 @@ export type ChatOptions = {
   track?: UsageTrack;
 };
 
-export type UsagePurpose = "answer" | "part" | "route" | "plan" | "rewrite" | "summary" | "title" | "memory" | "skill_draft" | "agent_draft";
+export type UsagePurpose = "answer" | "part" | "route" | "plan" | "rewrite" | "summary" | "title" | "memory" | "skill_draft" | "agent_draft" | DecisionKindPurpose;
+export type DecisionKind = "route" | "cite" | "guard";
+type DecisionKindPurpose = `decide:${DecisionKind}`;
 export type UsageTrack = { ctx: { runMutation: any }; purpose: UsagePurpose; userId?: string; turnId?: string };
 
 /** The server couldn't parse the model's tool call (usually cut off by max_tokens mid-JSON). */
@@ -169,17 +186,21 @@ function parseArgs(raw: string): unknown {
   }
 }
 
+function targetOf(cfg: ReturnType<typeof aiConfig>, role: Role | undefined): Target {
+  return role === "fast" ? cfg.fast : role === "decide" ? cfg.decide : cfg.main;
+}
+
 export async function chat(opts: ChatOptions): Promise<ChatResult> {
   if (!opts.track) return chatOnce(opts);
   const cfg = aiConfig();
-  const target = opts.role === "fast" ? cfg.fast : cfg.main;
+  const target = targetOf(cfg, opts.role);
   const started = Date.now();
   const note = async (usage: ChatResult["usage"], ok: boolean) => {
     try {
       await opts.track!.ctx.runMutation(internal.usage.record, {
         model: target.model,
         provider: target.provider ?? "إعدادات الخادم",
-        role: opts.role === "fast" ? "fast" : "main",
+        role: opts.role ?? "main",
         purpose: opts.track!.purpose,
         ...(opts.track!.userId ? { userId: opts.track!.userId } : {}),
         ...(opts.track!.turnId ? { turnId: opts.track!.turnId } : {}),
@@ -205,7 +226,7 @@ export async function chat(opts: ChatOptions): Promise<ChatResult> {
 
 async function chatOnce(opts: ChatOptions): Promise<ChatResult> {
   const cfg = aiConfig();
-  const target = opts.role === "fast" ? cfg.fast : cfg.main;
+  const target = targetOf(cfg, opts.role);
   if (!target.baseUrl) throw new OneBaseError("نموذج المحادثة غير مضبوط (LLM_BASE_URL)");
   const stream = !!opts.onDelta;
   const body: Record<string, unknown> = {
@@ -298,6 +319,97 @@ async function chatOnce(opts: ChatOptions): Promise<ChatResult> {
     }
   }
   return { text, toolCalls: calls.filter(Boolean).map((c) => ({ ...c, args: parseArgs(c.rawArgs) })), usage, finishReason };
+}
+
+// ---------------------------------------------------------------- decisions (plans/12)
+
+/**
+ * Checks a parsed value against the small JSON schemas decisions use (object, array, string,
+ * number, integer, boolean, enum, required, additionalProperties: false, minItems, maxItems). Anything the
+ * model invents outside the schema makes the whole decision invalid, never half-applied.
+ */
+export function matchesSchema(value: unknown, schema: Record<string, any>): boolean {
+  if (Array.isArray(schema.enum) && !schema.enum.includes(value)) return false;
+  switch (schema.type) {
+    case "object": {
+      if (!value || typeof value !== "object" || Array.isArray(value)) return false;
+      const props: Record<string, any> = schema.properties ?? {};
+      for (const k of schema.required ?? []) if (!Object.hasOwn(value, k)) return false;
+      for (const [k, x] of Object.entries(value)) {
+        if (!Object.hasOwn(props, k)) {
+          if (schema.additionalProperties === false) return false;
+          continue;
+        }
+        if (!matchesSchema(x, props[k])) return false;
+      }
+      return true;
+    }
+    case "array":
+      return Array.isArray(value) && (schema.maxItems === undefined || value.length <= schema.maxItems) && (schema.minItems === undefined || value.length >= schema.minItems) && value.every((x) => matchesSchema(x, schema.items ?? {}));
+    case "string":
+      return typeof value === "string" && (schema.maxLength === undefined || value.length <= schema.maxLength);
+    case "number":
+      return typeof value === "number" && Number.isFinite(value);
+    case "integer":
+      return Number.isInteger(value);
+    case "boolean":
+      return typeof value === "boolean";
+    default:
+      return true;
+  }
+}
+
+/** One logged decision (turns.decisions): what was asked, what came back, or why code decided. */
+export type DecisionLog = { kind: DecisionKind; ms: number; ok: boolean; why?: "off" | "timeout" | "error" | "invalid"; out?: unknown };
+
+/**
+ * A small decision (plans/12) by the `decide` model: `{ role: "decide", temperature: 0, jsonSchema }`.
+ * Returns the parsed value, or null on anything else (switched off, timeout, HTTP error, JSON that
+ * doesn't match the schema): null means the caller does what the code did before. Never throws.
+ * A decision can make a turn stricter or cheaper; the callers never let it grant anything.
+ */
+export async function decide<T>(
+  kind: DecisionKind,
+  messages: ChatMsg[],
+  schema: Record<string, unknown>,
+  opts: { track?: Omit<UsageTrack, "purpose">; maxTokens?: number; timeoutMs?: number; log?: (l: DecisionLog) => void } = {},
+): Promise<T | null> {
+  const cfg = aiConfig();
+  const started = Date.now();
+  const done = (l: Omit<DecisionLog, "kind" | "ms">) => opts.log?.({ kind, ms: Date.now() - started, ...l });
+  if (!cfg.decisions[kind] || !cfg.decide.baseUrl) {
+    done({ ok: false, why: "off" });
+    return null;
+  }
+  const signal = AbortSignal.timeout(opts.timeoutMs ?? cfg.decideTimeoutMs);
+  try {
+    const r = await chat({
+      role: "decide",
+      temperature: 0,
+      thinking: false,
+      maxTokens: opts.maxTokens ?? 80,
+      jsonSchema: schema,
+      messages,
+      signal,
+      ...(opts.track ? { track: { ...opts.track, purpose: `decide:${kind}` as const } } : {}),
+    });
+    let value: unknown;
+    try {
+      value = JSON.parse(r.text.trim().replace(/^```(?:json)?\s*|\s*```$/g, ""));
+    } catch {
+      done({ ok: false, why: "invalid" });
+      return null;
+    }
+    if (!matchesSchema(value, schema)) {
+      done({ ok: false, why: "invalid" });
+      return null;
+    }
+    done({ ok: true, out: value });
+    return value as T;
+  } catch {
+    done({ ok: false, why: signal.aborted ? "timeout" : "error" });
+    return null;
+  }
 }
 
 // ---------------------------------------------------------------- embeddings

@@ -12,7 +12,7 @@ import { ask, EmptyState, Menu, PageHeader, tell } from "./ui";
 type ColType = "text" | "number" | "date" | "status" | "select" | "person" | "check";
 type Column = { key: string; name: string; type: ColType; options?: string[] };
 type Cell = string | number | boolean | null;
-type Row = { _id: string; cells: Record<string, Cell>; order: number };
+type Row = { _id: string; cells: Record<string, Cell>; order: number; steering?: string | null };
 type ListData = {
   list: { _id: string; title: string; description: string; columns: Column[]; view: "table" | "board"; updatedAt: number };
   rows: Row[];
@@ -333,8 +333,13 @@ export function ListPage({ listId, go }: { listId: string; go: (p: string) => vo
             <tbody>
               {rows.map((r) => (
                 <tr key={r._id} className="group border-b border-rule last:border-0 hover:bg-sunken/50">
-                  {list.columns.map((c) => (
+                  {list.columns.map((c, k) => (
                     <td key={c.key} className="px-2 py-1 align-middle">
+                      {k === 0 && r.steering && (
+                        <span className="badge-warning mb-0.5 inline-block text-[11px]" title={`يقرأ المساعد هذا الرد بيانات لا تعليمات. النص: «${r.steering}»`}>
+                          فيه نص موجّه للمساعد
+                        </span>
+                      )}
                       <CellEdit col={c} value={r.cells[c.key] ?? null} people={people} canWrite={canWrite} onSave={(v) => save(r._id, c.key, v)} />
                     </td>
                   ))}

@@ -187,8 +187,12 @@ function secretOf(d: Doc<"dataSources">): SourceSecret {
   return { kind: d.kind, url: d.config.url, headerName: d.config.headerName, headerValue: d.config.headerValue, paths: d.config.paths, tools: d.config.tools, rowLimit: d.rowLimit };
 }
 
-/** Sources this employee may use now: enabled, visible to them, and allowed by their level. */
-export async function sourcesFor(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"dataSources">[]> {
+/**
+ * Sources this employee may use now: enabled, visible to them, and allowed by their level. With
+ * `onlySpace` (a chat shared with that space, plans/14) only sources the admin gave to that space:
+ * its members read the answers, so a source given to the asker alone stays out.
+ */
+export async function sourcesFor(ctx: QueryCtx, userId: Id<"users">, onlySpace?: Id<"spaces">): Promise<Doc<"dataSources">[]> {
   const actor = await actorFor(ctx, userId);
   if (!actor) return [];
   const level = await levelOf(ctx, userId);
@@ -196,6 +200,7 @@ export async function sourcesFor(ctx: QueryCtx, userId: Id<"users">): Promise<Do
   for (const d of await ctx.db.query("dataSources").collect()) {
     if (!d.enabled) continue;
     if (level.sources && !level.sources.includes(d._id)) continue;
+    if (onlySpace && !(d.visibility.kind === "spaces" && d.visibility.spaceIds.includes(onlySpace))) continue;
     if (d.visibility.kind === "spaces") {
       let ok = false;
       for (const sid of d.visibility.spaceIds) {
@@ -224,9 +229,9 @@ export function sourcesContext(list: Doc<"dataSources">[]): string | null {
 }
 
 export const forUser = internalQuery({
-  args: { userId: v.id("users"), sourceId: v.string() },
-  handler: async (ctx, { userId, sourceId }): Promise<{ id: string; name: string; secret: SourceSecret } | { error: string }> => {
-    const list = await sourcesFor(ctx, userId);
+  args: { userId: v.id("users"), sourceId: v.string(), spaceId: v.optional(v.id("spaces")) },
+  handler: async (ctx, { userId, sourceId, spaceId }): Promise<{ id: string; name: string; secret: SourceSecret } | { error: string }> => {
+    const list = await sourcesFor(ctx, userId, spaceId);
     const d = list.find((x) => x._id === sourceId || x.name === sourceId);
     if (!d) return { error: `لا يوجد مصدر «${sourceId}» متاح لهذا الموظف. المتاحة: ${list.map((x) => `«${x.name}» (${x._id})`).join("، ") || "لا شيء"}` };
     return { id: d._id, name: d.name, secret: secretOf(d) };

@@ -22,9 +22,10 @@ import { revokeForArtifact } from "./publications";
 import { artifactKind, cellValue } from "./outputsSchema";
 import { sha256Hex } from "./recordSources";
 import { renderDocument, type DocFormat } from "./lib/docExport";
+import { applyFiles, serializeApp } from "./lib/appFiles";
 
 type Ctx = QueryCtx | MutationCtx;
-export type ArtifactKind = "markdown" | "html" | "table";
+export type ArtifactKind = "markdown" | "html" | "table" | "app";
 export type SourceRef = { type: "file" | "recordSet" | "artifact"; id: string };
 export type Source = SourceRef & { spaceId: Id<"spaces"> };
 
@@ -75,6 +76,21 @@ export function normalizeContent(kind: ArtifactKind, content: unknown): string {
   }
   if (typeof content !== "string") throw new OneBaseError("المحتوى يجب أن يكون نصاً");
   if (content.length > MAX_CONTENT) throw new OneBaseError("المخرج أكبر من الحد المسموح");
+  if (kind === "app") {
+    // An app's version is JSON { files, data } (plans/13); its files change through write_app.
+    let j: any;
+    try {
+      j = JSON.parse(content);
+    } catch {
+      throw new OneBaseError("التطبيق يُعدَّل بأداة write_app (ملفاته)، لا بنص كامل");
+    }
+    if (!j || typeof j.files !== "object") throw new OneBaseError("التطبيق يُعدَّل بأداة write_app (ملفاته)، لا بنص كامل");
+    try {
+      return serializeApp({ files: applyFiles({}, j.files), data: j.data && typeof j.data === "object" ? j.data : {} });
+    } catch (e) {
+      throw new OneBaseError(e instanceof Error ? e.message : String(e));
+    }
+  }
   return content;
 }
 
@@ -311,7 +327,7 @@ export const list = query({
  * a markdown output made from a picture). Each comes with its space and the chat it came from.
  */
 export const mine = query({
-  args: { q: v.optional(v.string()), kind: v.optional(v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("image"))), spaceId: v.optional(v.string()) },
+  args: { q: v.optional(v.string()), kind: v.optional(v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("image"), v.literal("app"))), spaceId: v.optional(v.string()) },
   handler: async (ctx, { q, kind, spaceId }) => {
     const me = await requireActive(ctx);
     const rows = (await ctx.db.query("artifacts").withIndex("by_owner", (x) => x.eq("ownerId", me.userId)).collect()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 500);

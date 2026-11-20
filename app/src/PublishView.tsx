@@ -34,27 +34,42 @@ type Pub = {
     maxReplies: number | null;
     onePerReader: boolean;
     recordSender: boolean;
-    quiz: { answers: { key: string; correct: string; points: number }[]; bands: { min: number; label: string }[]; showResult: boolean; max: number } | null;
   } | null;
   listTitle?: string | null;
+  /** An app (plans/13): rows it added, and what it may do with lists, in words. */
+  app?: { rows: number } | null;
+  appGrants?: string[] | null;
 };
 
 type ListOption = { _id: string; title: string; columns: { key: string; name: string; type: string; options: string[] }[] };
 
-/** «16 متقدم، 10 متوسط، 0 مبتدئ» ⇄ bands. */
-const bandsText = (b: { min: number; label: string }[]) => b.map((x) => `${x.min} ${x.label}`).join("، ");
-const parseBands = (t: string) =>
-  t
-    .split(/[،,\n]/)
-    .map((x) => /^\s*(\d+(?:\.\d+)?)\s+(.+?)\s*$/.exec(x))
-    .filter((m): m is RegExpExecArray => !!m)
-    .map((m) => ({ min: Number(m[1]), label: m[2]! }));
+/** An app publication's grants, as the publish card listed them. */
+export function AppGrants({ grants, rows }: { grants: string[]; rows?: number }) {
+  return (
+    <div className="space-y-1 rounded-md bg-surface px-2 py-1.5 text-xs">
+      <p className="font-medium">
+        <Icon name="code" size={13} className="me-1 inline text-primary" />
+        صلاحيات التطبيق{rows !== undefined ? <span className="font-normal text-muted"> · {rows} صفاً أضافها</span> : null}
+      </p>
+      {grants.length ? (
+        <ul className="list-inside list-disc text-muted">
+          {grants.map((g) => (
+            <li key={g}>{g}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-muted">لا يكتب في أي قائمة ولا يقرأ منها.</p>
+      )}
+    </div>
+  );
+}
 
 /** Under a publication: the form that sends replies into a list of the same space (plans/11 step 2). */
 function FormSettings({ p }: { p: Pub }) {
   const [editing, setEditing] = useState(false);
   const addFeedback = useMutation(api.publications.addFeedbackForm);
   const setForm = useMutation(api.publications.setForm);
+  if (p.app) return <AppGrants grants={p.appGrants ?? []} rows={p.app.rows} />;
   if (editing) return <FormEditor p={p} onDone={() => setEditing(false)} />;
   if (!p.form)
     return (
@@ -77,7 +92,6 @@ function FormSettings({ p }: { p: Pub }) {
           «{p.listTitle ?? "قائمة"}»
         </a>{" "}
         · <span className="num">{p.form.replies}</span> رد{p.form.maxReplies ? ` من ${p.form.maxReplies}` : ""}
-        {p.form.quiz ? ` · اختبار يُصحَّح آلياً (${p.form.quiz.answers.length} سؤالاً، من ${p.form.quiz.max})` : ""}
         {p.form.closesAt ? ` · يُغلق ${formatDate(p.form.closesAt)}` : ""}
       </span>
       <button className="btn-ghost h-7 px-2 text-xs" onClick={() => setEditing(true)}>
@@ -101,10 +115,6 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
   const [maxReplies, setMax] = useState(p.form?.maxReplies ? String(p.form.maxReplies) : "");
   const [closes, setCloses] = useState(p.form?.closesAt ? new Date(p.form.closesAt).toISOString().slice(0, 10) : "");
   const [error, setError] = useState("");
-  const [quizOn, setQuizOn] = useState(!!p.form?.quiz);
-  const [key, setKey] = useState<Record<string, string>>(() => Object.fromEntries((p.form?.quiz?.answers ?? []).map((a) => [a.key, a.correct])));
-  const [bands, setBands] = useState(bandsText(p.form?.quiz?.bands ?? []));
-  const [showResult, setShowResult] = useState(p.form?.quiz?.showResult ?? true);
   const list = lists?.find((l) => l._id === listId);
   useEffect(() => {
     // A newly picked list: every column on, none required.
@@ -124,15 +134,6 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
           ...(thanks.trim() ? { thanks } : {}),
           ...(Number(maxReplies) > 0 ? { maxReplies: Number(maxReplies) } : {}),
           ...(closes ? { closesAt: new Date(`${closes}T23:59:59`).getTime() } : {}),
-          ...(quizOn
-            ? {
-                quiz: {
-                  answers: (list?.columns ?? []).filter((c) => fields[c.key]?.on && key[c.key]).map((c) => ({ key: c.key, correct: key[c.key]!, points: 1 })),
-                  bands: parseBands(bands),
-                  showResult,
-                },
-              }
-            : {}),
         },
       });
       onDone();
@@ -172,39 +173,6 @@ function FormEditor({ p, onDone }: { p: Pub; onDone: () => void }) {
                 </li>
               ))}
             </ul>
-          )}
-          {list && (
-            <div className="space-y-1.5 rounded-md bg-sunken/60 p-2">
-              <label className="flex items-center gap-1.5 font-medium">
-                <input type="checkbox" checked={quizOn} onChange={(e) => setQuizOn(e.target.checked)} /> اختبار يُصحَّح آلياً
-              </label>
-              {quizOn && (
-                <>
-                  <p className="text-faint">لكل سؤال اختيار: الإجابة الصحيحة (درجة لكل إجابة). تُحسب الدرجة بالكود وتُحفظ في عمود «الدرجة».</p>
-                  <ul className="space-y-1">
-                    {list.columns
-                      .filter((c) => fields[c.key]?.on && (c.type === "select" || c.type === "status"))
-                      .map((c) => (
-                        <li key={c.key} className="flex items-center gap-2">
-                          <span className="min-w-0 flex-1 truncate">{c.name}</span>
-                          <select className="input h-7 w-auto text-xs" value={key[c.key] ?? ""} onChange={(e) => setKey((k) => ({ ...k, [c.key]: e.target.value }))} aria-label={`الإجابة الصحيحة: ${c.name}`}>
-                            <option value="">بلا تصحيح</option>
-                            {c.options.map((o) => (
-                              <option key={o} value={o}>
-                                {o}
-                              </option>
-                            ))}
-                          </select>
-                        </li>
-                      ))}
-                  </ul>
-                  <input className="input h-8 w-full text-xs" value={bands} onChange={(e) => setBands(e.target.value)} placeholder="المستويات (اختياري): 16 متقدم، 10 متوسط، 0 مبتدئ" />
-                  <label className="flex items-center gap-1.5">
-                    <input type="checkbox" checked={showResult} onChange={(e) => setShowResult(e.target.checked)} /> أظهر للمختبَر درجته بعد الإرسال
-                  </label>
-                </>
-              )}
-            </div>
           )}
           <input className="input h-8 w-full text-xs" value={thanks} maxLength={500} onChange={(e) => setThanks(e.target.value)} placeholder="رسالة بعد الإرسال (اختياري)" />
           <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
@@ -271,7 +239,7 @@ function PubRow({ p, showTitle }: { p: Pub; showTitle?: boolean }) {
           <a className="btn-ghost h-8 text-xs" href={p.url} target="_blank" rel="noopener noreferrer">
             افتح
           </a>
-          {(p.mine ?? true) && p.form && (
+          {(p.mine ?? true) && (p.form || p.app) && (
             <a className="btn-ghost h-8 text-xs" href={`${p.url}?preview=1`} target="_blank" rel="noopener noreferrer" title="ما ترسله في المعاينة لا يُحفظ">
               جرّبها
             </a>
@@ -301,7 +269,7 @@ function PubRow({ p, showTitle }: { p: Pub; showTitle?: boolean }) {
 /** In the output panel: publish this output, and its links. */
 export function PublishBox({ artifactId, onClose }: { artifactId: string; onClose: () => void }) {
   const data = useQuery(api.publications.forArtifact, { artifactId }) as
-    | { enabled: boolean; canPublish: boolean; needsApproval: boolean; audiences: Pub["audience"][]; spaceName: string; personal: boolean; publications: Pub[] }
+    | { enabled: boolean; canPublish: boolean; needsApproval: boolean; audiences: Pub["audience"][]; spaceName: string; personal: boolean; publications: Pub[]; appGrants: string[] | null }
     | undefined;
   const publish = useMutation(api.publications.publish);
   const [audience, setAudience] = useState<Pub["audience"]>("space");
@@ -323,6 +291,7 @@ export function PublishBox({ artifactId, onClose }: { artifactId: string; onClos
           {data.publications.length > 0 && <ul className="divide-y divide-rule">{data.publications.map((p) => <PubRow key={p._id} p={p} />)}</ul>}
           {data.canPublish && (
             <div className="space-y-2 pt-1">
+              {data.appGrants && <AppGrants grants={data.appGrants} />}
               <p className="text-xs text-muted">{audience === "public" ? "يفتحه أي أحد معه الرابط بلا تسجيل دخول، حتى من خارج الجهة. لا تنشر للعامة بيانات أشخاص أو بيانات داخلية." : "من يفتح الرابط؟ يدخل بحسابه، ولا يرى غير هذه الصفحة."}</p>
               <div className="flex flex-wrap gap-2">
                 {data.audiences.map((a) => (

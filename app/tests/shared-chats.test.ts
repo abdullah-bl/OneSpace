@@ -1,0 +1,180 @@
+// Shared space chats (plans/14): a chat in a shared space that its members read and ask in.
+// Access follows the space (read → read the chat, write → ask), nothing personal of the asker
+// goes in (their memory, records, files outside the space), and only the owner or a space
+// manager changes who sees it. Model: the deterministic fake (fake-ai.ts).
+
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { Server, must, type Result } from "./harness";
+import { ACTORS, buildFixture, FILE_NAMES, SPACES, type ActorKey, type Fixture } from "./fixture";
+import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
+import { ask, waitIngest } from "./rag-helpers";
+import { chatRequestsWith, systemOf } from "./agents-helpers";
+
+let ai: FakeAI;
+let s: Server;
+let f: Fixture;
+const tok = (a: string) => (f.tokens as any)[a] as string | undefined;
+
+beforeAll(async () => {
+  ai = startFakeAI();
+  s = await new Server(undefined, aiEnv(ai)).start();
+  f = await buildFixture(s);
+  for (const sp of SPACES) await waitIngest(s, sp === "P_mem" ? tok("mem")! : tok("mgr")!, f.spaces[sp], f.files[sp]);
+}, 90_000);
+
+afterAll(async () => {
+  await s?.stop();
+  ai?.stop();
+});
+
+const listed = async (a: string, sp: string, threadId: string) => {
+  const r = await s.call("query", "chat:spaceThreads", { spaceId: sp }, tok(a));
+  return r.ok ? r.value.find((x: any) => x.threadId === threadId) : undefined;
+};
+
+describe("shared space chats", () => {
+  let t: string;
+
+  test("a new chat in a shared space is shared by default; members and readers see it, others don't", async () => {
+    t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    const own = await listed("mem", f.spaces.S_plain, t);
+    expect(own).toMatchObject({ shared: true, mine: true });
+    expect(await listed("mgr", f.spaces.S_plain, t)).toMatchObject({ shared: true, mine: false, ownerName: "موظف mem" });
+    expect(await listed("rdr", f.spaces.S_plain, t)).toMatchObject({ shared: true, mine: false });
+    for (const a of ["out", "admin", "dis", "pend", "anon"]) expect(await listed(a, f.spaces.S_plain, t)).toBeUndefined();
+    for (const a of ["mgr", "rdr"]) expect((await s.call("query", "chat:messages", { threadId: t }, tok(a))).ok).toBe(true);
+    for (const a of ["out", "admin", "dis", "pend", "anon"]) expect((await s.call("query", "chat:messages", { threadId: t }, tok(a))).ok).toBe(false);
+  });
+
+  test("a private chat in a shared space, and any chat in a personal space, stay with their owner", async () => {
+    const p = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    expect(await listed("mem", f.spaces.S_plain, p)).toMatchObject({ shared: false });
+    expect(await listed("mgr", f.spaces.S_plain, p)).toBeUndefined();
+    expect((await s.call("query", "chat:messages", { threadId: p }, tok("mgr"))).ok).toBe(false);
+    const mine = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.P_mem }, tok("mem")));
+    expect(must(await s.call("query", "chat:messages", { threadId: mine }, tok("mem"))).shared).toBe(false);
+    // A reader can't start a shared chat (they can't ask in one).
+    const r = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("rdr")));
+    expect(must(await s.call("query", "chat:messages", { threadId: r }, tok("rdr"))).shared).toBe(false);
+  });
+
+  test("members ask in it as themselves; each question shows who asked; readers only read", async () => {
+    await ask(s, tok("mem")!, t, "ما محتوى CONTENT-S_plain؟ SHQ-1");
+    const a = await ask(s, tok("mgr")!, t, "وما الجديد؟ SHQ-2");
+    const users = a.raw.messages.filter((m: any) => m.role === "user");
+    expect(users.map((m: any) => m.author)).toEqual(["موظف mem", "موظف mgr"]);
+    expect(users.map((m: any) => m.mine)).toEqual([false, true]);
+    // The model is told it is a shared chat and who asks; earlier questions carry their asker.
+    const req = chatRequestsWith(ai, "SHQ-2").at(-1);
+    expect(systemOf(req)).toContain("محادثة مشتركة");
+    expect(systemOf(req)).toContain("السؤال الحالي من موظف mgr");
+    expect(JSON.stringify(req.body.messages)).toContain("[موظف mem]: ");
+    // The reader reads, but can't ask, retry or stop.
+    const view = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
+    expect(view).toMatchObject({ shared: true, canWrite: false, isOwner: false, canManage: false });
+    expect((await s.call("mutation", "chat:send", { threadId: t, text: "سؤال" }, tok("rdr"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:retry", { threadId: t }, tok("rdr"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:stop", { threadId: t }, tok("rdr"))).ok).toBe(false);
+    // Owner-only settings stay with the owner.
+    for (const [fn, args] of [["chat:rename", { threadId: t, title: "x" }], ["chat:setPinned", { threadId: t, pinned: true }], ["chat:setNoMemory", { threadId: t, on: true }]] as const)
+      expect((await s.call("mutation", fn, args, tok("mgr"))).ok).toBe(false);
+  }, 40_000);
+
+  test("nothing from outside the space: no @mentions of other spaces, no personal memory", async () => {
+    const bad = await s.call("mutation", "chat:send", { threadId: t, text: "قارن", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem"));
+    expect(bad.ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { threadId: t, text: "قارن", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem"))).ok).toBe(false);
+    must(await s.call("mutation", "memory:add", { text: "يفضّل الإجابات المختصرة SHMEM-9", kind: "preference" }, tok("mem")));
+    await ask(s, tok("mem")!, t, "سؤال في المشتركة SHQ-3");
+    for (const r of chatRequestsWith(ai, "SHQ-3")) {
+      expect(JSON.stringify(r.body)).not.toContain("SHMEM-9");
+      expect(JSON.stringify(r.body)).not.toContain(FILE_NAMES.P_mem);
+      expect((r.body.tools ?? []).map((x: any) => x.function?.name)).not.toContain("my_records");
+    }
+    // The same person in a private chat of the same space: their memory is there.
+    const p = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    await ask(s, tok("mem")!, p, "سؤال في الخاصة SHQ-4");
+    expect(JSON.stringify(chatRequestsWith(ai, "SHQ-4").at(-1).body)).toContain("SHMEM-9");
+  }, 40_000);
+
+  test("sharing an existing chat: only its owner, only with nothing from outside the space", async () => {
+    const p = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    expect((await s.call("mutation", "chat:setShared", { threadId: p, shared: true }, tok("mgr"))).ok).toBe(false);
+    must(await s.call("mutation", "chat:setShared", { threadId: p, shared: true }, tok("mem")));
+    expect(await listed("mgr", f.spaces.S_plain, p)).toMatchObject({ shared: true });
+    // A private chat that pointed at a personal file can't be shared: the members would see its name.
+    const q = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: q, text: "SHQ-5", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    expect((await s.call("mutation", "chat:setShared", { threadId: q, shared: true }, tok("mem"))).ok).toBe(false);
+    // Free-form and personal-space chats can't be shared.
+    const free = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    expect((await s.call("mutation", "chat:setShared", { threadId: free, shared: true }, tok("mem"))).ok).toBe(false);
+    const pers = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.P_mem }, tok("mem")));
+    expect((await s.call("mutation", "chat:setShared", { threadId: pers, shared: true }, tok("mem"))).ok).toBe(false);
+  }, 30_000);
+
+  test("permission matrix: chat:setShared (make a colleague's shared chat private) | owner or space manager", async () => {
+    const expected: Record<ActorKey, boolean> = { admin: false, mgr: true, mem: true, rdr: false, out: false, pend: false, dis: false, anon: false };
+    for (const a of ACTORS) {
+      const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+      const r: Result = await s.call("mutation", "chat:setShared", { threadId: c, shared: false }, tok(a));
+      expect([a, r.ok]).toEqual([a, expected[a]]);
+    }
+  }, 30_000);
+
+  test("making it private or deleting it: the owner or a space manager; then the members lose it", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    for (const a of ["rdr", "out", "admin"]) expect((await s.call("mutation", "chat:deleteThread", { threadId: c }, tok(a))).ok).toBe(false);
+    must(await s.call("mutation", "chat:setShared", { threadId: c, shared: false }, tok("mgr")));
+    expect((await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).ok).toBe(false);
+    expect((await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).ok).toBe(true);
+    must(await s.call("mutation", "chat:setShared", { threadId: c, shared: true }, tok("mem")));
+    must(await s.call("mutation", "chat:deleteThread", { threadId: c }, tok("mgr")));
+    expect((await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).ok).toBe(false);
+  }, 30_000);
+
+  test("a shared chat I asked in joins my chat list; one I only read doesn't", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mem")));
+    await ask(s, tok("mem")!, c, "سؤال أول JOINQ-1");
+    const mineList = async (a: string) => must(await s.call("query", "chat:threads", {}, tok(a))).find((x: any) => x.threadId === c);
+    expect(await mineList("mgr")).toBeUndefined();
+    await ask(s, tok("mgr")!, c, "سؤال من المدير JOINQ-2");
+    expect(await mineList("mgr")).toMatchObject({ shared: true, mine: false, ownerName: "موظف mem", spaceName: expect.any(String) });
+    expect(await mineList("mem")).toMatchObject({ shared: true, mine: true });
+    expect(await mineList("rdr")).toBeUndefined();
+    // Made private: it leaves mgr's list.
+    must(await s.call("mutation", "chat:setShared", { threadId: c, shared: false }, tok("mem")));
+    expect(await mineList("mgr")).toBeUndefined();
+  }, 40_000);
+
+  test("asking in a shared chat notifies its followers (owner and askers), once an hour, never the asker or mere readers", async () => {
+    const notes = async (a: string, c: string) => must(await s.call("query", "notifications:list", {}, tok(a))).filter((n: any) => n.threadId === c && n.kind === "chat.shared");
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    await ask(s, tok("mem")!, c, "NOTIFYQ-1");
+    expect(await notes("mem", c)).toEqual([]); // nobody else follows yet
+    await ask(s, tok("mgr")!, c, "NOTIFYQ-2 سؤال المدير");
+    const forMem = await notes("mem", c);
+    expect(forMem.length).toBe(1);
+    expect(forMem[0].title).toContain("موظف mgr");
+    expect(forMem[0].body).toContain("NOTIFYQ-2");
+    expect(await notes("mgr", c)).toEqual([]);
+    expect(await notes("rdr", c)).toEqual([]); // a reader who never asked isn't following
+    await ask(s, tok("mgr")!, c, "NOTIFYQ-3");
+    expect((await notes("mem", c)).length).toBe(1); // within the hour: no second notice
+    await ask(s, tok("mem")!, c, "NOTIFYQ-4");
+    expect((await notes("mgr", c)).length).toBe(1); // mgr asked here, so mgr follows
+    // Made private, the colleague's notice disappears from their feed.
+    must(await s.call("mutation", "chat:setShared", { threadId: c, shared: false }, tok("mem")));
+    expect(await notes("mgr", c)).toEqual([]);
+  }, 60_000);
+
+  test("leaving the space ends access to its shared chats, the owner's own included", async () => {
+    must(await s.call("mutation", "spaces:addMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp, role: "member" }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_sens }, tok("tmp")));
+    expect(must(await s.call("query", "chat:messages", { threadId: c }, tok("tmp"))).shared).toBe(true);
+    must(await s.call("mutation", "spaces:removeMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp }, tok("mgr")));
+    expect((await s.call("query", "chat:messages", { threadId: c }, tok("tmp"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { threadId: c, text: "x" }, tok("tmp"))).ok).toBe(false);
+    expect((await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).ok).toBe(true);
+  }, 30_000);
+});

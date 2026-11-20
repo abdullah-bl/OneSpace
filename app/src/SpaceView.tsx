@@ -193,21 +193,35 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           <h2 className="section-title">محادثاتك هنا</h2>
           {threads && <span className="meta num">{threads.length}</span>}
           <span className="meta ms-auto inline-flex items-center gap-1">
-            <Icon name="lock" size={12} /> لا يراها غيرك
+            {space.kind === "shared" ? (
+              <>
+                <Icon name="users" size={12} /> المشتركة للأعضاء، والخاصة لك
+              </>
+            ) : (
+              <>
+                <Icon name="lock" size={12} /> لا يراها غيرك
+              </>
+            )}
           </span>
         </div>
         {threads?.length === 0 && (
-          <p className="mt-3 rounded-xl border border-dashed border-control p-5 text-center text-sm text-muted">لا محادثات بعد. كل محادثة تبدؤها هنا تعرف {space.kind === "personal" ? "ملفاتك" : "تعليمات المساحة وملفاتها"}.</p>
+          <p className="mt-3 rounded-xl border border-dashed border-control p-5 text-center text-sm text-muted">
+            لا محادثات بعد. كل محادثة تبدؤها هنا تعرف {space.kind === "personal" ? "ملفاتك" : "تعليمات المساحة وملفاتها، وتُشارك مع أعضاء المساحة إلا إن جعلتها خاصة"}.
+          </p>
         )}
         {!!threads?.length && (
           <ul className="card mt-3 divide-y divide-rule overflow-hidden">
             {shownChats!.map((t) => (
               <li key={t.threadId}>
                 <a href={`#/chat/${t.threadId}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sunken">
-                  <Icon name={t.scheduled ? "clock" : "chat"} size={16} className="shrink-0 text-faint" />
+                  <Icon name={t.scheduled ? "clock" : t.shared ? "users" : space.kind === "shared" ? "lock" : "chat"} size={16} className="shrink-0 text-faint" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{t.title}</span>
-                    {t.scheduled && <span className="block text-xs text-muted">مهمة مجدولة</span>}
+                    {t.scheduled ? (
+                      <span className="block text-xs text-muted">مهمة مجدولة</span>
+                    ) : space.kind === "shared" ? (
+                      <span className="block text-xs text-muted">{t.shared ? (t.mine ? "مشتركة · بدأتها أنت" : `مشتركة · بدأها ${t.ownerName ?? "زميل"}`) : "خاصة بك"}</span>
+                    ) : null}
                   </span>
                   <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>
                 </a>
@@ -490,7 +504,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
 
 function FileRow(props: {
   f: { _id: string; name: string; size: number; version: number; updatedAt: number; uploadedByName: string | null; mime: string };
-  ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean };
+  ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean; steering?: string | null };
   space: SpaceInfo;
   showVersions: boolean;
   onToggleVersions: () => void;
@@ -695,7 +709,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
 }
 
 /** Ingest state for the AI index: قيد المعالجة · جاهز · فشل (with the reason and a retry), and an OCR mark. */
-function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean }; canWrite: boolean }) {
+function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean; steering?: string | null }; canWrite: boolean }) {
   const retry = useMutation(api.ingest.retry);
   if (!ingest) return null;
   const color =
@@ -709,6 +723,11 @@ function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { 
         </span>
       )}
       {ingest.ocr && <span className="rounded bg-warning-soft px-1.5 text-warning" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
+      {ingest.steering && (
+        <span className="rounded bg-warning-soft px-1.5 text-warning" title={`يقرأ المساعد هذا الملف بيانات لا تعليمات. النص: «${ingest.steering}»`}>
+          فيه نص موجّه للمساعد
+        </span>
+      )}
       {ingest.state === "failed" && ingest.error && <span className="text-negative">{ingest.error}</span>}
       {ingest.state === "failed" && canWrite && (
         <button className="text-ink hover:underline" onClick={() => void retry({ fileId: fileId as any })}>

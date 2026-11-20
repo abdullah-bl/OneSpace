@@ -205,3 +205,23 @@ export async function currentSpaceRole(ctx: Ctx, userId: Id<"users">, space: Doc
     return null;
   }
 }
+
+// ---- Chats shared with a space (plans/14) ---------------------------------------------------
+// A private chat belongs to its owner alone. A shared chat (threadMeta.shared, in a shared space)
+// follows the space: whoever may read the space reads the chat, whoever may write there asks in
+// it. The owner too: leaving the space ends their access to a shared chat like anyone else's.
+
+export type ThreadUse = "read" | "write";
+
+/** A chat the space's members see: shared, in a space, and not a test, scheduled or task thread. */
+export function isSharedThread(meta: Doc<"threadMeta">): boolean {
+  return !!meta.shared && !!meta.spaceId && !meta.test && !meta.scheduleId && !meta.taskId;
+}
+
+/** Whether `userId` may read (or ask in) this chat right now. */
+export async function threadAllows(ctx: Ctx, userId: Id<"users">, meta: Doc<"threadMeta">, use: ThreadUse): Promise<boolean> {
+  if (!isSharedThread(meta)) return meta.userId === userId;
+  const space = await ctx.db.get(meta.spaceId!);
+  if (!space || space.kind !== "shared") return false;
+  return roleAllows(await currentSpaceRole(ctx, userId, space), use);
+}

@@ -94,9 +94,9 @@ describe("free-form chats", () => {
 describe("space chats", () => {
   let spaceThread: string;
 
-  test("a chat started in a space is scoped to it, carries its instructions and files, and is listed on the space page for its owner only", async () => {
+  test("a chat started in a space is scoped to it, carries its instructions and files, and is listed on the space page for its owner only (a private one)", async () => {
     must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "SPACEINSTR-UX1: أجب بإيجاز." }, tok("mgr")));
-    spaceThread = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    spaceThread = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
     const m = must(await s.call("query", "chat:messages", { threadId: spaceThread }, tok("mem")));
     expect(m.scope).toEqual({ kind: "space", id: f.spaces.S_plain });
     expect(m.spaceId).toBe(f.spaces.S_plain);
@@ -176,7 +176,8 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
     expect(r.messages.at(-1).citations).toEqual([]);
     for (const req of chatRequestsWith(ai, "WIDENQ-1")) expect(JSON.stringify(req.body)).not.toContain("CONTENT-S_plain\n");
     // A thread scoped to S_every: mentioning S_plain doesn't reach S_plain.
-    const t2 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mem")));
+    // (A private chat: a shared one refuses an outside mention outright, see shared-chats.test.ts.)
+    const t2 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every, shared: false }, tok("mem")));
     must(await s.call("mutation", "chat:send", { threadId: t2, text: "CONTENT-S_plain WIDENQ-2", mentions: [{ kind: "space", id: f.spaces.S_plain }] }, tok("mem")));
     const r2 = await waitAnswers(tok("mem")!, t2, 1);
     expect(r2.messages.at(-1).citations).toEqual([]);
@@ -313,15 +314,15 @@ describe("@person in a shared space's chat tells them this one message; the chat
     expect(must(await s.call("query", "mentions:suggest", { spaceId: f.spaces.S_every, q: "" }, tok("out"))).people).toEqual([]);
   });
 
-  test("on send each named member gets a notification and a «الإشارات» row with that message only; the assistant still answers", async () => {
-    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+  test("in a private space chat each named member gets a notification and a «الإشارات» row with that message only; the assistant still answers", async () => {
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
     const text = "أعمل الآن على مقارنة عروض الموردين CHATMENTION-1";
     must(await s.call("mutation", "chat:send", { threadId: t, text, people: [f.ids.mgr, f.ids.rdr, f.ids.out, f.ids.admin, f.ids.dis, f.ids.mem, "nope"] }, tok("mem")));
     const answered = await waitAnswers(tok("mem")!, t, 1);
     const answer = answered.messages.filter((x: any) => x.role === "assistant").at(-1).text as string;
     for (const who of ["mgr", "rdr"]) {
       const row = (await inbox(who)).find((x: any) => x.excerpt.includes("CHATMENTION-1"));
-      expect(row).toMatchObject({ source: "chat", taskId: null, spaceId: f.spaces.S_plain, spaceName: "لجنة-المشتريات-QX71", by: "موظف mem", excerpt: text, read: false });
+      expect(row).toMatchObject({ source: "chat", taskId: null, threadId: null, spaceId: f.spaces.S_plain, spaceName: "لجنة-المشتريات-QX71", by: "موظف mem", excerpt: text, read: false });
       const note = (await bell(who)).find((n: any) => n.kind === "chat.mention" && n.body?.includes("CHATMENTION-1"));
       expect(note).toMatchObject({ spaceId: f.spaces.S_plain, threadId: null, taskId: null });
       // Nothing that reaches them carries the thread or the answer.
@@ -346,7 +347,7 @@ describe("@person in a shared space's chat tells them this one message; the chat
     expect(JSON.stringify(await bell("mgr"))).not.toMatch(/CHATMENTION-[23]/);
 
     must(await s.call("mutation", "spaces:addMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp, role: "reader" }, tok("mgr")));
-    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_sens }, tok("mem")));
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_sens, shared: false }, tok("mem")));
     must(await s.call("mutation", "chat:send", { threadId: t, text: "CHATMENTION-4", people: [f.ids.tmp] }, tok("mem")));
     expect((await inbox("tmp")).some((x: any) => x.excerpt === "CHATMENTION-4")).toBe(true);
     expect((await bell("tmp")).some((n: any) => n.kind === "chat.mention" && n.body === "CHATMENTION-4")).toBe(true);
@@ -359,6 +360,43 @@ describe("@person in a shared space's chat tells them this one message; the chat
     expect((await s.call("mutation", "chat:send", { threadId: t2, text: "x", people: Array.from({ length: 21 }, () => f.ids.mgr) }, tok("mem"))).ok).toBe(false);
   }, 30_000);
 
+  test("in a shared chat the mention opens the chat itself, while the reader can read it; made private, it falls back to the space", async () => {
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: true }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: t, text: "تابعوا هنا CHATMENTION-S1", people: [f.ids.mgr, f.ids.rdr, f.ids.out] }, tok("mem")));
+    await waitAnswers(tok("mem")!, t, 1);
+    for (const who of ["mgr", "rdr"]) {
+      const row = (await inbox(who)).find((x: any) => x.excerpt.includes("CHATMENTION-S1"));
+      expect(row).toMatchObject({ source: "chat", threadId: t, spaceId: f.spaces.S_plain });
+      expect(typeof row.threadTitle).toBe("string");
+      expect((await bell(who)).find((n: any) => n.kind === "chat.mention" && n.body?.includes("CHATMENTION-S1"))).toMatchObject({ threadId: t, spaceId: f.spaces.S_plain });
+      check(await s.call("query", "chat:messages", { threadId: t }, tok(who)), true); // the link works for them
+    }
+    expect(JSON.stringify(await inbox("out"))).not.toContain("CHATMENTION-S1");
+    // The owner makes it private: the row stays (that message only) and opens the space; the notification goes.
+    must(await s.call("mutation", "chat:setShared", { threadId: t, shared: false }, tok("mem")));
+    for (const who of ["mgr", "rdr"]) {
+      const row = (await inbox(who)).find((x: any) => x.excerpt.includes("CHATMENTION-S1"));
+      expect(row).toMatchObject({ threadId: null, threadTitle: null, spaceId: f.spaces.S_plain });
+      expect(JSON.stringify(await inbox(who))).not.toContain(t);
+      expect(JSON.stringify(await bell(who))).not.toContain("CHATMENTION-S1");
+    }
+  }, 30_000);
+
+  // Per actor, in mem's shared chat of S_plain: only those who may ask there can mention; the
+  // recipient's row links the chat.
+  for (const a of ACTORS) {
+    const asks = a === "mgr" || a === "mem";
+    test(`chat:send with @person in a shared chat | ${a} → ${asks ? "delivered, linked" : "denied"}`, async () => {
+      const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: true }, tok("mem")));
+      const marker = `CHATMENTION-SM-${a}`;
+      const target = a === "rdr" ? "mgr" : "rdr";
+      check(await s.call("mutation", "chat:send", { threadId: t, text: marker, people: [f.ids[target]] }, tok(a)), asks);
+      const row = (await inbox(target)).find((x: any) => x.excerpt === marker);
+      if (asks) expect(row).toMatchObject({ threadId: t });
+      else expect(row).toBeUndefined();
+    }, 20_000);
+  }
+
   // Per actor × space: the sender must be a named member who can read the space; the recipient
   // (rdr, or mgr when rdr is the sender) gets the row only then.
   for (const sp of SPACES) {
@@ -367,7 +405,7 @@ describe("@person in a shared space's chat tells them this one message; the chat
       test(`chat:send with @person in a chat of ${sp} | ${a} → ${role ? "delivered" : "nothing"}`, async () => {
         const marker = `CHATMENTION-M-${sp}-${a}`;
         const target = a === "rdr" ? "mgr" : "rdr";
-        const created = await s.call("mutation", "chat:createThread", { spaceId: f.spaces[sp] }, tok(a));
+        const created = await s.call("mutation", "chat:createThread", { spaceId: f.spaces[sp], shared: false }, tok(a));
         check(created, expectedAllowed(a, sp, "read"));
         if (created.ok) must(await s.call("mutation", "chat:send", { threadId: created.value, text: marker, people: [f.ids[target]] }, tok(a)));
         expect((await inbox(target)).some((x: any) => x.excerpt === marker)).toBe(role);

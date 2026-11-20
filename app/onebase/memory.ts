@@ -22,7 +22,7 @@ import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertCan, Denied, readableSpaceIds, requireActive } from "./access";
+import { assertCan, Denied, isSharedThread, readableSpaceIds, requireActive, threadAllows } from "./access";
 import { writeAudit } from "./audit";
 import { chat, primeAi } from "./ai";
 import { levelOf } from "./lib/levels";
@@ -123,11 +123,14 @@ export async function memoryContext(ctx: QueryCtx, userId: Id<"users">, meta: Do
   const out: string[] = [];
   const here = threadSpaceId(ctx, meta);
   const readable = new Set<string>(await readableSpaceIds(ctx, userId));
-  const mine = await ctx.db
-    .query("memories")
-    .withIndex("by_owner", (q) => q.eq("ownerId", userId).eq("state", "active"))
-    .order("desc")
-    .collect();
+  // A chat shared with a space (plans/14) is read by its members: the asker's own memory stays out.
+  const mine = isSharedThread(meta)
+    ? []
+    : await ctx.db
+        .query("memories")
+        .withIndex("by_owner", (q) => q.eq("ownerId", userId).eq("state", "active"))
+        .order("desc")
+        .collect();
   const shown: Doc<"memories">[] = [];
   for (const m of mine) if (await personalVisible(ctx, m, readable, here)) shown.push(m);
   shown.sort((a, b) => b.uses - a.uses || b.updatedAt - a.updatedAt);
@@ -203,7 +206,7 @@ async function saveItem(ctx: MutationCtx, a: SaveIn): Promise<{ id: Id<"memories
     let originSpaceId: Id<"spaces"> | undefined;
     if (a.threadId) {
       const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", a.threadId!)).unique();
-      if (!meta || meta.userId !== a.userId) throw new Denied();
+      if (!meta || !(await threadAllows(ctx, a.userId, meta, "write"))) throw new Denied();
       const here = threadSpaceId(ctx, meta);
       const s = here ? await ctx.db.get(here) : null;
       if (s && !(s.kind === "personal" && s.ownerId === a.userId)) originSpaceId = s._id;
@@ -283,9 +286,12 @@ export const recall = internalQuery({
     };
     const readable = new Set<string>(await readableSpaceIds(ctx, userId));
     const meta = threadId ? await ctx.db.query("threadMeta").withIndex("by_thread", (x) => x.eq("threadId", threadId)).unique() : null;
-    const here = meta && meta.userId === userId ? threadSpaceId(ctx, meta) : null;
+    const inChat = meta && (await threadAllows(ctx, userId, meta, "write")) ? meta : null;
+    const here = inChat ? threadSpaceId(ctx, inChat) : null;
+    // In a chat shared with a space (plans/14), recall reads the space's memory only: no personal items or chats.
+    const personal = !(inChat && isSharedThread(inChat));
     const items: { id: string; text: string; kind: Kind; where: string; s: number; at: number }[] = [];
-    for (const m of await ctx.db.query("memories").withIndex("by_owner", (x) => x.eq("ownerId", userId).eq("state", "active")).collect()) {
+    for (const m of personal ? await ctx.db.query("memories").withIndex("by_owner", (x) => x.eq("ownerId", userId).eq("state", "active")).collect() : []) {
       if (!(await personalVisible(ctx, m, readable, here))) continue;
       items.push({ id: m._id, text: m.text, kind: m.kind, where: "ذاكرتي", s: score(m.text), at: m.updatedAt });
     }
@@ -302,7 +308,7 @@ export const recall = internalQuery({
       .sort((a, b) => b.s - a.s || b.at - a.at)
       .slice(0, 12);
     const chats = [];
-    for (const t of await ctx.db.query("threadMeta").withIndex("by_user", (x) => x.eq("userId", userId)).order("desc").take(300)) {
+    for (const t of personal ? await ctx.db.query("threadMeta").withIndex("by_user", (x) => x.eq("userId", userId)).order("desc").take(300) : []) {
       if (t.test || t.threadId === threadId || t.noMemory) continue;
       const sp = threadSpaceId(ctx, t);
       if (sp && !readable.has(sp)) continue; // a chat in a space I can't read any more
@@ -333,7 +339,8 @@ export const suggestInput = internalQuery({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
-    if (!meta || meta.scheduleId || !(await memoryOn(ctx, meta.userId, meta))) return null;
+    // A shared chat holds several people's messages: none of them is "the person's own" (plans/14).
+    if (!meta || meta.scheduleId || isSharedThread(meta) || !(await memoryOn(ctx, meta.userId, meta))) return null;
     if (await sensitiveOrigin(ctx, meta)) return null;
     const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
     const asked = page.page.filter((m) => m.role === "user" && m.text).map((m) => m.text!);

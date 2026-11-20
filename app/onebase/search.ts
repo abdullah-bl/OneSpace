@@ -28,6 +28,8 @@ export type Hit = {
   fused: number;
   /** Reranker relevance (0..1) when a reranker is configured. */
   rerank?: number;
+  /** plans/12 guard: the file was flagged at indexing (text aimed at the assistant). */
+  steering?: boolean;
 };
 
 export type SearchResult = { hits: Hit[]; candidates: Hit[]; reranked: boolean; spaces: string[] };
@@ -74,13 +76,14 @@ export const resolve = internalQuery({
   args: { items: v.array(v.object({ fileId: v.string(), hash: v.string() })), spaces: v.array(v.string()) },
   handler: async (ctx, { items, spaces }) => {
     const allowed = new Set(spaces);
-    const files = new Map<string, { name: string; spaceId: string } | null>();
-    const out: ({ fileName: string; spaceId: string; section?: string; page?: number; pageEnd?: number; ordinal?: number } | null)[] = [];
+    const files = new Map<string, { name: string; spaceId: string; steering?: true } | null>();
+    const out: ({ fileName: string; spaceId: string; section?: string; page?: number; pageEnd?: number; ordinal?: number; steering?: true } | null)[] = [];
     for (const it of items) {
       if (!files.has(it.fileId)) {
         const id = ctx.db.normalizeId("files", it.fileId);
         const f = id ? await ctx.db.get(id) : null;
-        files.set(it.fileId, f && f.status === "active" && allowed.has(f.spaceId) ? { name: f.name, spaceId: f.spaceId } : null);
+        const flagged = f ? !!(await ctx.db.query("fileIndex").withIndex("by_file", (q) => q.eq("fileId", f._id)).unique())?.steering : false;
+        files.set(it.fileId, f && f.status === "active" && allowed.has(f.spaceId) ? { name: f.name, spaceId: f.spaceId, ...(flagged ? { steering: true as const } : {}) } : null);
       }
       const f = files.get(it.fileId);
       if (!f) {
@@ -92,7 +95,8 @@ export const resolve = internalQuery({
         .withIndex("by_file_hash", (q) => q.eq("fileId", it.fileId as Id<"files">).eq("hash", it.hash))
         .first();
       // No chunk row: a vector hit from the previous version still serving while the new one embeds.
-      out.push(c && c.spaceId === f.spaceId ? { fileName: f.name, spaceId: f.spaceId, section: c.section, page: c.page, pageEnd: c.pageEnd, ordinal: c.ordinal } : c ? null : { fileName: f.name, spaceId: f.spaceId });
+      const flag = f.steering ? { steering: true as const } : {};
+      out.push(c && c.spaceId === f.spaceId ? { fileName: f.name, spaceId: f.spaceId, section: c.section, page: c.page, pageEnd: c.pageEnd, ordinal: c.ordinal, ...flag } : c ? null : { fileName: f.name, spaceId: f.spaceId, ...flag });
     }
     return out;
   },
@@ -194,7 +198,8 @@ export const fileChunks = internalQuery({
     const readable = await readableSpaceIds(ctx, userId);
     if (!readable.includes(file.spaceId)) return null;
     const rows = await ctx.db.query("chunks").withIndex("by_file", (q) => q.eq("fileId", file._id)).collect();
-    return { fileId: file._id as string, name: file.name, spaceId: file.spaceId as string, chunks: rows.map((r) => ({ text: r.text, section: r.section, page: r.page, pageEnd: r.pageEnd })) };
+    const steering = !!(await ctx.db.query("fileIndex").withIndex("by_file", (q) => q.eq("fileId", file._id)).unique())?.steering;
+    return { fileId: file._id as string, name: file.name, spaceId: file.spaceId as string, steering, chunks: rows.map((r) => ({ text: r.text, section: r.section, page: r.page, pageEnd: r.pageEnd })) };
   },
 });
 
