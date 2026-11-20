@@ -1,10 +1,15 @@
-// One container per run. This module is the only code that talks to Docker.
+// One container per run. This module is the only code that talks to the container engine
+// (Docker, or any engine with Docker's API such as kiri: SANDBOX_DOCKER_HOST).
 //
 // Isolation (every run): --network none, read-only root filesystem, tmpfs /tmp and /output with
 // size caps, non-root user 10001, --cap-drop ALL, no-new-privileges, default seccomp profile,
 // memory (no swap) / CPU / pids / nofile limits, wall-clock limit enforced here by killing the
 // container, no logs kept by Docker. Inputs are bind-mounted read-only at /input, the code at /code.
 // gVisor (runsc) is used when configured or detected.
+//
+// Fail closed: an engine may accept a flag and not apply it. The runner tells the container what it
+// asked for (SANDBOX_EXPECT); image/entry.py checks what the kernel actually applied before it runs
+// any user code, and a result without `checks: "passed"` is a failed run.
 
 import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join } from "node:path";
@@ -47,27 +52,59 @@ export function sha256(data: Uint8Array | string): string {
   return new Bun.CryptoHasher("sha256").update(data).digest("hex");
 }
 
+let dockerHost: string | undefined;
+
+/** Which engine the docker CLI talks to (a DOCKER_HOST URL); undefined = the CLI's own default. */
+export function setDockerHost(host: string | undefined) {
+  if (host !== dockerHost) runtimeCache = null;
+  dockerHost = host;
+}
+
+/** Environment for every docker CLI call: the configured engine wins over an inherited DOCKER_HOST/DOCKER_CONTEXT. */
+export function dockerEnv(): Record<string, string | undefined> {
+  if (!dockerHost) return process.env;
+  const { DOCKER_CONTEXT: _ignored, ...env } = process.env;
+  return { ...env, DOCKER_HOST: dockerHost };
+}
+
 async function docker(args: string[], timeoutMs = 30_000): Promise<{ code: number; stdout: string; stderr: string }> {
-  const p = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+  const p = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: dockerEnv() });
   const timer = setTimeout(() => p.kill(9), timeoutMs);
   const [stdout, stderr, code] = await Promise.all([new Response(p.stdout).text(), new Response(p.stderr).text(), p.exited]);
   clearTimeout(timer);
   return { code, stdout, stderr };
 }
 
-let runtimeCache: string | null = null;
+let runtimeCache: [Config["runtime"], string] | null = null;
 
-/** The OCI runtime to use: runsc (gVisor) if asked for, or if "auto" and Docker has it registered. */
+export class RuntimeUnavailable extends Error {}
+
+/**
+ * The OCI runtime to use, always one the engine lists (engines may accept an unknown --runtime and
+ * ignore it: kiri does). "auto": runsc (gVisor) when listed, else the engine's default runtime.
+ * A named runtime the engine doesn't list throws: no silent fallback to weaker isolation.
+ */
 export async function resolveRuntime(cfg: Pick<Config, "runtime">): Promise<string> {
-  if (cfg.runtime !== "auto") return cfg.runtime;
-  if (runtimeCache) return runtimeCache;
-  const r = await docker(["info", "--format", "{{json .Runtimes}}"]);
+  if (runtimeCache?.[0] === cfg.runtime) return runtimeCache[1];
+  const r = await docker(["info", "--format", "{{.DefaultRuntime}}\t{{json .Runtimes}}"]);
+  if (r.code !== 0) throw new RuntimeUnavailable(`container engine unavailable: ${r.stderr.trim().slice(0, 200)}`);
+  const [defaultRuntime, json] = r.stdout.trim().split("\t");
   let runtimes: Record<string, unknown> = {};
   try {
-    runtimes = JSON.parse(r.stdout);
+    runtimes = JSON.parse(json ?? "{}") ?? {};
   } catch {}
-  runtimeCache = Object.hasOwn(runtimes, "runsc") ? "runsc" : "runc";
-  return runtimeCache;
+  const listed = (name: string | undefined): name is string => !!name && Object.hasOwn(runtimes, name);
+  let runtime: string;
+  if (cfg.runtime === "auto") {
+    runtime = listed("runsc") ? "runsc" : defaultRuntime;
+    if (!listed(runtime)) throw new RuntimeUnavailable(`the engine's default runtime "${defaultRuntime}" is not in its runtime list`);
+  } else if (listed(cfg.runtime)) {
+    runtime = cfg.runtime;
+  } else {
+    throw new RuntimeUnavailable(`runtime ${cfg.runtime} is not available on this engine (it lists: ${Object.keys(runtimes).join(", ") || "none"})`);
+  }
+  runtimeCache = [cfg.runtime, runtime];
+  return runtime;
 }
 
 export async function dockerAvailable(): Promise<boolean> {
@@ -119,6 +156,24 @@ async function readCapped(stream: ReadableStream<Uint8Array>, max: number, onOve
     size += chunk.length;
   }
   return { text: Buffer.concat(chunks).toString("utf8"), overflow };
+}
+
+/** What the container must find applied before it runs user code (checked by image/entry.py). */
+export function expectations(limits: Limits, runtime: string) {
+  return {
+    uid: 10001,
+    gid: 10001,
+    memoryBytes: limits.memoryMb * 1024 * 1024,
+    pids: limits.pids,
+    cpus: limits.cpus,
+    nofile: 256,
+    // Mount size caps (bytes): /tmp, /output, /dev/shm.
+    tmpBytes: 128 * 1024 * 1024,
+    outputBytes: limits.outputMb * 1024 * 1024,
+    shmBytes: 1024 * 1024,
+    // gVisor is its own kernel: its seccomp/cgroup view differs and it enforces those from outside.
+    kernelChecks: runtime !== "runsc",
+  };
 }
 
 export async function runInContainer(cfg: Config, req: RunRequest): Promise<RunResult> {
@@ -180,13 +235,16 @@ export async function runInContainer(cfg: Config, req: RunRequest): Promise<RunR
       "--hostname", "sandbox",
       "--tmpfs", "/tmp:rw,nosuid,nodev,noexec,size=128m,mode=1777",
       "--tmpfs", `/output:rw,nosuid,nodev,noexec,size=${limits.outputMb}m,mode=1777`,
+      // Some engines (kiri) still give a 64 MB /dev/shm with --ipc none: replace it with a 1 MB one.
+      "--tmpfs", "/dev/shm:rw,nosuid,nodev,noexec,size=1m,mode=1777",
       "--mount", `type=bind,source=${inputDir},target=/input,readonly`,
       "--mount", `type=bind,source=${codeDir},target=/code,readonly`,
       "--env", `SANDBOX_TIMEOUT_MS=${limits.timeoutMs}`,
       "--env", `SANDBOX_OUTPUT_MAX=${outputBytes}`,
+      "--env", `SANDBOX_EXPECT=${JSON.stringify(expectations(limits, runtime))}`,
       cfg.image,
     ];
-    const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore" });
+    const proc = Bun.spawn(["docker", ...args], { stdout: "pipe", stderr: "pipe", stdin: "ignore", env: dockerEnv() });
     let killedByRunner = false;
     const kill = () => {
       if (killedByRunner) return;
@@ -222,6 +280,28 @@ export async function runInContainer(cfg: Config, req: RunRequest): Promise<RunR
       };
     }
     const r = JSON.parse(out.text.slice(at + MARKER.length));
+    if (r.checks !== "passed") {
+      // The container is not isolated the way we asked (or the image predates the check): the user code did not run.
+      const failed = Array.isArray(r.checkFailures) ? r.checkFailures.map(String).join("; ") : "the image did not run the isolation check (rebuild it)";
+      console.error("sandbox isolation check failed:", failed);
+      return {
+        ok: false,
+        exitCode: null,
+        timedOut: false,
+        oomKilled: false,
+        durationMs: Date.now() - started,
+        stdout: "",
+        stderr: "",
+        stdoutTruncated: false,
+        stderrTruncated: false,
+        files: [],
+        outputBytes: 0,
+        outputTruncated: false,
+        error: `sandbox isolation check failed: ${failed}`,
+        inputs,
+        ...base,
+      };
+    }
     const outFiles: OutputFile[] = (r.files ?? []).map((f: any) => {
       const bytes = Buffer.from(String(f.b64), "base64");
       return { name: String(f.name), size: bytes.length, sha256: sha256(bytes), b64: String(f.b64) };

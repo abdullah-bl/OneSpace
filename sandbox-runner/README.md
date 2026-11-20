@@ -10,7 +10,7 @@ database (plans/02 rule 7).
 ```bash
 cd sandbox-runner
 bun install
-bun run build-image                       # docker build -t onespace-sandbox:3 image  (needs internet once)
+bun run build-image                       # docker build -t onespace-sandbox:4 image  (needs internet once)
 export SANDBOX_SECRET="$(openssl rand -hex 32)"
 bun run start                             # http://127.0.0.1:8787
 ```
@@ -29,8 +29,9 @@ its own systemd service; OneBase's user should not be in the `docker` group.
 |---|---|---|
 | `SANDBOX_SECRET` | — (required, ≥16 chars) | shared secret, `Authorization: Bearer …` |
 | `SANDBOX_HOST` / `SANDBOX_PORT` | `127.0.0.1` / `8787` | keep it on loopback |
-| `SANDBOX_IMAGE` | `onespace-sandbox:3` | |
-| `SANDBOX_RUNTIME` | `auto` | `auto` uses gVisor (`runsc`) when Docker has it, else `runc`; or force `runc`/`runsc` |
+| `SANDBOX_IMAGE` | `onespace-sandbox:4` | |
+| `SANDBOX_DOCKER_HOST` | — (the docker CLI's default) | engine API socket, e.g. `unix:///run/kiri/docker.sock` (see *Other engines*) |
+| `SANDBOX_RUNTIME` | `auto` | `auto` uses gVisor (`runsc`) when the engine lists it, else the engine's default; `runc`/`runsc` are refused (503, `/health` `ok: false`) if the engine doesn't list them |
 | `SANDBOX_MAX_CONCURRENCY` | `2` | containers at once; extra runs wait |
 | `SANDBOX_MAX_TIMEOUT_MS` / `_MEMORY_MB` / `_CPUS` / `_PIDS` / `_OUTPUT_MB` | 120000 / 2048 / 2 / 256 / 50 | ceilings; request limits are clamped to them |
 | `SANDBOX_MAX_INPUT_MB` | `100` | total input bytes per run |
@@ -59,8 +60,17 @@ Image 2 adds python-docx, python-pptx, WeasyPrint, markdown-it-py, Noto fonts an
 (128 MB) and `/output` (size = output limit, `noexec,nosuid,nodev`), user `10001:10001`,
 `--cap-drop ALL`, `--security-opt no-new-privileges`, Docker's default seccomp profile,
 `--memory` = `--memory-swap` (no swap), `--cpus`, `--pids-limit`, `nofile`/`core` ulimits,
-`--ipc none`, `--log-driver none`, `--init`. Inputs are bind-mounted read-only at `/input`
+`--ipc none` plus a 1 MB tmpfs `/dev/shm`, `--log-driver none`, `--init`. Inputs are bind-mounted read-only at `/input`
 (names reduced to a safe basename), the code read-only at `/code/main.py`.
+
+**Fail closed.** An engine can accept a flag and not apply it. The runner passes what it asked for
+in `SANDBOX_EXPECT`; before any user code runs, `image/entry.py` checks what the kernel actually
+applied: uid/gid, no capabilities (effective, permitted, bounding), `NoNewPrivs`, only `lo`, read-only
+`/`, `/input`, `/code`, the `/tmp` `/output` `/dev/shm` size caps, `nofile`/`core` limits, and (not under
+gVisor, which enforces these from outside) the seccomp filter and the cgroup v2 memory, swap, pids and
+CPU limits. If anything is missing the code never runs and the result is
+`error: "sandbox isolation check failed: …"`. A result without `checks: "passed"` (an older image) is
+refused the same way. cgroup v2 is required.
 
 Inside, `image/entry.py` runs the code in its own process group with a time limit, an output
 file-size rlimit and `oom_score_adj=1000` (the OOM killer takes the user code, not the reporter),
@@ -76,6 +86,20 @@ With `SANDBOX_RUNTIME=auto` (default) the runner detects it from `docker info` a
 `--runtime runsc`; `/health` reports which runtime is in use. gVisor puts a user-space kernel
 between the code and the host kernel, which covers kernel exploits that seccomp/namespaces don't.
 Not installed on the development machine (runs used `runc`); the tests pass with either.
+
+## Other engines (kiri)
+
+Any engine with Docker's API works through `SANDBOX_DOCKER_HOST`; the image has to be in that engine
+(`docker save onespace-sandbox:4 | DOCKER_HOST=unix:///run/kiri/docker.sock docker load`). Run the
+tests against it before using it: `SANDBOX_DOCKER_HOST=unix:///run/kiri/docker.sock bun test tests`.
+
+[kiri](https://runkiri.com) 0.2.2 on Linux runs containers on the host kernel (no VM): the same
+isolation as Docker with `runc`, not more. Measured on the development machine through the runner,
+`print('hi')`: ~0.24 s on kiri, ~0.42 s on Docker; all tests pass on both. Differences found: kiri
+ignores `--runtime` (it lists only `kiri`, so no gVisor: `SANDBOX_RUNTIME=auto` reports `kiri`, a forced
+`runc`/`runsc` is refused) and gives a 64 MB `/dev/shm` despite `--ipc none` (hence the 1 MB tmpfs).
+The runner's user must be in the `kiri` group (socket `root:kiri 0660`), which, like the `docker`
+group, is root-equivalent: only the runner's user, never OneBase's.
 
 ## Image
 
@@ -107,4 +131,4 @@ openpyxl, matplotlib with an Arabic font).
 
 `tests/runner.test.ts` checks the hook.
 
-Image `onespace-sandbox:3` also adds these libraries: scipy, seaborn, scikit-learn, statsmodels, xlsxwriter, pypdf, tabulate and hijridate.
+Image `onespace-sandbox:4` also adds these libraries: scipy, seaborn, scikit-learn, statsmodels, xlsxwriter, pypdf, tabulate and hijridate.

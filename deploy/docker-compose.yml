@@ -40,7 +40,7 @@ services:
     environment:
       SANDBOX_SECRET: ${SANDBOX_SECRET:?set SANDBOX_SECRET in .env}
       SANDBOX_HOST: 0.0.0.0
-      SANDBOX_IMAGE: onespace-sandbox:3
+      SANDBOX_IMAGE: onespace-sandbox:4
       # Run inputs are written here and bind-mounted into each run's container by the host's
       # Docker, so the path must be the same inside this container and on the host.
       SANDBOX_WORKDIR: /var/lib/onespace-sandbox
@@ -53,7 +53,7 @@ services:
   sandbox-image:
     profiles: ["setup"]
     build: ../sandbox-runner/image
-    image: onespace-sandbox:3
+    image: onespace-sandbox:4
     entrypoint: ["true"]
 
   # Optional local models (docker compose --profile models up -d). Put GGUF files in ${MODELS_DIR}

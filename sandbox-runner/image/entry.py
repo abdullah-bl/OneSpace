@@ -3,6 +3,10 @@
 Runs as the unprivileged sandbox user inside a container with no network, a read-only root, and
 tmpfs /tmp and /output. The user code runs in a child process group with its own time limit; the
 outer runner enforces the wall-clock limit again by killing the container.
+
+Before any user code runs, check_isolation() compares what the kernel actually applied with what the
+runner asked for (SANDBOX_EXPECT). A container engine may accept a flag and ignore it; if anything is
+missing, the user code never runs and the result says which checks failed (fail closed).
 """
 
 import base64
@@ -11,6 +15,7 @@ import os
 import resource
 import shutil
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -33,6 +38,75 @@ def oom_kills():
     except OSError:
         pass
     return 0
+
+
+def _status():
+    out = {}
+    with open("/proc/self/status") as f:
+        for line in f:
+            k, _, v = line.partition(":")
+            out[k] = v.strip()
+    return out
+
+
+def _mounts():
+    """Mount point → options of the topmost mount there (later lines are mounted over earlier ones)."""
+    out = {}
+    with open("/proc/self/mounts") as f:
+        for line in f:
+            parts = line.split()
+            if len(parts) >= 4:
+                out[parts[1]] = set(parts[3].split(","))
+    return out
+
+
+def _read(path):
+    with open(path) as f:
+        return f.read().strip()
+
+
+def check_isolation(expect):
+    """Returns the list of isolation checks that failed (empty = safe to run the user code)."""
+    failed = []
+
+    def check(name, fn):
+        try:
+            if not fn():
+                failed.append(name)
+        except Exception as e:  # a check that can't be evaluated counts as failed
+            failed.append(f"{name} ({type(e).__name__})")
+
+    st = _status()
+    mounts = _mounts()
+
+    def size_at_most(path, limit):
+        v = os.statvfs(path)
+        return v.f_blocks * v.f_frsize <= limit
+
+    check("uid/gid", lambda: os.getuid() == expect["uid"] and os.getgid() == expect["gid"])
+    check("no capabilities", lambda: int(st["CapEff"], 16) == 0 and int(st["CapPrm"], 16) == 0 and int(st["CapBnd"], 16) == 0)
+    check("no-new-privileges", lambda: st["NoNewPrivs"] == "1")
+    check("network: loopback only", lambda: [n for _, n in socket.if_nameindex()] == ["lo"])
+    check("read-only root", lambda: "ro" in mounts["/"])
+    check("read-only /input", lambda: "ro" in mounts["/input"])
+    check("read-only /code", lambda: "ro" in mounts["/code"])
+    check("/tmp size", lambda: size_at_most("/tmp", expect["tmpBytes"]))
+    check("/output size", lambda: size_at_most("/output", expect["outputBytes"]))
+    check("/dev/shm size", lambda: not os.path.exists("/dev/shm") or size_at_most("/dev/shm", expect["shmBytes"]))
+    check("nofile limit", lambda: max(resource.getrlimit(resource.RLIMIT_NOFILE)) <= expect["nofile"])
+    check("no core dumps", lambda: resource.getrlimit(resource.RLIMIT_CORE)[1] == 0)
+    if expect.get("kernelChecks", True):
+        check("seccomp filter", lambda: st["Seccomp"] == "2")
+        check("memory limit", lambda: int(_read("/sys/fs/cgroup/memory.max")) <= expect["memoryBytes"])
+        check("no swap", lambda: _read("/sys/fs/cgroup/memory.swap.max") == "0")
+        check("pids limit", lambda: int(_read("/sys/fs/cgroup/pids.max")) <= expect["pids"])
+
+        def cpu_ok():
+            quota, period = _read("/sys/fs/cgroup/cpu.max").split()
+            return quota != "max" and int(quota) / int(period) <= expect["cpus"] * 1.01
+
+        check("cpu limit", cpu_ok)
+    return failed
 
 
 def reader(pipe, sink):
@@ -92,6 +166,15 @@ def collect_outputs():
 
 
 def main():
+    try:
+        expect = json.loads(os.environ["SANDBOX_EXPECT"])
+        failures = check_isolation(expect)
+    except Exception as e:
+        failures = [f"no usable SANDBOX_EXPECT ({type(e).__name__})"]
+    if failures:
+        sys.stdout.write("\n" + MARKER + json.dumps({"checks": "failed", "checkFailures": failures, "exitCode": None}) + "\n")
+        sys.stdout.flush()
+        return
     for d in ("/tmp/work", "/tmp/home"):
         os.makedirs(d, exist_ok=True)
     try:
@@ -148,6 +231,7 @@ def main():
     oom = oom_kills() > oom_before
     files, total, truncated = collect_outputs()
     result = {
+        "checks": "passed",
         "exitCode": code,
         "timedOut": timed_out,
         "oomKilled": oom,

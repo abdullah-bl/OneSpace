@@ -1,13 +1,13 @@
 // sandbox-runner: a small local HTTP service and the only process with Docker access.
 // OneBase calls it with a shared secret; it never sees the database, only the files sent per run.
 //
-//   GET  /health  → { ok, docker, image, runtime }            (no secret needed, no details leaked)
+//   GET  /health  → { ok, docker, image, runtime, runtimeError? } (no secret needed, no details leaked)
 //   POST /run     → RunResult                                 (Authorization: Bearer $SANDBOX_SECRET)
 //        body: { code, files: [{ name, b64 }], limits?: { timeoutMs, memoryMb, cpus, pids, outputMb } }
 
 import { timingSafeEqual } from "node:crypto";
 import { loadConfig, type Config } from "./config";
-import { BadRequest, dockerAvailable, imagePresent, removeStaleContainers, resolveRuntime, runInContainer } from "./docker";
+import { BadRequest, RuntimeUnavailable, dockerAvailable, imagePresent, removeStaleContainers, resolveRuntime, runInContainer, setDockerHost } from "./docker";
 
 function authorized(req: Request, secret: string): boolean {
   const header = req.headers.get("authorization") ?? "";
@@ -36,6 +36,7 @@ function semaphore(n: number) {
 }
 
 export async function startServer(cfg: Config = loadConfig()) {
+  setDockerHost(cfg.dockerHost);
   await removeStaleContainers().catch(() => {});
   const limit = semaphore(Math.max(1, cfg.maxConcurrency));
   const maxBody = Math.ceil(cfg.maxInputMb * 1024 * 1024 * 1.4) + 2 * 1024 * 1024;
@@ -49,7 +50,16 @@ export async function startServer(cfg: Config = loadConfig()) {
       if (url.pathname === "/health" && req.method === "GET") {
         const docker = await dockerAvailable();
         const image = docker && (await imagePresent(cfg.image));
-        return json({ ok: docker && image, docker, image, runtime: docker ? await resolveRuntime(cfg) : null });
+        let runtime: string | null = null;
+        let runtimeError: string | undefined;
+        if (docker) {
+          try {
+            runtime = await resolveRuntime(cfg);
+          } catch (e) {
+            runtimeError = e instanceof RuntimeUnavailable ? e.message : "runtime check failed";
+          }
+        }
+        return json({ ok: docker && image && runtime !== null, docker, image, runtime, ...(runtimeError ? { runtimeError } : {}) });
       }
       if (url.pathname === "/run" && req.method === "POST") {
         if (!authorized(req, cfg.secret)) return json({ error: "unauthorized" }, 401);
@@ -63,6 +73,7 @@ export async function startServer(cfg: Config = loadConfig()) {
           return json(await limit(() => runInContainer(cfg, body)));
         } catch (e) {
           if (e instanceof BadRequest) return json({ error: e.message }, 400);
+          if (e instanceof RuntimeUnavailable) return json({ error: e.message }, 503);
           console.error("run failed:", e);
           return json({ error: "run failed" }, 500);
         }
@@ -75,5 +86,6 @@ export async function startServer(cfg: Config = loadConfig()) {
 if (import.meta.main) {
   const cfg = loadConfig();
   const server = await startServer(cfg);
-  console.log(`sandbox-runner on http://${server.hostname}:${server.port} image=${cfg.image} runtime=${await resolveRuntime(cfg).catch(() => "?")}`);
+  const runtime = await resolveRuntime(cfg).catch((e) => `UNAVAILABLE (${e.message})`);
+  console.log(`sandbox-runner on http://${server.hostname}:${server.port} engine=${cfg.dockerHost ?? "default"} image=${cfg.image} runtime=${runtime}`);
 }
