@@ -29,7 +29,7 @@ import { mentionInChat } from "./mentions";
 import { queueTurn } from "./lib/turns";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type DecisionLog, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { routeTurn, type Route } from "./decisions";
-import { makingRequest } from "./lib/route";
+import { makingRequest, reworkRequest } from "./lib/route";
 export { makingRequest };
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
@@ -1565,7 +1565,10 @@ export const runTurn = internalAction({
         if (hasHistory) await ctx.runMutation(internal.chat.setLabel, { turnId, label: "يفهم السؤال…" });
         route = await routeTurn(c.question, c.history, c.summary, { track: { ctx, turnId }, log: logDecision });
       }
-      const making = !c.focused && (route && openCase ? !route.needsFiles : makingRequest(c.question));
+      // Reworking the previous answer («حولها جدول»، «اختصرها») is never a search, whatever the
+      // router says: its material is in the history, and a search only finds unrelated files.
+      const rework = hasHistory && reworkRequest(c.question);
+      const making = !c.focused && (rework || (route && openCase ? !route.needsFiles : makingRequest(c.question)));
       const retrieve = searchable && (!open || (c.spaceIds.length > 0 && !pasted && !making));
       let shown = 0;
       if (retrieve) {

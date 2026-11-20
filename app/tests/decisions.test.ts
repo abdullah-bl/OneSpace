@@ -294,6 +294,15 @@ describe("routing", () => {
     expect(searched(await ask(a, tok(fa, "mgr"), t, "ما رأيك في الطقس R-NOFILES"))).toBeFalsy();
   }, 30_000);
 
+  test("reworking the previous answer («حولها جدول») never pre-searches, even when the decision says files", async () => {
+    const t = must(await a.call("mutation", "chat:createThread", { spaceId: fa.spaces.S_every }, tok(fa, "mgr")));
+    await ask(a, tok(fa, "mgr"), t, "حكمة اليوم؟ R-NOFILES");
+    // the scripted router answers needsFiles: true for these; the rework guard wins
+    for (const q of ["حولها جدولة", "اختصرها", "حط الجواب في جدول"]) expect([q, !!searched(await ask(a, tok(fa, "mgr"), t, q))]).toEqual([q, false]);
+    // a follow-up that names the files still searches
+    expect(searched(await ask(a, tok(fa, "mgr"), t, "حول محتوى ملف CONTENT-S_every إلى جدول"))).toBeTruthy();
+  }, 30_000);
+
   test("with history, the decision's search question replaces rewriteQuery (no extra call)", async () => {
     const t = must(await a.call("mutation", "chat:createThread", { spaceId: fa.spaces.S_every }, tok(fa, "mgr")));
     await ask(a, tok(fa, "mgr"), t, "ما محتوى CONTENT-S_every؟");
