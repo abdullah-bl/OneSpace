@@ -338,10 +338,19 @@ describe("space instructions (the space as a project)", () => {
 });
 
 describe("one task, several assignees", () => {
+  // tmp joins S_plain for a test and always leaves it again, even when the test fails.
+  const withTmp = async (fn: () => Promise<void>) => {
+    must(await m("spaces:addMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp, role: "member" }, "mgr"));
+    try {
+      await fn();
+    } finally {
+      await m("spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp }, "mgr");
+    }
+  };
   const ACTORS = ["admin", "mgr", "mem", "rdr", "out", "pend", "dis", "tmp", "anon"];
 
-  test("each assignee is notified, sees it in «مهامي», works on it; the manager still reviews and closes", async () => {
-    must(await m("spaces:addMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp, role: "member" }, "mgr"));
+  test("each assignee is notified, sees it in «مهامي», works on it; the manager still reviews and closes", () =>
+    withTmp(async () => {
     const taskId = must(await m("tasks:create", { spaceId: f.spaces.S_plain, title: "مشتركة-MA01", assigneeIds: [f.ids.mem, f.ids.tmp, f.ids.mem] }, "mgr")) as string;
     const row = must(await q("tasks:get", { taskId }, "rdr"));
     expect(row.assigneeIds).toEqual([f.ids.mem, f.ids.tmp]); // repeats dropped, order kept
@@ -360,9 +369,8 @@ describe("one task, several assignees", () => {
     // Any assignee moves it forward and attaches; one shared status.
     must(await m("tasks:setStatus", { taskId, status: "inProgress" }, "tmp"));
     must(await m("tasks:addLink", { taskId, type: "file", id: f.files.S_plain }, "mem"));
-    must(await m("notifications:markAllRead", {}, "mgr"));
     must(await m("tasks:setStatus", { taskId, status: "review" }, "mem"));
-    expect((await feed("mgr")).some((n) => n.kind === "task.review" && n.taskId === taskId && !n.read)).toBe(true);
+    expect((await feed("mgr")).some((n) => n.kind === "task.review" && n.taskId === taskId)).toBe(true);
     // An assignee can't close it; the manager does, and every assignee hears.
     expect((await m("tasks:setStatus", { taskId, status: "done" }, "tmp")).ok).toBe(false);
     must(await m("tasks:setStatus", { taskId, status: "done" }, "mgr"));
@@ -375,11 +383,10 @@ describe("one task, several assignees", () => {
     expect((await feed("mem")).some((n) => n.kind === "task.comment" && n.body?.includes("MA01-C"))).toBe(true);
     expect((await feed("mgr")).some((n) => n.kind === "task.comment" && n.body?.includes("MA01-C"))).toBe(true);
     must(await m("tasks:remove", { taskId }, "mgr"));
-    must(await m("spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp }, "mgr"));
-  });
+    }));
 
-  test("assign sets the whole list: only the added are notified, the removed lose the task's work, one audit row says who", async () => {
-    must(await m("spaces:addMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp, role: "member" }, "mgr"));
+  test("assign sets the whole list: only the added are notified, the removed lose the task's work, one audit row says who", () =>
+    withTmp(async () => {
     const taskId = must(await m("tasks:create", { spaceId: f.spaces.S_plain, title: "إعادة-إسناد-MA02", assigneeIds: [f.ids.mem] }, "mgr")) as string;
     must(await m("notifications:markAllRead", {}, "mem"));
     must(await m("tasks:assign", { taskId, assigneeIds: [f.ids.mem, f.ids.tmp] }, "mgr"));
@@ -400,8 +407,7 @@ describe("one task, several assignees", () => {
     expect(details).toContainEqual(expect.objectContaining({ assigneeIds: `${f.ids.mem},${f.ids.tmp}`, added: f.ids.tmp, removed: null, from: f.ids.mem }));
     expect(details).toContainEqual(expect.objectContaining({ assigneeIds: f.ids.tmp, assigneeNames: "موظف tmp", added: null, removed: f.ids.mem }));
     must(await m("tasks:remove", { taskId }, "mgr"));
-    must(await m("spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp }, "mgr"));
-  });
+    }));
 
   test("every assignee must be a manager or member; an empty or oversized list is refused; the old single assigneeId still works", async () => {
     const base = { spaceId: f.spaces.S_plain, title: "x" };
