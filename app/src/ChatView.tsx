@@ -13,11 +13,11 @@ import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
 import { openSkillDraft } from "./SkillsView";
 import { Icon } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
-import { renderAnswer } from "./markdown";
+import { CITE_CHECK, renderAnswer } from "./markdown";
 
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
 type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spaceId?: string };
-type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string };
+type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
 type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
 type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null };
@@ -794,7 +794,8 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
   const [copied, setCopied] = useState(false);
   const [showSources, setShowSources] = useState(false);
   const byN = useMemo(() => new Map(m.citations.map((c) => [c.n, c])), [m.citations]);
-  const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys())) : ""), [m.text, byN, m.role]);
+  const checks = useMemo(() => new Map(m.citations.filter((c) => c.check).map((c) => [c.n, c.check!])), [m.citations]);
+  const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys()), checks) : ""), [m.text, byN, checks, m.role]);
 
   if (m.role === "user")
     return (
@@ -854,6 +855,7 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
                 <span className="min-w-0 flex-1">
                   <span className="block truncate">{c.fileName}{c.page ? ` · ص ${c.page}` : ""}</span>
                   <span className="line-clamp-2 text-xs text-muted">{c.quote.split("\n").slice(1).join(" ")}</span>
+                  {c.check && <span className={`mt-0.5 block text-xs ${c.check === "contradicts" ? "text-negative" : "text-warning"}`}>{CITE_CHECK[c.check]}</span>}
                 </span>
               </button>
             </li>

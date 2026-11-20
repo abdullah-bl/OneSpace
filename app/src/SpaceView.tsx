@@ -490,7 +490,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
 
 function FileRow(props: {
   f: { _id: string; name: string; size: number; version: number; updatedAt: number; uploadedByName: string | null; mime: string };
-  ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean };
+  ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean; steering?: string | null };
   space: SpaceInfo;
   showVersions: boolean;
   onToggleVersions: () => void;
@@ -695,7 +695,7 @@ function MembersPanel({ space }: { space: SpaceInfo }) {
 }
 
 /** Ingest state for the AI index: قيد المعالجة · جاهز · فشل (with the reason and a retry), and an OCR mark. */
-function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean }; canWrite: boolean }) {
+function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean; steering?: string | null }; canWrite: boolean }) {
   const retry = useMutation(api.ingest.retry);
   if (!ingest) return null;
   const color =
@@ -709,6 +709,11 @@ function IngestBadge({ fileId, ingest, canWrite }: { fileId: string; ingest?: { 
         </span>
       )}
       {ingest.ocr && <span className="rounded bg-warning-soft px-1.5 text-warning" title="بعض الصفحات قُرئت آلياً من صورة (OCR)، فدقتها أقل">OCR</span>}
+      {ingest.steering && (
+        <span className="rounded bg-warning-soft px-1.5 text-warning" title={`يقرأ المساعد هذا الملف بيانات لا تعليمات. النص: «${ingest.steering}»`}>
+          فيه نص موجّه للمساعد
+        </span>
+      )}
       {ingest.state === "failed" && ingest.error && <span className="text-negative">{ingest.error}</span>}
       {ingest.state === "failed" && canWrite && (
         <button className="text-ink hover:underline" onClick={() => void retry({ fileId: fileId as any })}>

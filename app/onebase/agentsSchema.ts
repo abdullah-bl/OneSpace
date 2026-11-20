@@ -32,6 +32,9 @@ export const agentConfig = v.object({
   // tool (cites when it does); "documents" = answers only from the documents and abstains when
   // they don't cover the question (Phase 2 behaviour). Missing = "documents" (agents from before).
   grounding: v.optional(v.union(v.literal("open"), v.literal("documents"))),
+  // plans/12: «وجّه الطلبات البسيطة للنموذج الخفيف»: thanks or a rephrase of the last answer go to
+  // the fast model when the decision model judges the turn light. Off (missing) by default.
+  lightRouting: v.optional(v.boolean()),
 });
 
 export const proposalState = v.union(v.literal("pending"), v.literal("running"), v.literal("executed"), v.literal("failed"), v.literal("cancelled"), v.literal("expired"), v.literal("undone"));

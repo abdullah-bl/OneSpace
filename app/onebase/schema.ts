@@ -159,6 +159,8 @@ export default defineSchema({
     order: v.number(),
     createdBy: v.id("users"),
     updatedBy: v.id("users"),
+    fromForm: v.optional(v.boolean()), // a form reply (plans/11): outside text, read by the assistant as data
+    steering: v.optional(v.object({ quote: v.string(), at: v.number() })), // plans/12 guard: aimed at the assistant
     createdAt: v.number(),
     updatedAt: v.number(),
   }).index("by_list", ["listId", "order"]),
@@ -356,6 +358,9 @@ export default defineSchema({
     note: v.optional(v.string()),
     workflowId: v.optional(v.string()),
     entryId: v.optional(v.string()), // the rag entry currently holding this file's vectors
+    // plans/12 guard: its first chunks hold text aimed at the assistant (a badge; passages read as data)
+    steering: v.optional(v.object({ quote: v.string(), at: v.number() })),
+    guardedVersion: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_file", ["fileId"]),
 
@@ -411,8 +416,18 @@ export default defineSchema({
     threadId: v.string(),
     userId: v.id("users"),
     citations: v.array(
-      v.object({ n: v.number(), fileId: v.string(), fileName: v.string(), page: v.optional(v.number()), section: v.optional(v.string()), quote: v.string() }),
+      v.object({
+        n: v.number(),
+        fileId: v.string(),
+        fileName: v.string(),
+        page: v.optional(v.number()),
+        section: v.optional(v.string()),
+        quote: v.string(),
+        // plans/12: the citation check found the passage doesn't say this (marked on the chip, text unchanged)
+        check: v.optional(v.union(v.literal("unrelated"), v.literal("contradicts"))),
+      }),
     ),
+    citeCheck: v.optional(v.object({ at: v.number(), checked: v.number(), flagged: v.number() })),
     toolRuns: v.array(v.object({ name: v.string(), label: v.string(), args: v.any(), ok: v.boolean(), summary: v.string() })),
     abstained: v.boolean(),
     feedback: v.optional(v.union(v.literal("up"), v.literal("down"))),
@@ -481,6 +496,8 @@ export default defineSchema({
     effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))), // thinking level picked in the composer (none = auto)
     userMessageId: v.optional(v.string()), // the question's own message: its attached files show on it
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
+    // Decision-model calls for this turn (plans/12): kind, time, the output or why code decided.
+    decisions: v.optional(v.array(v.object({ kind: v.string(), ms: v.number(), ok: v.boolean(), why: v.optional(v.string()), out: v.optional(v.any()) }))),
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),

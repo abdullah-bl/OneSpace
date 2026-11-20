@@ -7,11 +7,12 @@ import { api, errorText, formatDate } from "./lib";
 import { Icon } from "./icons";
 import { ask, EmptyState, Menu, PageHeader, tell } from "./ui";
 
-type Role = "main" | "fast" | "vision";
+type Role = "main" | "fast" | "vision" | "decide";
 const ROLES: { key: Role; title: string; detail: string }[] = [
   { key: "main", title: "النموذج الرئيس", detail: "المحادثة والأدوات والتحليل" },
   { key: "fast", title: "النموذج السريع", detail: "العناوين واختيار الوكيل ومستوى «أساسي»" },
   { key: "vision", title: "نموذج الرؤية", detail: "قراءة الصور والملفات الممسوحة" },
+  { key: "decide", title: "نموذج القرار", detail: "قرارات صغيرة قبل الإجابة وبعدها. اختر نموذجاً صغيراً سريعاً" },
 ];
 /** Models that can't chat, by their usual names: shown with a tag and not offered for a role. */
 function special(model: string): string | null {
@@ -66,6 +67,8 @@ export function ProvidersView() {
             {data.embed.mismatch && <ReindexBanner indexedWith={data.embed.indexedWith} onError={setError} />}
           </section>
 
+          <Decisions data={data} onError={setError} />
+
           <section>
             <h2 className="section-title mb-3">المزوّدون</h2>
             {editing && <ProviderForm key={editing === "new" ? "new" : editing._id} provider={editing === "new" ? null : editing} onDone={() => setEditing(null)} />}
@@ -84,6 +87,44 @@ export function ProvidersView() {
         </div>
       )}
     </div>
+  );
+}
+
+const DECISIONS: { key: "route" | "cite" | "guard"; title: string; detail: string }[] = [
+  { key: "route", title: "توجيه الطلب", detail: "هل يحتاج الطلب البحث في الملفات، وبأي سؤال بحث. عند الإيقاف: القاعدة الثابتة." },
+  { key: "cite", title: "فحص الاستشهادات", detail: "بعد الإجابة: هل يذكر المقطع المستشهد به ما قيل؟ يضع علامة على الاستشهاد المشكوك فيه ولا يغيّر النص." },
+  { key: "guard", title: "فحص النص الخارجي", detail: "المهارات المستوردة والملفات المرفوعة وردود النماذج العامة: ينبّه إن وُجد نص موجّه للمساعد، ولا يمنع شيئاً." },
+];
+
+/** plans/12: each decision can be turned off, which returns it to the code it replaced. */
+function Decisions({ data, onError }: { data: Data; onError: (e: string) => void }) {
+  const setDecision = useMutation(api.providers.setDecision);
+  return (
+    <section>
+      <h2 className="section-title mb-1">قرارات نموذج القرار</h2>
+      <p className="mb-3 text-xs text-muted">قرارات صغيرة يتخذها نموذج القرار بدل قواعد ثابتة. لا تمنح صلاحية أبداً: إن تأخر النموذج أو أخطأ عاد القرار إلى القاعدة.</p>
+      <ul className="card divide-y divide-rule">
+        {DECISIONS.map((d) => (
+          <li key={d.key} className="flex items-start gap-3 px-4 py-3 text-sm">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium">{d.title}</p>
+              <p className="text-xs text-muted">{d.detail}</p>
+            </div>
+            <label className="flex shrink-0 cursor-pointer items-center gap-2 text-xs">
+              <input
+                type="checkbox"
+                checked={data.decisions[d.key]}
+                onChange={(e) => {
+                  onError("");
+                  setDecision({ kind: d.key, on: e.target.checked }).catch((x) => onError(errorText(x)));
+                }}
+              />
+              {data.decisions[d.key] ? "يعمل" : "متوقف"}
+            </label>
+          </li>
+        ))}
+      </ul>
+    </section>
   );
 }
 
@@ -115,6 +156,8 @@ function RoleCard({ role, data, onError }: { role: (typeof ROLES)[number]; data:
               <>
                 <span className="font-medium">{cur.model}</span> <span className="text-muted">· {p.name}</span>
               </>
+            ) : role.key === "decide" && data.decideFollowsFast ? (
+              <span className="text-muted">مثل النموذج السريع</span>
             ) : env.configured ? (
               <>
                 <span className="font-medium" dir="ltr">

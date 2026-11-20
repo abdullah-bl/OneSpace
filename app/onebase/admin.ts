@@ -266,7 +266,27 @@ export const overview = query({
     const dayAgo = Date.now() - 24 * 3600 * 1000;
     const turns = await ctx.db.query("turns").order("desc").take(5000);
     const today = turns.filter((t) => t.queuedAt > dayAgo);
+    // plans/12: answers whose citation check doubted a source, per agent, over the last 7 days.
+    const weekAgo = Date.now() - 7 * 24 * 3600 * 1000;
+    const checked = (await ctx.db.query("messageMeta").order("desc").take(5000)).filter((m) => m._creationTime > weekAgo && m.citeCheck);
+    const perAgent = new Map<string, { checked: number; doubted: number }>();
+    for (const m of checked) {
+      const k = m.agentId ?? "-";
+      const x = perAgent.get(k) ?? { checked: 0, doubted: 0 };
+      x.checked++;
+      if (m.citeCheck!.flagged > 0) x.doubted++;
+      perAgent.set(k, x);
+    }
+    const agentName = (id: string) => {
+      const a = agents.find((x) => x._id === id);
+      return (a?.live ?? a?.draft)?.name ?? "—";
+    };
     return {
+      citeDoubts: {
+        checked: checked.length,
+        doubted: checked.filter((m) => m.citeCheck!.flagged > 0).length,
+        byAgent: [...perAgent].filter(([, x]) => x.doubted > 0).map(([agentId, x]) => ({ agentId, name: agentName(agentId), ...x })).sort((a, b) => b.doubted - a.doubted),
+      },
       users: { active, pending },
       spaces: { total: spaces.length, sensitive: spaces.filter((s) => s.sensitive).length },
       agents: { total: agents.length, live: agents.filter((a) => a.live && a.enabled).length, drafts: agents.filter((a) => a.draft).map((a) => ({ _id: a._id, name: (a.draft ?? a.live)?.name ?? "—", unpublished: !a.live })) },

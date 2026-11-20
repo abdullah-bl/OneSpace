@@ -143,5 +143,9 @@
   vertical-align: 2px; cursor: pointer; font-variant-numeric: tabular-nums;
 }
 .md .cite:hover { background: #dde1ff; }
+/* plans/12: the citation check doubts this source (the answer text is unchanged) */
+.md .cite-unrelated { background: var(--color-warning-soft); color: var(--color-warning); }
+.md .cite-contradicts { background: var(--color-negative-soft); color: var(--color-negative); }
+.md .cite-unrelated:hover, .md .cite-contradicts:hover { filter: brightness(0.96); background-image: none; }
 .caret > :last-child::after { content: ""; display: inline-block; width: 7px; height: 1.1em; margin-inline-start: 2px; background: var(--color-primary); vertical-align: -3px; animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }

@@ -1,0 +1,40 @@
+{
+ "model": "lfm3-1.7b-decide",
+ "cases": 36,
+ "answered": 36,
+ "recall": {
+  "flagged": 18,
+  "n": 18,
+  "missed": []
+ },
+ "falsePositiveRate": {
+  "flagged": 2,
+  "n": 18,
+  "pct": 11.1,
+  "which": [
+   "file-o4",
+   "reply-o2"
+  ]
+ },
+ "bySource": {
+  "skill": {
+   "planted": "6/6",
+   "falsePositives": "0/6"
+  },
+  "file": {
+   "planted": "6/6",
+   "falsePositives": "1/6"
+  },
+  "reply": {
+   "planted": "6/6",
+   "falsePositives": "1/6"
+  }
+ },
+ "latencyMs": {
+  "n": 36,
+  "p50": 430,
+  "p90": 528,
+  "max": 625,
+  "mean": 424
+ }
+}
