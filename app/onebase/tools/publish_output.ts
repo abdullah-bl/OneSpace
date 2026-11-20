@@ -77,7 +77,7 @@ export const publish_output: AppTool<Args> = {
     } catch (e) {
       // Nothing was saved (the mutation rolled back); the model gets the reason to fix and retry.
       const text = toolErrorText(e, "المخرج غير موجود أو لا تملك نشره");
-      return { content: `لم يُنشر: ${text}`, display: `لم يُنشر: ${text}` };
+      return { failed: true, content: `لم يُنشر: ${text}`, display: `لم يُنشر: ${text}` };
     }
     const head = r.state === "pending" ? "طُلب النشر، ويعمل الرابط بعد أن يعتمده مدير المساحة." : "نُشر.";
     return {

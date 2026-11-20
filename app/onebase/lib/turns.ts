@@ -27,6 +27,8 @@ export async function queueTurn(
     skillId?: Id<"skills">;
     /** Thinking level from the composer: auto (decided per question), fast, deep. */
     effort?: "auto" | "fast" | "deep";
+    /** plans/16: a colleague's team message handed to the assistant. */
+    handoffOf?: string;
   },
 ): Promise<Id<"turns">> {
   if (!t.skipLimit) {
@@ -53,6 +55,7 @@ export async function queueTurn(
     skillId: t.skillId,
     effort: t.effort,
     userMessageId,
+    ...(t.handoffOf ? { handoffOf: t.handoffOf } : {}),
   });
   await ctx.components.gpu.enqueueAction({ fn: internal.chat.runTurn, args: { turnId }, onComplete: internal.chat.turnDone, context: { turnId } });
   return turnId;

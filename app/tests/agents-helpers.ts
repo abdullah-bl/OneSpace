@@ -52,11 +52,13 @@ export function isTitleRequest(r: any) {
   return !!r.body.response_format && JSON.stringify(r.body.response_format).includes('"title"');
 }
 
+import { MEMORY_TOOLS, PERSONAL_TOOLS } from "../onebase/tools";
+
 /** The tool names offered in a chat request: the agent's own (memory tools come with every agent, plans/09). */
 export function offered(req: any): string[] {
   return (req.body.tools ?? [])
     .map((t: any) => t.function.name)
-    .filter((n: string) => n !== "remember" && n !== "recall" && n !== "create_skill" && n !== "use_skill" && !n.endsWith("_list") && n !== "publish_output" && !n.endsWith("_app"))
+    .filter((n: string) => !MEMORY_TOOLS.includes(n) && !PERSONAL_TOOLS.includes(n))
     .sort();
 }
 

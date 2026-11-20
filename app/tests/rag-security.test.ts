@@ -300,7 +300,7 @@ describe("removal test: a removed member's search stops returning that space imm
     expect(after.citations.some((c: any) => c.fileId === fileId)).toBe(false);
     // UX redesign: the default (general) agent no longer abstains; what matters is that nothing
     // from the space is retrieved or cited any more.
-    expect(after.toolRuns.find((r: any) => r.name === "search_documents")?.summary ?? "0 مقطعاً").toBe("0 مقطعاً");
+    expect(after.toolRuns.find((r: any) => r.name === "search_documents")?.summary ?? "نتائج: 0").toBe("نتائج: 0");
     expect(after.text).not.toContain("120 ألف");
     // The old answer stays in tmp's own history (it is theirs), but the space-scoped thread is gone too.
     const scoped = await s.call("mutation", "chat:createThread", { scope: { kind: "space", id: f.spaces.S_plain } }, tok("tmp"));

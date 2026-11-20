@@ -16,6 +16,8 @@ import { openSkillDraft } from "./SkillsView";
 import { Icon, type IconName } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { CITE_CHECK, renderAnswer } from "./markdown";
+import { SummaryDivider, type ChatSummaryInfo } from "./ChatSummary";
+import { HandoffLine, TeamMessage, type TeamTo } from "./TeamMessage";
 
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
 // "person": a named member of this shared space's chat, told this one message (mentions.mentionInChat).
@@ -23,7 +25,7 @@ type Mention = { kind: "file" | "space" | "agent" | "person"; id: string; name: 
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
 type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean; team?: { to: TeamTo[] } | null; handoffOf?: string | null };
 type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
@@ -140,14 +142,14 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
 
-  const submit = async (text: string, mentions: Mention[], skill?: SkillRef | null) => {
+  const submit = async (text: string, mentions: Mention[], skill?: SkillRef | null, toAssistant?: boolean) => {
     setError("");
     try {
       let id = threadId;
       if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace, shared: !!canShareNew && newShared } : {}) })) as string;
       const scope = mentions.filter((m): m is Mention & { kind: "file" | "space" } => m.kind === "file" || m.kind === "space");
       const people = mentions.filter((m) => m.kind === "person").map((m) => m.id);
-      await send({ threadId: id, text, mentions: scope.map((m) => ({ kind: m.kind, id: m.id })), ...(people.length ? { people } : {}), ...(skill ? { skillId: skill.id } : {}), effort });
+      await send({ threadId: id, text, mentions: scope.map((m) => ({ kind: m.kind, id: m.id })), ...(people.length ? { people, to: toAssistant ? ("assistant" as const) : ("team" as const) } : {}), ...(skill ? { skillId: skill.id } : {}), effort });
       stick.current = true;
       if (!threadId) go(`/chat/${id}`);
       return true;
@@ -257,7 +259,10 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             )}
             {data?.agent?.error && <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">{data.agent.error}</div>}
             {messages.map((m) => (
-              <MessageView key={m.id} m={m} canWrite={data?.canWrite ?? true} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+              <Fragment key={m.id}>
+                <MessageView m={m} canWrite={data?.canWrite ?? true} busy={working} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+                {threadId && data?.summary && data.summary.afterId === m.id && <SummaryDivider threadId={threadId} summary={data.summary as ChatSummaryInfo} canWrite={!!data.canWrite} />}
+              </Fragment>
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
             {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} shared={!!canShareNew && newShared} />}
@@ -395,7 +400,7 @@ function Composer(props: {
   onEffort: (e: Effort) => void;
   working: boolean;
   onStop?: () => void;
-  onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null) => Promise<boolean>;
+  onSubmit: (text: string, mentions: Mention[], skill?: SkillRef | null, toAssistant?: boolean) => Promise<boolean>;
   initial?: { mentions: Mention[]; text?: string; skill?: SkillRef } | null;
   starters?: boolean;
   shared?: boolean; // a shared space chat (plans/14): its members read it, so @person links to it
@@ -412,6 +417,7 @@ function Composer(props: {
   // "/": my skills. One per message; its "/name" stays in the text.
   const [slash, setSlash] = useState<string | null>(null);
   const [skill, setSkill] = useState<SkillRef | null>(props.initial?.skill ?? null);
+  const [alsoAssistant, setAlsoAssistant] = useState(false);
   // Mine, and this chat's space skills (plans/09 §2).
   const mySkills = useQuery(api.skills.forChat, slash !== null || skill ? (props.space?.kind === "shared" ? { spaceId: props.space._id } : {}) : "skip");
   const skillItems = useMemo(() => {
@@ -517,11 +523,12 @@ function Composer(props: {
     const kept = mentions.filter((m) => m.kind !== "agent");
     // Same for the skill: deleting its "/name" from the text drops it.
     const used = skill && q.includes(`/${skill.name}`) ? skill : null;
-    const ok = await props.onSubmit(q, kept, used);
+    const ok = await props.onSubmit(q, kept, used, alsoAssistant);
     setBusy(false);
     if (ok) {
       setText("");
       setMentions([]);
+      setAlsoAssistant(false);
       setUploads([]);
       setSkill(null);
     }
@@ -544,6 +551,8 @@ function Composer(props: {
   };
 
   const visibleMentions = mentions.filter((m) => m.kind !== "agent");
+  // plans/16: in a shared chat, a message naming people goes to them; the assistant answers only if asked too.
+  const named = props.shared ? visibleMentions.filter((m) => m.kind === "person") : [];
 
   return (
     <div>
@@ -581,6 +590,17 @@ function Composer(props: {
                 <Icon name="plus" size={14} /> {mySkills.length ? "لا مهارة بهذا الاسم. أنشئ واحدة" : "لا مهارات بعد. أنشئ أول مهارة"}
               </a>
             )}
+          </div>
+        )}
+        {named.length > 0 && (
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-line px-3 py-2 text-xs text-muted">
+            <span className="flex items-center gap-1.5">
+              <Icon name="users" size={13} />
+              {alsoAssistant ? `تُرسل إلى ${named.map((m) => m.name).join("، ")} وإلى المساعد` : `تُرسل إلى ${named.map((m) => m.name).join("، ")}، ولن يرد المساعد عليها`}
+            </span>
+            <label className="flex cursor-pointer items-center gap-1.5">
+              <input type="checkbox" checked={alsoAssistant} onChange={(e) => setAlsoAssistant(e.target.checked)} /> واسأل المساعد أيضاً
+            </label>
           </div>
         )}
         {(visibleMentions.length > 0 || skill) && (
@@ -880,7 +900,7 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
   );
 }
 
-function MessageView({ m, isLast, canWrite, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; canWrite: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
+function MessageView({ m, isLast, canWrite, busy, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; canWrite: boolean; busy?: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
   const feedback = useMutation(api.chat.feedback);
   const [showSteps, setShowSteps] = useState(false);
   const [showParts, setShowParts] = useState(false);
@@ -892,6 +912,8 @@ function MessageView({ m, isLast, canWrite, onRetry, onReask, onOpenArtifact }: 
   const checks = useMemo(() => new Map(m.citations.filter((c) => c.check).map((c) => [c.n, c.check!])), [m.citations]);
   const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys()), checks) : ""), [m.text, byN, checks, m.role]);
 
+  if (m.role === "user" && m.team) return <TeamMessage messageId={m.id} author={m.author ?? null} mine={!!m.mine} text={m.text ?? ""} to={m.team.to} canWrite={canWrite} busy={!!busy} />;
+  if (m.role === "user" && m.handoffOf) return <HandoffLine by={m.mine ? "أنت" : (m.author ?? "زميل")} />;
   if (m.role === "user")
     return (
       <div className="flex animate-rise flex-col items-start gap-1.5">

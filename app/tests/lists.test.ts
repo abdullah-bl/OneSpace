@@ -204,6 +204,24 @@ describe("the assistant's list tools", () => {
     expect(must(await s.call("query", "lists:recent", {}, tok("rdr"))).some((x: any) => x.title === "قائمتي AI-2")).toBe(false);
   });
 
+  test("a refused write in the personal space is a failed step: no «تراجع» card, and the model is told nothing changed", async () => {
+    // A person cell with someone who can't see the space: create_list refuses it (and rolls back).
+    await setInstr(call("create_list", { ...TASKS, title: "قائمة فاشلة AI-9", rows: [{ المهمة: "س", المسؤول: "شخص-غير-موجود-LQ9" }] }));
+    let r: any;
+    try {
+      r = await ask(tok("rdr")!, "سوّ لي قائمة LQ-9", f.spaces.S_plain, false);
+    } finally {
+      await setInstr("");
+    }
+    expect(r.props.some((x: any) => x.tool === "create_list")).toBe(false);
+    expect(must(await s.call("query", "lists:recent", {}, tok("rdr"))).some((x: any) => x.title === "قائمة فاشلة AI-9")).toBe(false);
+    const view = must(await s.call("query", "chat:messages", { threadId: r.threadId }, tok("rdr")));
+    const run = view.messages.at(-1).toolRuns.find((x: any) => x.name === "create_list");
+    expect(run.ok).toBe(false);
+    expect(sentFor("LQ-9")).toContain("فشلت الأداة ولم يتغيّر شيء");
+    expect(sentFor("LQ-9")).not.toContain("نُفّذ مباشرة");
+  });
+
   test("the list is in the space's chats' prompt; read_list then update_list by row id", async () => {
     const l = must(await s.call("query", "lists:forSpace", { spaceId: f.spaces.S_plain }, tok("mem"))).lists.find((x: any) => x.title === "مهام اليوم AI-1");
     await ask(tok("mem")!, "وش باقي LQ-3");

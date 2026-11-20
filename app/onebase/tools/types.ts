@@ -33,6 +33,11 @@ export type Citation = {
 export type ToolResult = {
   /** Text handed back to the model (may carry ids and details meant for it only). */
   content: string;
+  /**
+   * The action did not happen (a refused or invalid write, already rolled back): the chat reports it
+   * as a failed step, with no «تراجع» card, and the model is told plainly that nothing changed.
+   */
+  failed?: boolean;
   /** What the user sees on the action card after «نفّذ». Without it the card shows the raw output folded. */
   display?: string;
   /** How «تراجع» reverses an action that ran without asking (tier 1, onebase/tiers.ts). */

@@ -1,6 +1,7 @@
 // Per-employee levels and sub-agents (plans/08 §A, §D). Fake model. Each test sets up the levels it
 // needs and leaves "no levels" behind, so the order of tests doesn't matter.
 
+import { MEMORY_TOOLS, PERSONAL_TOOLS } from "../onebase/tools";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Server, must } from "./harness";
 import { ACTORS, buildFixture, type ActorKey, type Fixture } from "./fixture";
@@ -106,7 +107,7 @@ describe("levels", () => {
     await answerWith("ابحث LVLQ-3");
     const names = (answerReq("LVLQ-3").body.tools ?? []).map((t: any) => t.function.name);
     // Memory tools follow the level's memory switch, not its tool list (plans/09).
-    expect(names.every((n: string) => n === "search_documents" || n === "remember" || n === "recall" || n === "create_skill" || n === "use_skill" || n === "create_list" || n === "update_list" || n === "read_list" || n === "publish_output" || n === "write_app" || n === "read_app" || n === "test_app")).toBe(true);
+    expect(names.every((n: string) => n === "search_documents" || MEMORY_TOOLS.includes(n) || PERSONAL_TOOLS.includes(n))).toBe(true);
     expect(names).toContain("search_documents");
   }, 30_000);
 });

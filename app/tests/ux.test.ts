@@ -17,7 +17,7 @@ const ACTIVE = (a: ActorKey) => !["pend", "dis", "anon"].includes(a);
 
 beforeAll(async () => {
   ai = startFakeAI();
-  s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: "600000", CHAT_HISTORY_KEEP: "8", CHAT_HISTORY_MAX: "12" /* a small window, so 10 turns exercise the summary */ })).start();
+  s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: "600000", CHAT_HISTORY_MAX: "12" /* a small window, so 10 turns exercise the summary */ })).start();
   f = await buildFixture(s);
   for (const sp of SPACES) await waitIngest(s, sp === "P_mem" ? tok("mem")! : tok("mgr")!, f.spaces[sp], f.files[sp]);
 }, 90_000);
@@ -362,8 +362,8 @@ describe("@person in a shared space's chat tells them this one message; the chat
 
   test("in a shared chat the mention opens the chat itself, while the reader can read it; made private, it falls back to the space", async () => {
     const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: true }, tok("mem")));
+    // A message to colleagues (plans/16): no answer from the assistant, so nothing to wait for.
     must(await s.call("mutation", "chat:send", { threadId: t, text: "تابعوا هنا CHATMENTION-S1", people: [f.ids.mgr, f.ids.rdr, f.ids.out] }, tok("mem")));
-    await waitAnswers(tok("mem")!, t, 1);
     for (const who of ["mgr", "rdr"]) {
       const row = (await inbox(who)).find((x: any) => x.excerpt.includes("CHATMENTION-S1"));
       expect(row).toMatchObject({ source: "chat", threadId: t, spaceId: f.spaces.S_plain });
@@ -576,7 +576,7 @@ describe("long chats keep their memory", () => {
       await ask(s, tok("mem")!, t, `سؤال رقم ${i} MEMQ-${i}`);
       await Bun.sleep(150); // let the summary land (it's written right after the answer)
     }
-    const summaries = ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.response_format ?? "").includes('"summary"') && JSON.stringify(r.body.messages).includes("MEMQ-101"));
+    const summaries = ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.response_format ?? "").includes('"decisions"') && JSON.stringify(r.body.messages).includes("MEMQ-101"));
     expect(summaries.length).toBeGreaterThan(0);
     // The last turn's answer request: the oldest questions only via the summary, inside the single system message.
     const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("MEMQ-110")).at(-1);

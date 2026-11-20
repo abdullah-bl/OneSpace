@@ -178,3 +178,74 @@ describe("shared space chats", () => {
     expect((await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).ok).toBe(true);
   }, 30_000);
 });
+
+// ---------------------------------------------------------------- plans/16: messages to colleagues
+
+describe("messages to colleagues and handing them to the assistant", () => {
+  const chatReqs = (mark: string) => ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages ?? []).includes(mark));
+  const bell = async (a: string) => must(await s.call("query", "notifications:list", {}, tok(a))) as any[];
+  const teamOf = async (a: string, t: string, mark: string) => must(await s.call("query", "chat:messages", { threadId: t }, tok(a))).messages.find((m: any) => m.text.includes(mark));
+  let t: string;
+  let msgId: string;
+
+  test("@person in a shared chat goes to them: no answer from the assistant, they're notified, everyone sees who it's for", async () => {
+    t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    const r = must(await s.call("mutation", "chat:send", { threadId: t, text: "خلّص مقارنة العروض TEAMQ-1", people: [f.ids.mgr, f.ids.rdr, f.ids.out] }, tok("mem")));
+    expect(r).toBeNull();
+    await Bun.sleep(300);
+    expect(chatReqs("TEAMQ-1").length).toBe(0);
+    const m = await teamOf("rdr", t, "TEAMQ-1");
+    msgId = m.id;
+    expect(m.author).toBe("موظف mem");
+    // Only people who can read the chat are recipients (out can't).
+    expect(m.team.to.map((x: any) => [x.name, x.state])).toEqual([["موظف mgr", "pending"], ["موظف rdr", "pending"]]);
+    expect((await teamOf("mgr", t, "TEAMQ-1")).team.to.find((x: any) => x.mine).name).toBe("موظف mgr");
+    expect((await bell("mgr")).some((n: any) => n.kind === "chat.mention" && n.threadId === t)).toBe(true);
+    // The writer can still ask the assistant too, in the same message.
+    const turn = must(await s.call("mutation", "chat:send", { threadId: t, text: "ولخّص لنا العروض TEAMQ-2", people: [f.ids.mgr], to: "assistant" }, tok("mem")));
+    expect(turn).toBeTruthy();
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    expect(chatReqs("TEAMQ-2").length).toBeGreaterThan(0);
+    await ask(s, tok("mem")!, t, "سؤال بعدها TEAMQ-3");
+    // The assistant sees the message between colleagues marked as such, not as a question.
+    expect(JSON.stringify(chatReqs("TEAMQ-3").at(-1)!.body.messages)).toContain("رسالة بين الزملاء وليست سؤالاً لك");
+  }, 60_000);
+
+  test("only a person it names acts on it; handing it to the assistant needs to be able to ask in the chat", async () => {
+    for (const a of ["mem", "out", "admin", "anon"]) expect((await s.call("mutation", "chat:handoff", { messageId: msgId, action: "self" }, tok(a))).ok).toBe(false);
+    // rdr is named but only reads the space: can take it or close it, not hand it to the assistant.
+    expect((await s.call("mutation", "chat:handoff", { messageId: msgId, action: "assistant" }, tok("rdr"))).ok).toBe(false);
+    must(await s.call("mutation", "chat:handoff", { messageId: msgId, action: "self" }, tok("rdr")));
+    expect((await teamOf("mem", t, "TEAMQ-1")).team.to.find((x: any) => x.name === "موظف rdr").state).toBe("self");
+    expect((await bell("mem")).some((n: any) => n.kind === "chat.handoff" && n.title.includes("موظف rdr تولّى طلبك"))).toBe(true);
+    expect((await s.call("mutation", "chat:handoff", { messageId: "nope", action: "self" }, tok("mgr"))).ok).toBe(false);
+  });
+
+  test("handed to the assistant: it works as that person, the answer is in the chat for everyone, and the author is told", async () => {
+    must(await s.call("mutation", "chat:handoff", { messageId: msgId, action: "assistant" }, tok("mgr")));
+    for (let i = 0; i < 400; i++) {
+      const v = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
+      if (!v.turn && v.messages.at(-1)?.role === "assistant" && v.messages.some((m: any) => m.handoffOf === msgId)) break;
+      await Bun.sleep(25);
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
+    const line = view.messages.find((m: any) => m.handoffOf === msgId);
+    expect(line.author).toBe("موظف mgr");
+    expect(view.messages.at(-1).role).toBe("assistant");
+    // The turn ran as mgr: the model was told the current question is from mgr.
+    const req = chatReqs("طلب موظف mem مني").at(-1)!;
+    expect(JSON.stringify(req.body.messages)).toContain("السؤال الحالي من موظف mgr");
+    expect((await teamOf("mem", t, "TEAMQ-1")).team.to.find((x: any) => x.name === "موظف mgr").state).toBe("assistant");
+    expect((await s.call("mutation", "chat:handoff", { messageId: msgId, action: "assistant" }, tok("mgr"))).ok).toBe(false);
+    const notes = await bell("mem");
+    expect(notes.some((n: any) => n.kind === "chat.handoff" && n.title.includes("سلّم طلبك للمساعد"))).toBe(true);
+    expect(notes.some((n: any) => n.kind === "chat.handoff" && n.title.includes("أنجز المساعد طلبك الذي سلّمه موظف mgr"))).toBe(true);
+    must(await s.call("mutation", "chat:handoff", { messageId: msgId, action: "done" }, tok("mgr")));
+    expect((await teamOf("mem", t, "TEAMQ-1")).team.to.find((x: any) => x.name === "موظف mgr").state).toBe("done");
+  }, 60_000);
+
+  test("outside a shared chat @person changes nothing: the assistant answers as before", async () => {
+    const p = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    expect(must(await s.call("mutation", "chat:send", { threadId: p, text: "سؤال TEAMQ-9", people: [f.ids.mgr] }, tok("mem")))).toBeTruthy();
+  });
+});

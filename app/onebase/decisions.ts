@@ -38,7 +38,7 @@ export const ROUTE_SCHEMA = {
 
 export const ROUTE_PROMPT = `You route one message sent to an Arabic workplace assistant. The employee has a space with their organisation's files (policies, regulations, contracts, reports, budgets, data sheets, minutes, staff lists). Reply with JSON only.
 
-needsFiles: true when a good answer must look in those files: anything about the organisation itself (its rules, policies, procedures, numbers, budgets, spending, people and roles, deadlines, projects, meetings, documents), or a request to summarise/compare/analyse/extract/build something from their files or data. A follow-up to an earlier question about the organisation also needs the files. false when the message can be answered from general knowledge or from the message itself: writing or creating something new that does not name the organisation's own documents or data (a letter, email, quiz, template, CV, study or work plan, poem, translation of a given sentence), general questions, chit-chat, thanks, or reworking the previous answer.
+needsFiles: true when a good answer must look in those files: anything about the organisation itself (its rules, policies, procedures, numbers, budgets, spending, people and roles, deadlines, projects, meetings, documents), or a request to summarise/compare/analyse/extract/build something from their files or data. A follow-up to an earlier question about the organisation also needs the files. false when the message can be answered from general knowledge or from the message itself: writing or creating something new that does not name the organisation's own documents or data (a letter, email, quiz, template, CV, study or work plan, poem, translation of a given sentence), general questions, chit-chat, thanks, or reworking the previous answer. Also false for the employee's own lists and tasks, which are kept apart from the files and read with other tools: making or updating a list, tracker or table of their own items, and questions about their tasks, lists or tracked projects ("مهامي", "قوائمي", "كم عندي مهام").
 query: the message as a short standalone Arabic search question (at most 15 words), with references to earlier messages resolved. If the message is already standalone, copy its key words.
 effort: "light" ONLY when the message asks for nothing new: thanks, a greeting or acknowledgement, or reworking the assistant's previous answer (shorten, rephrase, translate, summarise it). Any new request or question, even a small one, is "normal".
 
@@ -47,6 +47,8 @@ Examples:
 "سوّ لي اختبار من ١٠ أسئلة عن الكسور" → {"needsFiles":false,"query":"اختبار عن الكسور","effort":"normal"}
 "اكتب رسالة شكر لفريق المبيعات" → {"needsFiles":false,"query":"رسالة شكر لفريق المبيعات","effort":"normal"}
 "ودي تطلع لي جدول بمواعيد التسليم اللي في خطة المشروع" → {"needsFiles":true,"query":"مواعيد التسليم في خطة المشروع","effort":"normal"}
+"سوي لي قائمة أدير فيها مشاريعي" → {"needsFiles":false,"query":"قائمة لإدارة المشاريع","effort":"normal"}
+"كم عندي مهام؟" → {"needsFiles":false,"query":"عدد مهامي","effort":"normal"}
 "شكراً جزيلاً" → {"needsFiles":false,"query":"شكراً","effort":"light"}`;
 
 /** The conversation as the routing call sees it: the summary and the last four messages, short. */
@@ -71,7 +73,7 @@ export async function routeTurn(question: string, history: { role: string; text:
         needsFiles: {
           type: "noul",
           instructions:
-            "An employee sent this message to a workplace assistant. Does a good answer need to look in the organisation's own files (its policies, rules, procedures, numbers, budgets, people, deadlines, documents), or summarise/compare/extract from them? False for general knowledge, writing something new on a general topic, chit-chat, thanks, or reworking the previous answer.",
+            "An employee sent this message to a workplace assistant. Does a good answer need to look in the organisation's own files (its policies, rules, procedures, numbers, budgets, people, deadlines, documents), or summarise/compare/extract from them? False for general knowledge, writing something new on a general topic, chit-chat, thanks, or reworking the previous answer. Also false for the employee's own lists and tasks (making or updating a list or tracker of their items, or asking about their tasks or lists): those are not in the files.",
         },
         effort: {
           type: "choice",

@@ -3,6 +3,7 @@
 // per-turn budget, parallel reads and the step timeline. Deterministic fake model (tests/fake-ai.ts):
 // "SKILL=<name>" in a question makes the router pick that skill, "SKILL-UNSURE" makes it unsure.
 
+import { MEMORY_TOOLS, PERSONAL_TOOLS } from "../onebase/tools";
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { Server, must } from "./harness";
 import { tools as registry } from "../onebase/tools";
@@ -54,7 +55,7 @@ describe("router: one assistant, the skill is chosen per question", () => {
     expect(a.steps[0].detail).toBe("→ التحليل");
     // The analysis skill's tools are what the main model was offered for this question.
     const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("ROUTE-1")).at(-1);
-    expect(offered(req).sort()).toEqual(Object.keys(registry).filter((n) => n !== "remember" && n !== "recall" && n !== "create_skill" && n !== "use_skill" && !n.endsWith("_list") && n !== "publish_output" && !n.endsWith("_app")).sort()); // «كل الأدوات»
+    expect(offered(req).sort()).toEqual(Object.keys(registry).filter((n) => !MEMORY_TOOLS.includes(n) && !PERSONAL_TOOLS.includes(n)).sort()); // «كل الأدوات»
   }, 30_000);
 
   test("nothing specific → the default skill; an unsure router → the default skill", async () => {
