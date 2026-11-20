@@ -795,6 +795,11 @@ async function assertIdle(ctx: MutationCtx, threadId: string) {
   if (busy) throw new OneBaseError("انتظر حتى تكتمل الإجابة الحالية");
 }
 
+/** plans/16: «@المساعد», «@مساعد», «@ai» or «@assistant» typed in a message calls the assistant. */
+export function callsAssistant(text: string): boolean {
+  return /(^|[\s(«"'])@(المساعد|مساعد|ai|assistant)(?=$|[\s،,.:؛؟?!)»"'])/i.test(text);
+}
+
 /** plans/16: the people a team message goes to: named, not me, and able to read this chat. */
 async function teamRecipients(ctx: MutationCtx, me: Id<"users">, meta: Doc<"threadMeta">, people: string[]): Promise<Id<"users">[]> {
   const out: Id<"users">[] = [];
@@ -875,8 +880,10 @@ export const send = mutation({
     const narrow = await checkMentions(ctx, me.userId, meta, mentions ?? []);
     meta = (await ctx.db.get(meta._id))!;
     // plans/16: in a shared chat, a message to colleagues is theirs, not a question for the assistant.
-    // The app sends `to` in every shared chat: «team» unless @المساعد is in the message.
-    if (isSharedThread(meta) && (to === "team" || (to === undefined && people?.length))) {
+    // plans/16: in a shared chat the assistant answers only when called: `to: "assistant"` (the
+    // @المساعد chip) or «@المساعد» / «@ai» typed in the text. Anything else is the team's, whatever
+    // the client sends, so an old page or a typed message can't make it answer uncalled.
+    if (isSharedThread(meta) && !(to === "assistant" || callsAssistant(question))) {
       if ((people?.length ?? 0) > 20) throw new OneBaseError("إشارات كثيرة في رسالة واحدة");
       const recipients = people?.length ? await teamRecipients(ctx, me.userId, meta, people) : [];
       if (people?.length && !recipients.length) throw new OneBaseError("من ذكرتهم لا يرون هذه المحادثة");
@@ -1809,6 +1816,7 @@ export const runTurn = internalAction({
         const last = agentSteps >= maxSteps - 1 || step >= HARD_STEPS - 1 || forceFinal || specs.length === 0;
         if (last && step > 0) messages.push({ role: "user", content: (open ? FINAL_NUDGE_OPEN : FINAL_NUDGE) + " " + (overBudget ? BUDGET_NOTE : UNFINISHED_NOTE) });
         let res: Awaited<ReturnType<typeof chat>>;
+        let stepWrote = false;
         try {
           res = await chat({
             track: { ctx, purpose: "answer", turnId },
@@ -1820,6 +1828,12 @@ export const runTurn = internalAction({
             onThinking,
             onDelta: async (d) => {
               await endThinking();
+              // Text from an earlier step («سأطّلع أولاً…») and this one are separate paragraphs.
+              if (!stepWrote && answer && !/\n\s*$/.test(answer)) {
+                answer += "\n\n";
+                await onDelta("\n\n");
+              }
+              stepWrote = true;
               answer += d;
               await onDelta(d);
             },

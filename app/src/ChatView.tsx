@@ -526,7 +526,7 @@ function Composer(props: {
     const kept = mentions.filter((m) => m.kind !== "agent" && m.kind !== "assistant");
     // Same for the skill: deleting its "/name" from the text drops it.
     const used = skill && q.includes(`/${skill.name}`) ? skill : null;
-    const ok = await props.onSubmit(q, kept, used, props.shared ? mentions.some((m) => m.kind === "assistant") : undefined);
+    const ok = await props.onSubmit(q, kept, used, props.shared ? mentions.some((m) => m.kind === "assistant") || CALLS_ASSISTANT.test(q) : undefined);
     setBusy(false);
     if (ok) {
       setText("");
@@ -556,7 +556,7 @@ function Composer(props: {
   const visibleMentions = mentions.filter((m) => m.kind !== "agent");
   // plans/16: in a shared chat, a message naming people goes to them; the assistant answers only if asked too.
   const named = props.shared ? visibleMentions.filter((m) => m.kind === "person") : [];
-  const calling = !!props.shared && visibleMentions.some((m) => m.kind === "assistant");
+  const calling = !!props.shared && (visibleMentions.some((m) => m.kind === "assistant") || CALLS_ASSISTANT.test(text));
 
   return (
     <div>
@@ -755,6 +755,9 @@ function Composer(props: {
     </div>
   );
 }
+
+/** Same rule as the server (chat.callsAssistant): «@المساعد» or «@ai» typed in the text calls the assistant. */
+const CALLS_ASSISTANT = /(^|[\s(«"'])@(المساعد|مساعد|ai|assistant)(?=$|[\s،,.:؛؟?!)»"'])/i;
 
 const KIND_LABEL: Record<string, string> = { file: "ملف", space: "مساحة", agent: "وكيل", person: "زميل", assistant: "يرد ويشتغل باسمك" };
 

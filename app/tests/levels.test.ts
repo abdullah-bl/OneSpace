@@ -43,7 +43,7 @@ async function memOn(over: Partial<typeof LEVEL>) {
 
 async function answerWith(text: string, effort?: string) {
   const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-  must(await s.call("mutation", "chat:send", { threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
   for (let i = 0; i < 600; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
     if (!r.turn && r.messages.at(-1)?.role === "assistant") return r.messages.at(-1);
@@ -82,7 +82,7 @@ describe("levels", () => {
     must(await s.call("mutation", "levels:save", { ...LEVEL, levelId: must(await s.call("query", "levels:list", {}, tok("admin"))).levels[0]._id, name: "محدود", dailyQuestions: used + 1 }, tok("admin")));
     await answerWith("سؤال LIMQ-1");
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    const r = await s.call("mutation", "chat:send", { threadId: t, text: "سؤال LIMQ-2" }, tok("mem"));
+    const r = await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "سؤال LIMQ-2" }, tok("mem"));
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).toContain("محدود");
     expect(chatRequestsWith(ai, "LIMQ-2").length).toBe(0);
@@ -162,7 +162,7 @@ describe("answers never show internal ids", () => {
 describe("attached files are chips, not text", () => {
   test("the model is told which files are attached, and the question shows them", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "لخّص هذا الملف ATTQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "لخّص هذا الملف ATTQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     let r: any;
     for (let i = 0; i < 400; i++) {
       r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));

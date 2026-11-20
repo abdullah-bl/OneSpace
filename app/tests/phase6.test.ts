@@ -503,7 +503,7 @@ describe("write-tool confirmation (نفّذ / إلغاء)", () => {
     // ...and the thread can't ask it anything more.
     const threads = must(await s.call("query", "chat:threads", {}, tok("mem")));
     const t = threads.find((x: any) => x.agentId === id).threadId;
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "سؤال" }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "سؤال" }, tok("mem"))).ok).toBe(false);
   }, 30_000);
 });
 

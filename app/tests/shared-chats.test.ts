@@ -72,7 +72,7 @@ describe("shared space chats", () => {
     // The reader reads, but can't ask, retry or stop.
     const view = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
     expect(view).toMatchObject({ shared: true, canWrite: false, isOwner: false, canManage: false });
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "سؤال" }, tok("rdr"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "سؤال" }, tok("rdr"))).ok).toBe(false);
     expect((await s.call("mutation", "chat:retry", { threadId: t }, tok("rdr"))).ok).toBe(false);
     expect((await s.call("mutation", "chat:stop", { threadId: t }, tok("rdr"))).ok).toBe(false);
     // Owner-only settings stay with the owner.
@@ -81,9 +81,9 @@ describe("shared space chats", () => {
   }, 40_000);
 
   test("nothing from outside the space: no @mentions of other spaces, no personal memory", async () => {
-    const bad = await s.call("mutation", "chat:send", { threadId: t, text: "قارن", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem"));
+    const bad = await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "قارن", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem"));
     expect(bad.ok).toBe(false);
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "قارن", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "قارن", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem"))).ok).toBe(false);
     must(await s.call("mutation", "memory:add", { text: "يفضّل الإجابات المختصرة SHMEM-9", kind: "preference" }, tok("mem")));
     await ask(s, tok("mem")!, t, "سؤال في المشتركة SHQ-3");
     for (const r of chatRequestsWith(ai, "SHQ-3")) {
@@ -104,7 +104,7 @@ describe("shared space chats", () => {
     expect(await listed("mgr", f.spaces.S_plain, p)).toMatchObject({ shared: true });
     // A private chat that pointed at a personal file can't be shared: the members would see its name.
     const q = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: q, text: "SHQ-5", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: q, text: "SHQ-5", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     expect((await s.call("mutation", "chat:setShared", { threadId: q, shared: true }, tok("mem"))).ok).toBe(false);
     // Free-form and personal-space chats can't be shared.
     const free = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
@@ -174,7 +174,7 @@ describe("shared space chats", () => {
     expect(must(await s.call("query", "chat:messages", { threadId: c }, tok("tmp"))).shared).toBe(true);
     must(await s.call("mutation", "spaces:removeMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp }, tok("mgr")));
     expect((await s.call("query", "chat:messages", { threadId: c }, tok("tmp"))).ok).toBe(false);
-    expect((await s.call("mutation", "chat:send", { threadId: c, text: "x" }, tok("tmp"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: c, text: "x" }, tok("tmp"))).ok).toBe(false);
     expect((await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).ok).toBe(true);
   }, 30_000);
 });
@@ -303,4 +303,24 @@ describe("messages to colleagues and handing them to the assistant", () => {
     expect(JSON.stringify(msgs.at(-1))).toContain("RETRYQ-1");
     expect(JSON.stringify(msgs)).not.toContain("RETRYQ-TEAM");
   }, 60_000);
+
+  test("the server decides who a message is for: an old page or a typed «@ai» can't make the assistant answer uncalled", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    // No `to` at all (an old page): the team's.
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "block him CALLQ-1" }, tok("mem")))).toBeNull();
+    // Typed in the text: called.
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "@ai لخّص CALLQ-2" }, tok("mem")))).toBeTruthy();
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "@المساعد، كمّل CALLQ-3" }, tok("mem")))).toBeTruthy();
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    expect(chatReqs("CALLQ-1").filter((r) => JSON.stringify(r.body.messages.at(-1)).includes("CALLQ-1")).length).toBe(0);
+  }, 60_000);
+});
+
+describe("calling the assistant (unit)", () => {
+  test("«@المساعد», «@مساعد», «@ai», «@assistant» call it; an email or a word inside doesn't", async () => {
+    const { callsAssistant } = await import("../onebase/chat");
+    for (const t of ["@ai print", "@المساعد لخّص", "لو سمحت @مساعد", "(@AI)", "@assistant, go", "شف هذا @المساعد"]) expect(callsAssistant(t)).toBe(true);
+    for (const t of ["mail me at x@ai.com", "@airport", "المساعد لخّص", "@المساعدة", "block him"]) expect(callsAssistant(t)).toBe(false);
+  });
 });

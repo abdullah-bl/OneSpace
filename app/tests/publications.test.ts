@@ -294,7 +294,7 @@ describe("a reply form through the publish tool", () => {
     must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: call }, tok("mgr")));
     try {
       const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mgr")));
-      must(await s.call("mutation", "chat:send", { threadId: t, text: "انشر الاستبيان FRM-1" }, tok("mgr")));
+      must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "انشر الاستبيان FRM-1" }, tok("mgr")));
       let prop: any;
       for (let i = 0; i < 800 && !prop; i++) {
         const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mgr")));
@@ -449,7 +449,7 @@ describe("public pages", () => {
     must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_every, instructions: `CALL_TOOL publish_output ${JSON.stringify({ artifactId: a2, audience: "public" })}` }, tok("mgr")));
     try {
       const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mgr")));
-      must(await s.call("mutation", "chat:send", { threadId: t, text: "انشرها للعامة PUB-T3" }, tok("mgr")));
+      must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "انشرها للعامة PUB-T3" }, tok("mgr")));
       let prop: any;
       for (let i = 0; i < 800 && !prop; i++) {
         prop = must(await s.call("query", "chat:messages", { threadId: t }, tok("mgr"))).messages.flatMap((m: any) => m.proposals ?? []).find((p: any) => p.tool === "publish_output");

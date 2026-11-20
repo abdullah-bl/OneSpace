@@ -28,7 +28,7 @@ beforeAll(async () => {
   for (const sp of SPACES) await waitIngest(s, sp === "P_mem" ? tok("mem")! : tok("mgr")!, f.spaces[sp], f.files[sp]);
   // mem's own thread, with one answered (slow) question so a stream id exists.
   memThread = await newThread(s, tok("mem")!);
-  must(await s.call("mutation", "chat:send", { threadId: memThread, text: "SLOW-TURN ما محتوى CONTENT" }, tok("mem")));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId: memThread, text: "SLOW-TURN ما محتوى CONTENT" }, tok("mem")));
   for (let i = 0; i < 200 && !memStream; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId: memThread }, tok("mem")));
     memStream = r.turn?.streamId;
@@ -116,7 +116,7 @@ describe("permission matrix: workspace-level and thread-owner functions", () => 
     [
       "chat:send",
       async (a) => {
-        const r = await s.call("mutation", "chat:send", { threadId: memThread, text: "سؤال للمصفوفة" }, tok(a));
+        const r = await s.call("mutation", "chat:send", { to: "assistant", threadId: memThread, text: "سؤال للمصفوفة" }, tok(a));
         if (r.ok) await waitIdle(memThread, tok("mem")!);
         return r;
       },

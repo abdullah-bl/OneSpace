@@ -87,7 +87,7 @@ describe("router: one assistant, the skill is chosen per question", () => {
     await ask(s, tok("mem"), t, "سؤال عام ROUTE-5b");
     expect(routerListFor("ROUTE-5b")).toContain("مخفي-ROUTE");
     // @ a personal file: «السياسات» (scope: the everyone space, file tools only) can't reach it.
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "لخّص هذا ROUTE-6", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "لخّص هذا ROUTE-6", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     for (let i = 0; i < 200 && !routerListFor("ROUTE-6"); i++) await Bun.sleep(25);
     const list = routerListFor("ROUTE-6")!;
     expect(list).not.toContain("السياسات");

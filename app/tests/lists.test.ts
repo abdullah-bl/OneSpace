@@ -153,7 +153,7 @@ const call = (name: string, args: unknown) => `CALL_TOOL ${name} ${JSON.stringif
 
 async function ask(token: string, text: string, spaceId = f.spaces.S_plain, confirm = true) {
   const threadId = must(await s.call("mutation", "chat:createThread", { spaceId }, token));
-  must(await s.call("mutation", "chat:send", { threadId, text }, token));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId, text }, token));
   const done = new Set<string>();
   for (let i = 0; i < 800; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId }, token));
