@@ -24,6 +24,8 @@ export type Citation = {
   page?: number;
   section?: string;
   quote: string;
+  /** plans/12 guard: the file holds text aimed at the assistant; its passage is shown as data. */
+  steering?: boolean;
 };
 
 export type ToolResult = {

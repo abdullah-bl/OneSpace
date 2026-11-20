@@ -137,6 +137,9 @@ const PURPOSE: Record<string, string> = {
   memory: "اقتراحات الذاكرة",
   skill_draft: "مسودات المهارات",
   agent_draft: "مسودات الوكلاء",
+  "decide:route": "قرار: توجيه الطلب",
+  "decide:cite": "قرار: فحص الاستشهادات",
+  "decide:guard": "قرار: فحص النص الخارجي",
 };
 
 const tokensOf = (t: UsageTotals) => t.prompt + t.completion;
@@ -333,7 +336,29 @@ function Overview({ go }: { go: (p: string) => void }) {
         <Stat label="مزوّدو النماذج" value={o.providers.total || "الخادم"} sub={o.providers.total ? undefined : "من إعدادات الخادم"} href="#/admin/providers" />
         <Stat label="المستويات" value={o.levels.total} sub={o.levels.defaultName ? `الافتراضي: ${o.levels.defaultName}` : "بلا حدود"} href="#/admin/levels" />
         <Stat label="توكنات اليوم" value={u ? compact(tokensOf(u.today)) : "…"} sub={u ? `${u.today.calls} استدعاء` : undefined} href="#/admin/overview" />
+        <Stat
+          label="إجابات باستشهاد مشكوك فيه"
+          value={o.citeDoubts.doubted}
+          sub={o.citeDoubts.checked ? `من ${o.citeDoubts.checked} فُحصت آخر 7 أيام` : "لم تُفحص إجابات بعد"}
+          href="#/admin/overview"
+          tone={o.citeDoubts.doubted ? "warning" : undefined}
+        />
       </section>
+      {o.citeDoubts.byAgent.length > 0 && (
+        <section>
+          <h2 className="section-title mb-1">إجابات باستشهاد مشكوك فيه</h2>
+          <p className="mb-3 text-xs text-muted">فحص نموذج القرار هل يذكر المقطع المستشهد به ما قالته الإجابة. كثرتها لوكيل علامة على تعليماته أو على ملفات مساحته.</p>
+          <ul className="card divide-y divide-rule">
+            {o.citeDoubts.byAgent.map((a) => (
+              <li key={a.agentId} className="flex items-center gap-3 px-4 py-3 text-sm">
+                <span className="min-w-0 flex-1">{a.name}</span>
+                <span className="num text-warning">{a.doubted}</span>
+                <span className="text-xs text-muted">من {a.checked}</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
       <section>
         <h2 className="section-title mb-3">يحتاج انتباهك</h2>
         {todo.length ? (

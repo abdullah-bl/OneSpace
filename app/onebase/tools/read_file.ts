@@ -47,7 +47,7 @@ export const readFileTool: AppTool<{ fileId: string; pages?: string | number }> 
     for (const c of chunks) {
       if (total + c.text.length > MAX_CHARS) break;
       total += c.text.length;
-      citations.push({ fileId: file.fileId, fileName: file.name, page: c.page, section: c.section, quote: c.text });
+      citations.push({ fileId: file.fileId, fileName: file.name, page: c.page, section: c.section, quote: c.text, ...(file.steering ? { steering: true } : {}) });
     }
     const truncated = citations.length < chunks.length ? ` (عُرض أول ${citations.length} من ${chunks.length} مقطعاً؛ اطلب صفحات محددة للباقي)` : "";
     return { content: `نص "${file.name}" مقسّماً أدناه كمصادر مرقّمة${truncated}.`, citations, spaceIds: [file.spaceId] };

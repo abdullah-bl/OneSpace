@@ -10,7 +10,7 @@ import { api, errorText } from "./lib";
 import { Icon } from "./icons";
 import { SkillFiles, useFileEdits, type SkillFile } from "./SkillFiles";
 
-export type ImportDraft = { name: string; title: string; description: string; instructions: string; files: SkillFile[]; skipped: { path: string; reason: string }[] };
+export type ImportDraft = { name: string; title: string; description: string; instructions: string; files: SkillFile[]; skipped: { path: string; reason: string }[]; steering?: { where: string; quote: string }[] };
 type Save = (d: { name: string; title: string; description: string; instructions: string; files: SkillFile[] }) => Promise<unknown>;
 
 const toBase64 = async (file: File) => {
@@ -110,6 +110,20 @@ export function SkillImport({ onSave, saveLabel = "احفظ المهارة", cla
                 ))}
               </ul>
             </details>
+          )}
+          {(draft.steering?.length ?? 0) > 0 && (
+            <div className="alert bg-warning-soft text-warning space-y-1 text-xs" role="alert">
+              <p className="font-medium">في هذه المهارة نص يحاول توجيه المساعد خارج مهمتها. راجعه قبل الحفظ:</p>
+              <ul className="space-y-1">
+                {draft.steering!.map((s, i) => (
+                  <li key={i}>
+                    <span className="text-muted">{s.where}: </span>
+                    <q dir="auto">{s.quote}</q>
+                  </li>
+                ))}
+              </ul>
+              <p className="text-muted">إن حفظتها تبقى تعليمات فقط، والصلاحيات لا تتغير؛ لكن احذف هذا النص إن لم تكن تعرف سببه.</p>
+            </div>
           )}
           <div className="flex gap-2">
             <button className="btn-primary h-8" disabled={busy || !draft.name.trim()} onClick={() => void save()}>

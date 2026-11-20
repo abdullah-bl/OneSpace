@@ -23,6 +23,7 @@ type Config = {
   maxSteps: number;
   visibility: { kind: "workspace" | "spaces"; spaceIds: string[] };
   grounding?: "open" | "documents";
+  lightRouting?: boolean;
 };
 
 const EMPTY: Config = {
@@ -454,6 +455,15 @@ function Advanced({ form, set }: { form: Config; set: <K extends keyof Config>(k
             <input className="input num w-full" type="number" min={1} max={20} value={form.maxSteps} onChange={(e) => set("maxSteps", Number(e.target.value))} />
           </label>
         </div>
+        {form.modelRole === "main" && (
+          <label className="flex cursor-pointer items-start gap-2 text-sm">
+            <input type="checkbox" className="mt-1" checked={!!form.lightRouting} onChange={(e) => set("lightRouting", e.target.checked || undefined)} />
+            <span>
+              وجّه الطلبات البسيطة للنموذج الخفيف
+              <span className="block text-xs text-muted">الشكر والتحية وإعادة صياغة الإجابة السابقة يكتبها النموذج السريع، إن رآها نموذج القرار بسيطة. الأدوات والصلاحيات كما هي.</span>
+            </span>
+          </label>
+        )}
         <div className="space-y-2 text-sm">
           <span className="label">من يمكن أن يُختار له</span>
           <Choice

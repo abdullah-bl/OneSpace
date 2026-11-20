@@ -1,0 +1,38 @@
+{
+ "model": "lfm3-1.7b-decide",
+ "mode": "each",
+ "singleCitation": {
+  "planted": "8/10",
+  "wronglyMarked": "1/10"
+ },
+ "multiCitation": {
+  "planted": "8/10",
+  "wronglyMarked": "0/10"
+ },
+ "answers": 25,
+ "answered": 25,
+ "planted": {
+  "n": 20,
+  "caught": 16,
+  "missed": [
+   "cite-04[5]",
+   "cite-05[1]",
+   "multi-01[3]",
+   "multi-02[1]"
+  ]
+ },
+ "correctCitations": {
+  "n": 20,
+  "wronglyMarked": 1,
+  "which": [
+   "cite-06[1]"
+  ]
+ },
+ "latencyMs": {
+  "n": 25,
+  "p50": 179,
+  "p90": 321,
+  "max": 543,
+  "mean": 218
+ }
+}

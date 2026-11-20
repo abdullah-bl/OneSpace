@@ -19,6 +19,7 @@ import { action, internalMutation, internalQuery, mutation, query, type Mutation
 import { actorFor, assertCan, Denied, requireActive, requireUserId } from "./access";
 import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
+import { guardSkill } from "./decisions";
 import { maskSecrets } from "./lib/secrets";
 import { IMPORT_LIMITS, parseSkillPackage, SkillImportError } from "./lib/skillImport";
 import { parseApp } from "./lib/appFiles";
@@ -264,16 +265,23 @@ export const assertActive = internalQuery({
 export const parseImport = action({
   args: { fileName: v.string(), dataBase64: v.string() },
   handler: async (ctx, { fileName, dataBase64 }) => {
-    await ctx.runQuery(internal.skills.assertActive, { userId: await requireUserId(ctx) });
+    const userId = await requireUserId(ctx);
+    await ctx.runQuery(internal.skills.assertActive, { userId });
     if (dataBase64.length > IMPORT_LIMITS.zipBytes * 1.4) throw new OneBaseError(`الملف أكبر من ${IMPORT_LIMITS.zipBytes / 1024 / 1024} م.ب`);
     if (!/\.(zip|md|markdown)$/i.test(fileName)) throw new OneBaseError("اختر ملف SKILL.md أو ملف zip لمجلد المهارة");
+    let r: ReturnType<typeof parseSkillPackage>;
     try {
-      const r = parseSkillPackage(fileName, new Uint8Array(Buffer.from(dataBase64, "base64")));
-      return { ...r, instructions: maskSecrets(r.instructions), files: r.files.map((f) => ({ ...f, content: maskSecrets(f.content) })) };
+      r = parseSkillPackage(fileName, new Uint8Array(Buffer.from(dataBase64, "base64")));
     } catch (e) {
       if (e instanceof SkillImportError) throw new OneBaseError(e.message);
       throw new OneBaseError("تعذّرت قراءة الملف");
     }
+    const draft = { ...r, instructions: maskSecrets(r.instructions), files: r.files.map((f) => ({ ...f, content: maskSecrets(f.content) })) };
+    // plans/12: text in the skill aimed at taking over the assistant is shown above «احفظ المهارة».
+    // The person decides; the skill stays instructions only, whatever the guard says.
+    await primeAi(ctx);
+    const steering = await guardSkill(draft.instructions, draft.files.filter((f) => f.kind !== "script"), { ctx, userId });
+    return { ...draft, steering };
   },
 });
 
