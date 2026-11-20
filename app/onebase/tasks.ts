@@ -19,7 +19,7 @@
 
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertTaskCan, assigneesOf, canBeAssignee, currentSpaceRole, Denied, requireActive, taskRoleAllows, type Actor, type SpaceRole } from "./access";
 import { writeAudit } from "./audit";
 import { notify, type NotifyKind } from "./notifications";
@@ -218,6 +218,42 @@ export const mine = query({
       for (const task of rows) if (assigneesOf(task).includes(me.userId)) visible.push({ task, ...access });
     }
     return await shapeMany(ctx, me, visible);
+  },
+});
+
+const STATUS_AR = { new: "جديدة", inProgress: "قيد التنفيذ", review: "للمراجعة", done: "منجزة" } as const;
+const PRIORITY_AR = { low: "منخفضة", normal: "عادية", high: "عالية", urgent: "عاجلة" } as const;
+
+/**
+ * read_tasks (plans/15 follow-up): the tasks assigned to `userId`, as text for the assistant. Same
+ * reach as «مهامي» (tasks.mine), narrowed to the turn's spaces; in a shared chat only that space's.
+ * Open ones first, then the latest done; 60 at most.
+ */
+export const readForTool = internalQuery({
+  args: { userId: v.id("users"), scopeSpaceIds: v.array(v.string()), sharedSpaceId: v.optional(v.string()), includeDone: v.optional(v.boolean()) },
+  handler: async (ctx, a): Promise<string> => {
+    const memberships = await ctx.db.query("spaceMembers").withIndex("by_user", (q) => q.eq("userId", a.userId)).collect();
+    const rows: { task: Doc<"tasks">; space: string }[] = [];
+    for (const m of memberships) {
+      if (!a.scopeSpaceIds.includes(m.spaceId)) continue;
+      if (a.sharedSpaceId && m.spaceId !== a.sharedSpaceId) continue;
+      let access;
+      try {
+        access = await assertTaskCan(ctx, a.userId, m.spaceId, "view");
+      } catch {
+        continue;
+      }
+      for (const task of await ctx.db.query("tasks").withIndex("by_space", (q) => q.eq("spaceId", access.space._id)).collect())
+        if (assigneesOf(task).includes(a.userId) && (a.includeDone || task.status !== "done")) rows.push({ task, space: access.space.name });
+    }
+    if (!rows.length) return a.includeDone ? "لا مهام مسندة إليه في مساحاته." : "لا مهام مفتوحة مسندة إليه في مساحاته.";
+    rows.sort((x, y) => Number(x.task.status === "done") - Number(y.task.status === "done") || (x.task.due ?? Infinity) - (y.task.due ?? Infinity));
+    const day = (t?: number) => (t ? new Date(t).toISOString().slice(0, 10) : null);
+    const lines = rows.slice(0, 60).map(({ task, space }) =>
+      [`- ${task.title}`, STATUS_AR[task.status], `الأولوية ${PRIORITY_AR[task.priority]}`, day(task.due) ? `الاستحقاق ${day(task.due)}` : null, `المساحة «${space}»`].filter(Boolean).join(" · "),
+    );
+    const open = rows.filter((r) => r.task.status !== "done").length;
+    return `المهام المسندة إليه (${open} مفتوحة${a.includeDone ? `، ${rows.length - open} منجزة` : ""}${rows.length > 60 ? `، تُعرض أول 60` : ""}). اليوم ${day(Date.now())}:\n${lines.join("\n")}`;
   },
 });
 

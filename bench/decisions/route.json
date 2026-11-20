@@ -1,722 +1,788 @@
 {
- "about": "plans/12 routing set: Arabic requests (Gulf and MSA) to an open agent in a space that has files. gold.needsFiles = a good answer must look in the organisation's files; gold.effort = light only for thanks, greetings or reworking the previous answer. keys: words the standalone search question must keep (follow-ups).",
- "cases": [
-  {
-   "id": "ask-01",
-   "group": "ask-files",
-   "q": "ما هي شروط صرف بدل السكن في اللائحة؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-02",
-   "group": "ask-files",
-   "q": "وش يقول النظام عن التأخير عن الدوام؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-03",
-   "group": "ask-files",
-   "q": "كم باقي على موعد تسليم تقرير الربع الثالث؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-04",
-   "group": "ask-files",
-   "q": "متى آخر اجتماع للجنة المشتريات ووش قرروا فيه؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-05",
-   "group": "ask-files",
-   "q": "ابي اعرف كم عدد الموظفين في قسم المالية",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-06",
-   "group": "ask-files",
-   "q": "هل يحق لي إجازة أبوة؟ وكم يوم؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-07",
-   "group": "ask-files",
-   "q": "إيش الإجراءات المتبعة عندنا لطلب سلفة؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-08",
-   "group": "ask-files",
-   "q": "من المسؤول عن اعتماد طلبات الشراء فوق ٥٠ ألف؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-09",
-   "group": "ask-files",
-   "q": "ما نسبة الإنجاز في مشروع تطوير البوابة حسب آخر تقرير؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-10",
-   "group": "ask-files",
-   "q": "وش الفرق بين سياسة العمل عن بعد القديمة والجديدة؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-11",
-   "group": "ask-files",
-   "q": "كم كانت مصروفات التدريب السنة الماضية؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-12",
-   "group": "ask-files",
-   "q": "هل فيه بند يسمح بتمديد فترة التجربة؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-13",
-   "group": "ask-files",
-   "q": "قل لي وش اتفقنا عليه في محضر اجتماع الأحد",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-14",
-   "group": "ask-files",
-   "q": "ما هي معايير تقييم الأداء المعتمدة لدينا؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-15",
-   "group": "ask-files",
-   "q": "كم ساعة عمل إضافي مسموحة بالشهر؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "ask-16",
-   "group": "ask-files",
-   "q": "مين رئيس فريق الجودة حالياً؟",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-01",
-   "group": "make-files",
-   "q": "سوّ لي ملخص لتقرير المبيعات الشهري",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-02",
-   "group": "make-files",
-   "q": "اكتب لي ايميل للموظفين بمواعيد الإجازات الرسمية المعتمدة عندنا",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-03",
-   "group": "make-files",
-   "q": "جهز لي عرض عن نتائج استبيان رضا الموظفين",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-04",
-   "group": "make-files",
-   "q": "ودّي لو تطلع لي جدول بأسماء المتدربين ودرجاتهم",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-05",
-   "group": "make-files",
-   "q": "اكتب خطاب رسمي للمورد نذكر فيه الغرامة المنصوص عليها في العقد",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-06",
-   "group": "make-files",
-   "q": "سوّ اختبار للموظفين الجدد من دليل السلامة المهنية",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-07",
-   "group": "make-files",
-   "q": "لخص لي محضر اجتماع مجلس الإدارة الأخير",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-08",
-   "group": "make-files",
-   "q": "اعمل لي مقارنة بين عروض الموردين اللي وصلتنا",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-09",
-   "group": "make-files",
-   "q": "حضّر لي نقاط للاجتماع بناءً على ملاحظات المراجعة الداخلية",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-10",
-   "group": "make-files",
-   "q": "ابي تكتب لي رد على شكوى العميل حسب سياسة الاسترجاع",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-11",
-   "group": "make-files",
-   "q": "أنشئ قائمة بالمهام المتأخرة في خطة المشروع",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-12",
-   "group": "make-files",
-   "q": "صمم نموذج تقييم مبني على معايير الأداء المعتمدة عندنا",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-13",
-   "group": "make-files",
-   "q": "ترجم بنود عقد الصيانة للإنجليزي",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-files-14",
-   "group": "make-files",
-   "q": "ارسم لي مخطط لنسب الحضور من سجل الحضور والانصراف",
-   "needsFiles": true,
-   "effort": "normal"
-  },
-  {
-   "id": "make-01",
-   "group": "make-general",
-   "q": "سوّ لي اختبار من خمس أسئلة عن الجهاز الهضمي لطلاب الصف الرابع",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-02",
-   "group": "make-general",
-   "q": "اكتب قصيدة قصيرة بمناسبة اليوم الوطني",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-03",
-   "group": "make-general",
-   "q": "ترجم هذي الجملة للإنجليزي: نشكركم على حسن تعاونكم",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-04",
-   "group": "make-general",
-   "q": "اكتب لي ايميل اعتذار عن حضور اجتماع بكرة",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-05",
-   "group": "make-general",
-   "q": "جهز لي خطة مذاكرة أسبوعية لمادة الرياضيات",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-06",
-   "group": "make-general",
-   "q": "صمم لي جدول متابعة عادات يومية",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-07",
-   "group": "make-general",
-   "q": "ابغى رسالة تهنئة لزميل ترقى",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-08",
-   "group": "make-general",
-   "q": "ودي تكتب لي مقدمة لعرض عن الذكاء الاصطناعي في التعليم",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-09",
-   "group": "make-general",
-   "q": "أعد صياغة هذه الفقرة بأسلوب رسمي: نبي نخلص الشغل بسرعة عشان العميل زعلان",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-10",
-   "group": "make-general",
-   "q": "لو تكرمت اكتب سيرة ذاتية مختصرة لمهندس برمجيات خبرته ٥ سنوات",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-11",
-   "group": "make-general",
-   "q": "أبي أفكار لفعالية ترفيهية للموظفين",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-12",
-   "group": "make-general",
-   "q": "حط لي قالب لمحضر اجتماع",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-13",
-   "group": "make-general",
-   "q": "اعطني ١٠ أسئلة مقابلة لوظيفة محاسب",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "make-14",
-   "group": "make-general",
-   "q": "عطني خطة تسويق لمقهى صغير",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-01",
-   "group": "ask-general",
-   "q": "وش الفرق بين ضريبة القيمة المضافة والضريبة الانتقائية؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-02",
-   "group": "ask-general",
-   "q": "كيف أحسب النسبة المئوية للزيادة؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-03",
-   "group": "ask-general",
-   "q": "ما هي عاصمة أستراليا؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-04",
-   "group": "ask-general",
-   "q": "اشرح لي مفهوم التعلم الآلي ببساطة",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-05",
-   "group": "ask-general",
-   "q": "كم يوم في السنة الكبيسة؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-06",
-   "group": "ask-general",
-   "q": "وش معنى KPI؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-07",
-   "group": "ask-general",
-   "q": "كيف أكتب معادلة VLOOKUP في إكسل؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-08",
-   "group": "ask-general",
-   "q": "ما الفرق بين الإيميل الرسمي وغير الرسمي؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-09",
-   "group": "ask-general",
-   "q": "وش أفضل طريقة لتنظيم الوقت في العمل؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "gen-10",
-   "group": "ask-general",
-   "q": "كم عدد أيام الأسبوع في التقويم الهجري؟",
-   "needsFiles": false,
-   "effort": "normal"
-  },
-  {
-   "id": "light-01",
-   "group": "light",
-   "q": "شكراً لك",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "كم مدة الإجازة المرضية؟"
-    ],
-    [
-     "assistant",
-     "الإجازة المرضية حتى ٣٠ يوماً بأجر كامل [1]."
-    ]
-   ]
-  },
-  {
-   "id": "light-02",
-   "group": "light",
-   "q": "تمام، مشكور",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "متى يبدأ الدوام؟"
-    ],
-    [
-     "assistant",
-     "يبدأ الدوام الساعة ٧:٣٠ صباحاً [1]."
-    ]
-   ]
-  },
-  {
-   "id": "light-03",
-   "group": "light",
-   "q": "يعطيك العافية",
-   "needsFiles": false,
-   "effort": "light"
-  },
-  {
-   "id": "light-04",
-   "group": "light",
-   "q": "السلام عليكم",
-   "needsFiles": false,
-   "effort": "light"
-  },
-  {
-   "id": "light-05",
-   "group": "light",
-   "q": "اختصر الرد اللي فوق",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "وش خطوات طلب السلفة؟"
-    ],
-    [
-     "assistant",
-     "١. تعبئة النموذج من البوابة. ٢. موافقة المدير المباشر. ٣. مراجعة المالية خلال خمسة أيام عمل. ٤. الصرف مع راتب الشهر التالي [1]."
-    ]
-   ]
-  },
-  {
-   "id": "light-06",
-   "group": "light",
-   "q": "لخص الرد اللي فوق بثلاث نقاط",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "اشرح لي سياسة العمل عن بعد"
-    ],
-    [
-     "assistant",
-     "تسمح السياسة بيومين عن بعد أسبوعياً بعد موافقة المدير، بشرط الحضور في أيام الاجتماعات، ويُستثنى منها موظفو خدمة العملاء [1][2]."
-    ]
-   ]
-  },
-  {
-   "id": "light-07",
-   "group": "light",
-   "q": "ترجم الإجابة السابقة للإنجليزي",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "كم مدة فترة التجربة؟"
-    ],
-    [
-     "assistant",
-     "فترة التجربة ٩٠ يوماً قابلة للتمديد مرة واحدة [1]."
-    ]
-   ]
-  },
-  {
-   "id": "light-08",
-   "group": "light",
-   "q": "ممتاز 👍",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "سوّ لي جدول مهام الأسبوع"
-    ],
-    [
-     "assistant",
-     "| اليوم | المهمة |\n|---|---|\n| الأحد | مراجعة التقارير |"
-    ]
-   ]
-  },
-  {
-   "id": "follow-01",
-   "group": "follow-files",
-   "q": "وهل تشمل الإجازة المرضية؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "keys": [
-    "مرضي"
-   ],
-   "history": [
-    [
-     "user",
-     "كم مدة إجازة الأمومة في اللائحة؟"
-    ],
-    [
-     "assistant",
-     "مدة إجازة الأمومة ٧٠ يوماً بأجر كامل [1]."
-    ]
-   ]
-  },
-  {
-   "id": "follow-02",
-   "group": "follow-files",
-   "q": "وكم الحد الأعلى؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "keys": [
-    "سلف"
-   ],
-   "history": [
-    [
-     "user",
-     "هل يحق للموظف طلب سلفة على الراتب؟"
-    ],
-    [
-     "assistant",
-     "نعم، يحق للموظف المثبت طلب سلفة بعد سنة من الخدمة [1]."
-    ]
-   ]
-  },
-  {
-   "id": "follow-03",
-   "group": "follow-files",
-   "q": "طيب ومن يعتمدها؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "keys": [
-    "شراء"
-   ],
-   "history": [
-    [
-     "user",
-     "وش إجراءات طلب الشراء المباشر؟"
-    ],
-    [
-     "assistant",
-     "يُرفع الطلب عبر النظام مع ثلاثة عروض أسعار [1]."
-    ]
-   ]
-  },
-  {
-   "id": "follow-04",
-   "group": "follow-files",
-   "q": "ووش عن الموظفين المتعاقدين؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "keys": [
-    "متعاقد"
-   ],
-   "history": [
-    [
-     "user",
-     "كم بدل النقل للموظف الرسمي؟"
-    ],
-    [
-     "assistant",
-     "بدل النقل ١٠٪ من الراتب الأساسي [1]."
-    ]
-   ]
-  },
-  {
-   "id": "follow-05",
-   "group": "follow-files",
-   "q": "والسنة اللي قبلها كم كانت؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "keys": [
-    "تدريب"
-   ],
-   "history": [
-    [
-     "user",
-     "كم ميزانية التدريب لهذي السنة؟"
-    ],
-    [
-     "assistant",
-     "ميزانية التدريب لهذا العام ٢٫٤ مليون ريال [1]."
-    ]
-   ]
-  },
-  {
-   "id": "follow-06",
-   "group": "follow-files",
-   "q": "طيب وش البند اللي يتكلم عن هذا بالضبط؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "keys": [
-    "تجرب"
-   ],
-   "history": [
-    [
-     "user",
-     "هل يجوز تمديد فترة التجربة؟"
-    ],
-    [
-     "assistant",
-     "نعم يجوز تمديدها مرة واحدة باتفاق مكتوب [1]."
-    ]
-   ]
-  },
-  {
-   "id": "follow-07",
-   "group": "follow-general",
-   "q": "خله أقصر وأرسمي",
-   "needsFiles": false,
-   "effort": "light",
-   "history": [
-    [
-     "user",
-     "اكتب لي ايميل اعتذار عن اجتماع بكرة"
-    ],
-    [
-     "assistant",
-     "مرحباً فريق العمل، أعتذر عن حضور اجتماع الغد بسبب ارتباط سابق، وسأطلع على المحضر لاحقاً. مع التحية."
-    ]
-   ]
-  },
-  {
-   "id": "follow-08",
-   "group": "follow-general",
-   "q": "زد عليه سؤالين صعبين",
-   "needsFiles": false,
-   "effort": "normal",
-   "history": [
-    [
-     "user",
-     "سوّ لي اختبار من ٣ أسئلة عن الكسور"
-    ],
-    [
-     "assistant",
-     "١. ما ناتج ١/٢ + ١/٤؟ ٢. أي الكسرين أكبر ٢/٣ أم ٣/٤؟ ٣. بسّط ٦/٨."
-    ]
-   ]
-  },
-  {
-   "id": "switch-01",
-   "group": "topic-switch",
-   "q": "وش يقول النظام عن الإجازة السنوية؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "history": [
-    [
-     "user",
-     "سوّ لي اختبار من ٣ أسئلة عن الكسور لطلاب الصف الرابع"
-    ],
-    [
-     "assistant",
-     "جهّزت لك الاختبار: ١. أي كسر يمثل الجزء الملون؟ ٢. أيهما أكبر ١/٢ أم ١/٤؟ ٣. ما ناتج ١/٤ + ١/٤؟"
-    ]
-   ],
-   "note": "found live on 8092 (plans/12): the quiz in history pulled the decision to false"
-  },
-  {
-   "id": "switch-02",
-   "group": "topic-switch",
-   "q": "طيب كم بدل السكن عندنا؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "history": [
-    [
-     "user",
-     "اكتب لي ايميل تهنئة لزميل"
-    ],
-    [
-     "assistant",
-     "عزيزي أحمد، أبارك لك الترقية وأتمنى لك التوفيق. مع التحية."
-    ]
-   ]
-  },
-  {
-   "id": "switch-03",
-   "group": "topic-switch",
-   "q": "اكتب لي قصيدة قصيرة عن الصباح",
-   "needsFiles": false,
-   "effort": "normal",
-   "history": [
-    [
-     "user",
-     "كم مدة الإجازة المرضية؟"
-    ],
-    [
-     "assistant",
-     "حتى ٣٠ يوماً بأجر كامل [1]."
-    ]
-   ]
-  },
-  {
-   "id": "switch-04",
-   "group": "topic-switch",
-   "q": "من يعتمد طلبات السفر في الإدارة؟",
-   "needsFiles": true,
-   "effort": "normal",
-   "history": [
-    [
-     "user",
-     "ترجم: thank you for your patience"
-    ],
-    [
-     "assistant",
-     "شكراً لصبركم."
-    ]
-   ]
-  }
- ]
+  "about": "plans/12 routing set: Arabic requests (Gulf and MSA) to an open agent in a space that has files. gold.needsFiles = a good answer must look in the organisation's files; gold.effort = light only for thanks, greetings or reworking the previous answer. keys: words the standalone search question must keep (follow-ups).",
+  "cases": [
+    {
+      "id": "ask-01",
+      "group": "ask-files",
+      "q": "ما هي شروط صرف بدل السكن في اللائحة؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-02",
+      "group": "ask-files",
+      "q": "وش يقول النظام عن التأخير عن الدوام؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-03",
+      "group": "ask-files",
+      "q": "كم باقي على موعد تسليم تقرير الربع الثالث؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-04",
+      "group": "ask-files",
+      "q": "متى آخر اجتماع للجنة المشتريات ووش قرروا فيه؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-05",
+      "group": "ask-files",
+      "q": "ابي اعرف كم عدد الموظفين في قسم المالية",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-06",
+      "group": "ask-files",
+      "q": "هل يحق لي إجازة أبوة؟ وكم يوم؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-07",
+      "group": "ask-files",
+      "q": "إيش الإجراءات المتبعة عندنا لطلب سلفة؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-08",
+      "group": "ask-files",
+      "q": "من المسؤول عن اعتماد طلبات الشراء فوق ٥٠ ألف؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-09",
+      "group": "ask-files",
+      "q": "ما نسبة الإنجاز في مشروع تطوير البوابة حسب آخر تقرير؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-10",
+      "group": "ask-files",
+      "q": "وش الفرق بين سياسة العمل عن بعد القديمة والجديدة؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-11",
+      "group": "ask-files",
+      "q": "كم كانت مصروفات التدريب السنة الماضية؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-12",
+      "group": "ask-files",
+      "q": "هل فيه بند يسمح بتمديد فترة التجربة؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-13",
+      "group": "ask-files",
+      "q": "قل لي وش اتفقنا عليه في محضر اجتماع الأحد",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-14",
+      "group": "ask-files",
+      "q": "ما هي معايير تقييم الأداء المعتمدة لدينا؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-15",
+      "group": "ask-files",
+      "q": "كم ساعة عمل إضافي مسموحة بالشهر؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "ask-16",
+      "group": "ask-files",
+      "q": "مين رئيس فريق الجودة حالياً؟",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-01",
+      "group": "make-files",
+      "q": "سوّ لي ملخص لتقرير المبيعات الشهري",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-02",
+      "group": "make-files",
+      "q": "اكتب لي ايميل للموظفين بمواعيد الإجازات الرسمية المعتمدة عندنا",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-03",
+      "group": "make-files",
+      "q": "جهز لي عرض عن نتائج استبيان رضا الموظفين",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-04",
+      "group": "make-files",
+      "q": "ودّي لو تطلع لي جدول بأسماء المتدربين ودرجاتهم",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-05",
+      "group": "make-files",
+      "q": "اكتب خطاب رسمي للمورد نذكر فيه الغرامة المنصوص عليها في العقد",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-06",
+      "group": "make-files",
+      "q": "سوّ اختبار للموظفين الجدد من دليل السلامة المهنية",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-07",
+      "group": "make-files",
+      "q": "لخص لي محضر اجتماع مجلس الإدارة الأخير",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-08",
+      "group": "make-files",
+      "q": "اعمل لي مقارنة بين عروض الموردين اللي وصلتنا",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-09",
+      "group": "make-files",
+      "q": "حضّر لي نقاط للاجتماع بناءً على ملاحظات المراجعة الداخلية",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-10",
+      "group": "make-files",
+      "q": "ابي تكتب لي رد على شكوى العميل حسب سياسة الاسترجاع",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-11",
+      "group": "make-files",
+      "q": "أنشئ قائمة بالمهام المتأخرة في خطة المشروع",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-12",
+      "group": "make-files",
+      "q": "صمم نموذج تقييم مبني على معايير الأداء المعتمدة عندنا",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-13",
+      "group": "make-files",
+      "q": "ترجم بنود عقد الصيانة للإنجليزي",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-files-14",
+      "group": "make-files",
+      "q": "ارسم لي مخطط لنسب الحضور من سجل الحضور والانصراف",
+      "needsFiles": true,
+      "effort": "normal"
+    },
+    {
+      "id": "make-01",
+      "group": "make-general",
+      "q": "سوّ لي اختبار من خمس أسئلة عن الجهاز الهضمي لطلاب الصف الرابع",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-02",
+      "group": "make-general",
+      "q": "اكتب قصيدة قصيرة بمناسبة اليوم الوطني",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-03",
+      "group": "make-general",
+      "q": "ترجم هذي الجملة للإنجليزي: نشكركم على حسن تعاونكم",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-04",
+      "group": "make-general",
+      "q": "اكتب لي ايميل اعتذار عن حضور اجتماع بكرة",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-05",
+      "group": "make-general",
+      "q": "جهز لي خطة مذاكرة أسبوعية لمادة الرياضيات",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-06",
+      "group": "make-general",
+      "q": "صمم لي جدول متابعة عادات يومية",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-07",
+      "group": "make-general",
+      "q": "ابغى رسالة تهنئة لزميل ترقى",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-08",
+      "group": "make-general",
+      "q": "ودي تكتب لي مقدمة لعرض عن الذكاء الاصطناعي في التعليم",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-09",
+      "group": "make-general",
+      "q": "أعد صياغة هذه الفقرة بأسلوب رسمي: نبي نخلص الشغل بسرعة عشان العميل زعلان",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-10",
+      "group": "make-general",
+      "q": "لو تكرمت اكتب سيرة ذاتية مختصرة لمهندس برمجيات خبرته ٥ سنوات",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-11",
+      "group": "make-general",
+      "q": "أبي أفكار لفعالية ترفيهية للموظفين",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-12",
+      "group": "make-general",
+      "q": "حط لي قالب لمحضر اجتماع",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-13",
+      "group": "make-general",
+      "q": "اعطني ١٠ أسئلة مقابلة لوظيفة محاسب",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "make-14",
+      "group": "make-general",
+      "q": "عطني خطة تسويق لمقهى صغير",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-01",
+      "group": "ask-general",
+      "q": "وش الفرق بين ضريبة القيمة المضافة والضريبة الانتقائية؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-02",
+      "group": "ask-general",
+      "q": "كيف أحسب النسبة المئوية للزيادة؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-03",
+      "group": "ask-general",
+      "q": "ما هي عاصمة أستراليا؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-04",
+      "group": "ask-general",
+      "q": "اشرح لي مفهوم التعلم الآلي ببساطة",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-05",
+      "group": "ask-general",
+      "q": "كم يوم في السنة الكبيسة؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-06",
+      "group": "ask-general",
+      "q": "وش معنى KPI؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-07",
+      "group": "ask-general",
+      "q": "كيف أكتب معادلة VLOOKUP في إكسل؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-08",
+      "group": "ask-general",
+      "q": "ما الفرق بين الإيميل الرسمي وغير الرسمي؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-09",
+      "group": "ask-general",
+      "q": "وش أفضل طريقة لتنظيم الوقت في العمل؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "gen-10",
+      "group": "ask-general",
+      "q": "كم عدد أيام الأسبوع في التقويم الهجري؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "light-01",
+      "group": "light",
+      "q": "شكراً لك",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "كم مدة الإجازة المرضية؟"
+        ],
+        [
+          "assistant",
+          "الإجازة المرضية حتى ٣٠ يوماً بأجر كامل [1]."
+        ]
+      ]
+    },
+    {
+      "id": "light-02",
+      "group": "light",
+      "q": "تمام، مشكور",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "متى يبدأ الدوام؟"
+        ],
+        [
+          "assistant",
+          "يبدأ الدوام الساعة ٧:٣٠ صباحاً [1]."
+        ]
+      ]
+    },
+    {
+      "id": "light-03",
+      "group": "light",
+      "q": "يعطيك العافية",
+      "needsFiles": false,
+      "effort": "light"
+    },
+    {
+      "id": "light-04",
+      "group": "light",
+      "q": "السلام عليكم",
+      "needsFiles": false,
+      "effort": "light"
+    },
+    {
+      "id": "light-05",
+      "group": "light",
+      "q": "اختصر الرد اللي فوق",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "وش خطوات طلب السلفة؟"
+        ],
+        [
+          "assistant",
+          "١. تعبئة النموذج من البوابة. ٢. موافقة المدير المباشر. ٣. مراجعة المالية خلال خمسة أيام عمل. ٤. الصرف مع راتب الشهر التالي [1]."
+        ]
+      ]
+    },
+    {
+      "id": "light-06",
+      "group": "light",
+      "q": "لخص الرد اللي فوق بثلاث نقاط",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "اشرح لي سياسة العمل عن بعد"
+        ],
+        [
+          "assistant",
+          "تسمح السياسة بيومين عن بعد أسبوعياً بعد موافقة المدير، بشرط الحضور في أيام الاجتماعات، ويُستثنى منها موظفو خدمة العملاء [1][2]."
+        ]
+      ]
+    },
+    {
+      "id": "light-07",
+      "group": "light",
+      "q": "ترجم الإجابة السابقة للإنجليزي",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "كم مدة فترة التجربة؟"
+        ],
+        [
+          "assistant",
+          "فترة التجربة ٩٠ يوماً قابلة للتمديد مرة واحدة [1]."
+        ]
+      ]
+    },
+    {
+      "id": "light-08",
+      "group": "light",
+      "q": "ممتاز 👍",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "سوّ لي جدول مهام الأسبوع"
+        ],
+        [
+          "assistant",
+          "| اليوم | المهمة |\n|---|---|\n| الأحد | مراجعة التقارير |"
+        ]
+      ]
+    },
+    {
+      "id": "follow-01",
+      "group": "follow-files",
+      "q": "وهل تشمل الإجازة المرضية؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "keys": [
+        "مرضي"
+      ],
+      "history": [
+        [
+          "user",
+          "كم مدة إجازة الأمومة في اللائحة؟"
+        ],
+        [
+          "assistant",
+          "مدة إجازة الأمومة ٧٠ يوماً بأجر كامل [1]."
+        ]
+      ]
+    },
+    {
+      "id": "follow-02",
+      "group": "follow-files",
+      "q": "وكم الحد الأعلى؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "keys": [
+        "سلف"
+      ],
+      "history": [
+        [
+          "user",
+          "هل يحق للموظف طلب سلفة على الراتب؟"
+        ],
+        [
+          "assistant",
+          "نعم، يحق للموظف المثبت طلب سلفة بعد سنة من الخدمة [1]."
+        ]
+      ]
+    },
+    {
+      "id": "follow-03",
+      "group": "follow-files",
+      "q": "طيب ومن يعتمدها؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "keys": [
+        "شراء"
+      ],
+      "history": [
+        [
+          "user",
+          "وش إجراءات طلب الشراء المباشر؟"
+        ],
+        [
+          "assistant",
+          "يُرفع الطلب عبر النظام مع ثلاثة عروض أسعار [1]."
+        ]
+      ]
+    },
+    {
+      "id": "follow-04",
+      "group": "follow-files",
+      "q": "ووش عن الموظفين المتعاقدين؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "keys": [
+        "متعاقد"
+      ],
+      "history": [
+        [
+          "user",
+          "كم بدل النقل للموظف الرسمي؟"
+        ],
+        [
+          "assistant",
+          "بدل النقل ١٠٪ من الراتب الأساسي [1]."
+        ]
+      ]
+    },
+    {
+      "id": "follow-05",
+      "group": "follow-files",
+      "q": "والسنة اللي قبلها كم كانت؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "keys": [
+        "تدريب"
+      ],
+      "history": [
+        [
+          "user",
+          "كم ميزانية التدريب لهذي السنة؟"
+        ],
+        [
+          "assistant",
+          "ميزانية التدريب لهذا العام ٢٫٤ مليون ريال [1]."
+        ]
+      ]
+    },
+    {
+      "id": "follow-06",
+      "group": "follow-files",
+      "q": "طيب وش البند اللي يتكلم عن هذا بالضبط؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "keys": [
+        "تجرب"
+      ],
+      "history": [
+        [
+          "user",
+          "هل يجوز تمديد فترة التجربة؟"
+        ],
+        [
+          "assistant",
+          "نعم يجوز تمديدها مرة واحدة باتفاق مكتوب [1]."
+        ]
+      ]
+    },
+    {
+      "id": "follow-07",
+      "group": "follow-general",
+      "q": "خله أقصر وأرسمي",
+      "needsFiles": false,
+      "effort": "light",
+      "history": [
+        [
+          "user",
+          "اكتب لي ايميل اعتذار عن اجتماع بكرة"
+        ],
+        [
+          "assistant",
+          "مرحباً فريق العمل، أعتذر عن حضور اجتماع الغد بسبب ارتباط سابق، وسأطلع على المحضر لاحقاً. مع التحية."
+        ]
+      ]
+    },
+    {
+      "id": "follow-08",
+      "group": "follow-general",
+      "q": "زد عليه سؤالين صعبين",
+      "needsFiles": false,
+      "effort": "normal",
+      "history": [
+        [
+          "user",
+          "سوّ لي اختبار من ٣ أسئلة عن الكسور"
+        ],
+        [
+          "assistant",
+          "١. ما ناتج ١/٢ + ١/٤؟ ٢. أي الكسرين أكبر ٢/٣ أم ٣/٤؟ ٣. بسّط ٦/٨."
+        ]
+      ]
+    },
+    {
+      "id": "switch-01",
+      "group": "topic-switch",
+      "q": "وش يقول النظام عن الإجازة السنوية؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "history": [
+        [
+          "user",
+          "سوّ لي اختبار من ٣ أسئلة عن الكسور لطلاب الصف الرابع"
+        ],
+        [
+          "assistant",
+          "جهّزت لك الاختبار: ١. أي كسر يمثل الجزء الملون؟ ٢. أيهما أكبر ١/٢ أم ١/٤؟ ٣. ما ناتج ١/٤ + ١/٤؟"
+        ]
+      ],
+      "note": "found live on 8092 (plans/12): the quiz in history pulled the decision to false"
+    },
+    {
+      "id": "switch-02",
+      "group": "topic-switch",
+      "q": "طيب كم بدل السكن عندنا؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "history": [
+        [
+          "user",
+          "اكتب لي ايميل تهنئة لزميل"
+        ],
+        [
+          "assistant",
+          "عزيزي أحمد، أبارك لك الترقية وأتمنى لك التوفيق. مع التحية."
+        ]
+      ]
+    },
+    {
+      "id": "switch-03",
+      "group": "topic-switch",
+      "q": "اكتب لي قصيدة قصيرة عن الصباح",
+      "needsFiles": false,
+      "effort": "normal",
+      "history": [
+        [
+          "user",
+          "كم مدة الإجازة المرضية؟"
+        ],
+        [
+          "assistant",
+          "حتى ٣٠ يوماً بأجر كامل [1]."
+        ]
+      ]
+    },
+    {
+      "id": "switch-04",
+      "group": "topic-switch",
+      "q": "من يعتمد طلبات السفر في الإدارة؟",
+      "needsFiles": true,
+      "effort": "normal",
+      "history": [
+        [
+          "user",
+          "ترجم: thank you for your patience"
+        ],
+        [
+          "assistant",
+          "شكراً لصبركم."
+        ]
+      ]
+    },
+    {
+      "id": "own-01",
+      "group": "own-items",
+      "q": "سوي لي قائمة بدير مشاريعي فيها",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "own-02",
+      "group": "own-items",
+      "q": "كم عندي مهام وقوائم ؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "own-03",
+      "group": "own-items",
+      "q": "طيب مهام ؟",
+      "needsFiles": false,
+      "effort": "normal",
+      "history": [
+        [
+          "user",
+          "كم عندي مهام وقوائم ؟"
+        ],
+        [
+          "assistant",
+          "عندك أربع قوائم: مشاريعي، ومهل واستحقاقاتي، وغيرها."
+        ]
+      ]
+    },
+    {
+      "id": "own-04",
+      "group": "own-items",
+      "q": "رتب مهامي حسب الأولوية",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "own-05",
+      "group": "own-items",
+      "q": "أضف للقائمة مشروع تطوير البوابة والمسؤول خالد",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "own-06",
+      "group": "own-items",
+      "q": "وش المهام المستعجلة عندي هالأسبوع؟",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "own-07",
+      "group": "own-items",
+      "q": "سو لي جدول متابعة للمشتريات اللي أتابعها",
+      "needsFiles": false,
+      "effort": "normal"
+    },
+    {
+      "id": "own-08",
+      "group": "own-items",
+      "q": "وش آخر قرار في محضر اجتماع لجنة المشاريع؟",
+      "needsFiles": true,
+      "effort": "normal"
+    }
+  ]
 }

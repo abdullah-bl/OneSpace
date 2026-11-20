@@ -17,7 +17,7 @@ const ACTIVE = (a: ActorKey) => !["pend", "dis", "anon"].includes(a);
 
 beforeAll(async () => {
   ai = startFakeAI();
-  s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: "600000", CHAT_HISTORY_KEEP: "8", CHAT_HISTORY_MAX: "12" /* a small window, so 10 turns exercise the summary */ })).start();
+  s = await new Server(undefined, aiEnv(ai, { PROPOSAL_TTL_MS: "600000", CHAT_HISTORY_MAX: "12" /* a small window, so 10 turns exercise the summary */ })).start();
   f = await buildFixture(s);
   for (const sp of SPACES) await waitIngest(s, sp === "P_mem" ? tok("mem")! : tok("mgr")!, f.spaces[sp], f.files[sp]);
 }, 90_000);
@@ -141,7 +141,7 @@ describe("space chats", () => {
 describe("@mentions in chat narrow the scope and can never widen it", () => {
   test("@file narrows a question to that file", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "ما محتوى CONTENT-S_plain و PERSONAL-CONTENT-PF55؟", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "ما محتوى CONTENT-S_plain و PERSONAL-CONTENT-PF55؟", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     const r = await waitAnswers(tok("mem")!, t, 1);
     const cites = r.messages.at(-1).citations;
     expect(cites.length).toBeGreaterThan(0);
@@ -150,7 +150,7 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
 
   test("@space narrows to that space", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "CONTENT-S_plain CONTENT-S_every PERSONAL-CONTENT-PF55", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "CONTENT-S_plain CONTENT-S_every PERSONAL-CONTENT-PF55", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem")));
     const r = await waitAnswers(tok("mem")!, t, 1);
     expect(r.messages.at(-1).citations.every((c: any) => c.fileId === f.files.S_every)).toBe(true);
   }, 30_000);
@@ -161,8 +161,8 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
       const allowed = expectedAllowed(a, sp, "read");
       test(`chat:send mentioning the file / space of ${sp} | ${a} → ${allowed ? "allowed" : "denied"}`, async () => {
         const t = must(await s.call("mutation", "chat:createThread", {}, tok(a)));
-        check(await s.call("mutation", "chat:send", { threadId: t, text: "MENTIONQ", mentions: [{ kind: "file", id: f.files[sp] }] }, tok(a)), allowed);
-        check(await s.call("mutation", "chat:send", { threadId: must(await s.call("mutation", "chat:createThread", {}, tok(a))), text: "MENTIONQ", mentions: [{ kind: "space", id: f.spaces[sp] }] }, tok(a)), allowed);
+        check(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "MENTIONQ", mentions: [{ kind: "file", id: f.files[sp] }] }, tok(a)), allowed);
+        check(await s.call("mutation", "chat:send", { to: "assistant", threadId: must(await s.call("mutation", "chat:createThread", {}, tok(a))), text: "MENTIONQ", mentions: [{ kind: "space", id: f.spaces[sp] }] }, tok(a)), allowed);
       }, 30_000);
     }
   }
@@ -171,14 +171,14 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
     // The policies agent only sees 'everyone' spaces: mentioning a readable S_plain file finds nothing.
     const policies = must(await s.call("query", "agents:available", {}, tok("mem"))).find((x: any) => x.name === "السياسات")._id;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: policies }, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "CONTENT-S_plain WIDENQ-1", mentions: [{ kind: "file", id: f.files.S_plain }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "CONTENT-S_plain WIDENQ-1", mentions: [{ kind: "file", id: f.files.S_plain }] }, tok("mem")));
     const r = await waitAnswers(tok("mem")!, t, 1);
     expect(r.messages.at(-1).citations).toEqual([]);
     for (const req of chatRequestsWith(ai, "WIDENQ-1")) expect(JSON.stringify(req.body)).not.toContain("CONTENT-S_plain\n");
     // A thread scoped to S_every: mentioning S_plain doesn't reach S_plain.
     // (A private chat: a shared one refuses an outside mention outright, see shared-chats.test.ts.)
     const t2 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every, shared: false }, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t2, text: "CONTENT-S_plain WIDENQ-2", mentions: [{ kind: "space", id: f.spaces.S_plain }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t2, text: "CONTENT-S_plain WIDENQ-2", mentions: [{ kind: "space", id: f.spaces.S_plain }] }, tok("mem")));
     const r2 = await waitAnswers(tok("mem")!, t2, 1);
     expect(r2.messages.at(-1).citations).toEqual([]);
     expect(await dump(t2, tok("mem")!)).not.toContain(FILE_NAMES.S_plain);
@@ -186,9 +186,9 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
 
   test("an unknown or malformed mention is the same denial; @agent picks an agent I may use", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    for (const id of ["nope", f.spaces.S_plain]) expect((await s.call("mutation", "chat:send", { threadId: t, text: "x", mentions: [{ kind: "file", id }] }, tok("mem"))).ok).toBe(false);
+    for (const id of ["nope", f.spaces.S_plain]) expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "x", mentions: [{ kind: "file", id }] }, tok("mem"))).ok).toBe(false);
     const policies = must(await s.call("query", "agents:available", {}, tok("mem"))).find((x: any) => x.name === "السياسات")._id;
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "AGENTMENTION-1", mentions: [{ kind: "agent", id: policies }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "AGENTMENTION-1", mentions: [{ kind: "agent", id: policies }] }, tok("mem")));
     expect(must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).agentId).toBe(policies);
   }, 30_000);
 
@@ -197,7 +197,7 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
     const grades = agents.find((x: any) => x.name === "الدرجات والتقارير")._id;
     const def = agents.find((x: any) => x.isDefault);
     const t = must(await s.call("mutation", "chat:createThread", { agentId: grades }, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "لخّص الملف NOREADQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "لخّص الملف NOREADQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     const r = await waitAnswers(tok("mem")!, t, 1);
     const text: string = r.messages.at(-1).text;
     expect(text).toContain("لا يستطيع قراءة");
@@ -207,7 +207,7 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
     expect(chatRequestsWith(ai, "NOREADQ-1")).toEqual([]);
     // The same question with the default agent reads and cites the file.
     const t2 = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t2, text: "لخّص الملف NOREADQ-2", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t2, text: "لخّص الملف NOREADQ-2", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     const r2 = await waitAnswers(tok("mem")!, t2, 1);
     expect(r2.messages.at(-1).citations.every((c: any) => c.fileId === f.files.P_mem)).toBe(true);
     expect(r2.messages.at(-1).citations.length).toBeGreaterThan(0);
@@ -362,8 +362,8 @@ describe("@person in a shared space's chat tells them this one message; the chat
 
   test("in a shared chat the mention opens the chat itself, while the reader can read it; made private, it falls back to the space", async () => {
     const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: true }, tok("mem")));
+    // A message to colleagues (plans/16): no answer from the assistant, so nothing to wait for.
     must(await s.call("mutation", "chat:send", { threadId: t, text: "تابعوا هنا CHATMENTION-S1", people: [f.ids.mgr, f.ids.rdr, f.ids.out] }, tok("mem")));
-    await waitAnswers(tok("mem")!, t, 1);
     for (const who of ["mgr", "rdr"]) {
       const row = (await inbox(who)).find((x: any) => x.excerpt.includes("CHATMENTION-S1"));
       expect(row).toMatchObject({ source: "chat", threadId: t, spaceId: f.spaces.S_plain });
@@ -576,7 +576,7 @@ describe("long chats keep their memory", () => {
       await ask(s, tok("mem")!, t, `سؤال رقم ${i} MEMQ-${i}`);
       await Bun.sleep(150); // let the summary land (it's written right after the answer)
     }
-    const summaries = ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.response_format ?? "").includes('"summary"') && JSON.stringify(r.body.messages).includes("MEMQ-101"));
+    const summaries = ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.response_format ?? "").includes('"decisions"') && JSON.stringify(r.body.messages).includes("MEMQ-101"));
     expect(summaries.length).toBeGreaterThan(0);
     // The last turn's answer request: the oldest questions only via the summary, inside the single system message.
     const req = ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages).includes("MEMQ-110")).at(-1);

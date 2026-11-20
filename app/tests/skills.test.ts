@@ -32,7 +32,7 @@ const skillArgs = (name: string, instructions = "اكتب بصيغة رسمية"
 describe("«إيقاف»", () => {
   test("a running answer stops and keeps what it wrote", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "SLOW-TURN اكتب طويلاً STOP-1" }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "SLOW-TURN اكتب طويلاً STOP-1" }, tok("mem")));
     for (let i = 0; i < 200; i++) {
       const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
       if (r.turn?.state === "running" && r.turn.streamId) break;
@@ -80,7 +80,7 @@ describe("my skills: /name", () => {
   test("a skill joins that answer's instructions, steers the router, and shows on the answer", async () => {
     const id = must(await s.call("mutation", "skills:create", skillArgs("تقرير", "SKILLINSTR-7 اكتب جدولاً"), tok("mem")));
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "/تقرير عن الحضور SKILLQ-1", skillId: id }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "/تقرير عن الحضور SKILLQ-1", skillId: id }, tok("mem")));
     let answered: any;
     for (let i = 0; i < 400 && !answered; i++) {
       const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
@@ -99,7 +99,7 @@ describe("my skills: /name", () => {
   test("someone else's skill can't be used", async () => {
     const id = must(await s.call("mutation", "skills:create", skillArgs("سري"), tok("mgr")));
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "/سري", skillId: id }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "/سري", skillId: id }, tok("mem"))).ok).toBe(false);
   });
 });
 
@@ -134,7 +134,7 @@ describe("AI drafts", () => {
 describe("follow-ups remember the chat's files and agent", () => {
   test("a question without @ inherits the last mentioned file: skills that can't reach it aren't candidates", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "لخّص هذا FOLLOW-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "لخّص هذا FOLLOW-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     for (let i = 0; i < 400; i++) {
       const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
       if (!r.turn && r.messages.at(-1)?.role === "assistant") break;
@@ -155,7 +155,7 @@ describe("follow-ups remember the chat's files and agent", () => {
 describe("thinking level: تلقائي / سريع / عميق", () => {
   async function answerWith(text: string, effort?: string) {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
     for (let i = 0; i < 400; i++) {
       const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
       if (!r.turn && r.messages.at(-1)?.role === "assistant") return r.messages.at(-1);
@@ -187,7 +187,7 @@ describe("thinking level: تلقائي / سريع / عميق", () => {
 
   test("an unknown level is refused", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "x", effort: "max" }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "x", effort: "max" }, tok("mem"))).ok).toBe(false);
   });
 });
 

@@ -34,7 +34,7 @@ const setInstr = async (space: "S_plain" | "S_sens", instructions: string) => mu
 
 /** One message in a thread; any card it raises is confirmed by the asker. Returns the thread's messages. */
 async function say(token: string, threadId: string, text: string) {
-  must(await s.call("mutation", "chat:send", { threadId, text }, token));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId, text }, token));
   const confirmed = new Set<string>();
   for (let i = 0; i < 1600; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId }, token));
@@ -147,7 +147,7 @@ describe("an output the assistant wrote becomes the example", () => {
 
     // /name puts the example's shape in the prompt.
     const t2 = await newThread(tok("mem"));
-    must(await s.call("mutation", "chat:send", { threadId: t2, text: "/files-doc منهج جديد FL-8", skillId: sk._id }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t2, text: "/files-doc منهج جديد FL-8", skillId: sk._id }, tok("mem")));
     for (let i = 0; i < 800 && !ai.requests.some((r) => JSON.stringify(r.body.messages ?? []).includes("FL-8")); i++) await Bun.sleep(25);
     await Bun.sleep(200);
     expect(ai.requests.filter((r) => JSON.stringify(r.body.messages ?? []).includes("FL-8")).map((r) => JSON.stringify(r.body.messages)).join()).toContain("نموذج المخرج example.md");

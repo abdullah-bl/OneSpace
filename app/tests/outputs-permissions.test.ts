@@ -53,7 +53,7 @@ async function sensitiveArtifact() {
 }
 
 /** Without a sandbox, an export that got past every access check stops at "not configured": count it as allowed. */
-const SANDBOX_OFF = /الساندبوكس غير مهيأ|تعذّر الاتصال بالساندبوكس/;
+const SANDBOX_OFF = /بيئة التحليل غير مفعّلة|تعذّر الوصول إلى بيئة التحليل/;
 const passedAccess = (r: Result): Result => (!r.ok && SANDBOX_OFF.test(r.error) ? { ok: true, value: "access ok (no sandbox)" } : r);
 
 type Op = { name: string; need: Need; spaces: readonly SpaceKey[]; expect?: (a: ActorKey, sp: SpaceKey) => boolean; run: (a: ActorKey, sp: SpaceKey) => Promise<Result> };

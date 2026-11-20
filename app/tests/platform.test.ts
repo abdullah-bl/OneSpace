@@ -67,7 +67,7 @@ afterAll(async () => {
 
 async function ask(token: string, text: string) {
   const t = must(await s.call("mutation", "chat:createThread", {}, token));
-  must(await s.call("mutation", "chat:send", { threadId: t, text }, token));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text }, token));
   for (let i = 0; i < 800; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId: t }, token));
     if (!r.turn && r.messages.at(-1)?.role === "assistant") return { threadId: t, answer: r.messages.at(-1) };

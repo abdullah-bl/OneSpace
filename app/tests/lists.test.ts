@@ -153,7 +153,7 @@ const call = (name: string, args: unknown) => `CALL_TOOL ${name} ${JSON.stringif
 
 async function ask(token: string, text: string, spaceId = f.spaces.S_plain, confirm = true) {
   const threadId = must(await s.call("mutation", "chat:createThread", { spaceId }, token));
-  must(await s.call("mutation", "chat:send", { threadId, text }, token));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId, text }, token));
   const done = new Set<string>();
   for (let i = 0; i < 800; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId }, token));
@@ -202,6 +202,24 @@ describe("the assistant's list tools", () => {
     expect(mine.personal).toBe(true);
     must(await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("rdr")));
     expect(must(await s.call("query", "lists:recent", {}, tok("rdr"))).some((x: any) => x.title === "قائمتي AI-2")).toBe(false);
+  });
+
+  test("a refused write in the personal space is a failed step: no «تراجع» card, and the model is told nothing changed", async () => {
+    // A person cell with someone who can't see the space: create_list refuses it (and rolls back).
+    await setInstr(call("create_list", { ...TASKS, title: "قائمة فاشلة AI-9", rows: [{ المهمة: "س", المسؤول: "شخص-غير-موجود-LQ9" }] }));
+    let r: any;
+    try {
+      r = await ask(tok("rdr")!, "سوّ لي قائمة LQ-9", f.spaces.S_plain, false);
+    } finally {
+      await setInstr("");
+    }
+    expect(r.props.some((x: any) => x.tool === "create_list")).toBe(false);
+    expect(must(await s.call("query", "lists:recent", {}, tok("rdr"))).some((x: any) => x.title === "قائمة فاشلة AI-9")).toBe(false);
+    const view = must(await s.call("query", "chat:messages", { threadId: r.threadId }, tok("rdr")));
+    const run = view.messages.at(-1).toolRuns.find((x: any) => x.name === "create_list");
+    expect(run.ok).toBe(false);
+    expect(sentFor("LQ-9")).toContain("فشلت الأداة ولم يتغيّر شيء");
+    expect(sentFor("LQ-9")).not.toContain("نُفّذ مباشرة");
   });
 
   test("the list is in the space's chats' prompt; read_list then update_list by row id", async () => {

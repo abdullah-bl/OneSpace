@@ -22,7 +22,8 @@ export type NotifyKind =
   | "schedule.result"
   | "schedule.failed"
   | "schedule.stopped"
-  | "chat.shared";
+  | "chat.shared"
+  | "chat.handoff";
 
 /** Publishes one notification to `userId`. Internal helper; callers decide who may receive it. */
 export async function notify(

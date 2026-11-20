@@ -170,7 +170,7 @@ describe("importing into the app", () => {
     must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL use_skill {"name":"pdf-forms","file":"references/forms.md"}\nCALL_TOOL use_skill {"name":"pdf-forms"}' }, tok("mgr")));
     try {
       const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
-      must(await s.call("mutation", "chat:send", { threadId: t, text: "املأ النموذج IMP-Q1" }, tok("mem")));
+      must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "املأ النموذج IMP-Q1" }, tok("mem")));
       for (let i = 0; i < 800; i++) {
         const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
         if (!r.turn && r.messages.at(-1)?.role === "assistant") break;

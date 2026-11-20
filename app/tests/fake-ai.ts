@@ -132,7 +132,20 @@ export function startFakeAI(dims = 64): FakeAI {
           const names: string[] = body.response_format.json_schema?.schema?.properties?.parts?.items?.properties?.agent?.enum ?? [];
           text = JSON.stringify({ parts: [{ goal: "PART-A اقرأ الجزء الأول", agent: names[0] }, { goal: "PART-B اقرأ الجزء الثاني", agent: names[1] ?? names[0] }] });
         } else if (body.response_format && JSON.stringify(body.response_format).includes('"title"')) text = JSON.stringify({ title: FAKE_TITLE });
-        else if (body.response_format && JSON.stringify(body.response_format).includes('"summary"')) text = JSON.stringify({ summary: `SUMMARY-OF ${[...JSON.stringify(messages).matchAll(/[A-Z]+Q-\d+/g)].map((x) => x[0]).filter((x, i, a) => a.indexOf(x) === i).join(" ")}` });
+        else if (body.response_format && JSON.stringify(body.response_format).includes('"decisions"')) {
+          // Chat summary (plans/15): the markers it saw become facts; "قررنا X" lines become decisions.
+          const all = JSON.stringify(messages);
+          const marks = [...all.matchAll(/[A-Z]+Q-\d+/g)].map((x) => x[0]).filter((x, i, a) => a.indexOf(x) === i);
+          const decided = [...all.matchAll(/قررنا ([^"\\]+?)(?:\\n|")/g)].map((x) => x[1]!.trim());
+          // Like a real model, it merges the previous summary (given as JSON) with the new messages.
+          const userText = contentText(messages.at(-1)?.content);
+          let prev: any = {};
+          try {
+            prev = JSON.parse(/الملخص السابق \(JSON\):\n(.*)\n\nالرسائل الجديدة/s.exec(userText)?.[1] ?? "{}");
+          } catch {}
+          const facts = [...new Set([...(prev.facts ?? []), ...marks.map((m) => `ذُكر ${m}`)])];
+          text = JSON.stringify({ topics: `SUMMARY-OF ${marks.join(" ")}`, facts, decisions: [...new Set([...(prev.decisions ?? []), ...decided])], open: [], outputs: [] });
+        }
         else if (body.response_format && JSON.stringify(body.response_format).includes('"skill"')) {
           // Router (plans/07 §C): "SKILL=<name>" in the request picks that skill; "SKILL-UNSURE" answers with
           // low confidence; otherwise the default (marked in the list).
