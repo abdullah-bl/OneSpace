@@ -16,7 +16,7 @@ import ExcelJS from "exceljs";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { actorFor, assertCan, Denied, requireActive, requireUserId, roleAllows, spaceRoleOf, type Actor } from "./access";
+import { actorFor, assertCan, Denied, isSharedThread, requireActive, requireUserId, roleAllows, spaceRoleOf, threadAllows, type Actor } from "./access";
 import { writeAudit } from "./audit";
 import { revokeForArtifact } from "./publications";
 import { artifactKind, cellValue } from "./outputsSchema";
@@ -135,9 +135,12 @@ export async function place(
   sensitiveOrigins: Set<Id<"spaces">>,
   requested: Id<"spaces"> | string | undefined,
   scope: Set<string> | null,
-  opts: { managerMayExport?: boolean } = {},
+  opts: { managerMayExport?: boolean; home?: Id<"spaces"> | null } = {},
 ) {
   const personal = await personalSpaceOf(ctx, actor);
+  // A shared chat's space (homeSpaceOf): where an output with no single source space goes, so the
+  // team that reads the chat sees it, instead of the asker's personal space.
+  const fallback = opts.home ?? personal._id;
   const spaceIds = [...new Set(sources.map((s) => s.spaceId))];
   const spaces = (await Promise.all(spaceIds.map((id) => ctx.db.get(id)))).filter(Boolean) as Doc<"spaces">[];
   const sensitive = new Set<Id<"spaces">>([...spaces.filter((s) => s.sensitive).map((s) => s._id), ...sensitiveOrigins]);
@@ -169,7 +172,7 @@ export async function place(
     target = req ?? personal._id;
     if (target !== personal._id) throw new OneBaseError("مخرج من مصادر في عدة مساحات يُحفظ في مساحتك الخاصة");
   } else {
-    target = req ?? personal._id;
+    target = req ?? fallback;
   }
   const { space } = await assertCan(ctx, actor.userId, target, "write");
   if (scope && space.kind !== "personal" && !scope.has(space._id)) throw new Denied();
@@ -181,6 +184,17 @@ export async function place(
   return { space, classification, originSpaceId };
 }
 
+/**
+ * plans/16: in a shared chat, its space is where new outputs go when nothing else decides: its
+ * members read the chat, so they should see what it made. Only when the asker may write there.
+ */
+export async function homeSpaceOf(ctx: Ctx, userId: Id<"users">, threadId: string | undefined): Promise<Id<"spaces"> | null> {
+  if (!threadId) return null;
+  const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
+  if (!meta || !isSharedThread(meta) || !meta.spaceId) return null;
+  return (await threadAllows(ctx, userId, meta, "write")) ? meta.spaceId : null;
+}
+
 export type CreateInput = { title: string; kind: ArtifactKind; content: unknown; sources?: SourceRef[]; spaceId?: string; runId?: string };
 
 export async function createArtifact(ctx: MutationCtx, actor: Actor, input: CreateInput, opts: { scope: Set<string> | null; threadId?: string; via: string }) {
@@ -189,7 +203,7 @@ export async function createArtifact(ctx: MutationCtx, actor: Actor, input: Crea
   if (!["markdown", "html", "table"].includes(input.kind)) throw new OneBaseError("نوع المخرج غير معروف");
   const content = normalizeContent(input.kind, input.content);
   const { sources, sensitiveOrigins } = await resolveSources(ctx, actor, input.sources ?? [], opts.scope);
-  const { space, classification, originSpaceId } = await place(ctx, actor, sources, sensitiveOrigins, input.spaceId, opts.scope);
+  const { space, classification, originSpaceId } = await place(ctx, actor, sources, sensitiveOrigins, input.spaceId, opts.scope, { home: await homeSpaceOf(ctx, actor.userId, opts.threadId) });
   const artifactId = await insertArtifact(ctx, {
     spaceId: space._id,
     ownerId: actor.userId,

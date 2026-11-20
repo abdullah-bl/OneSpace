@@ -11,7 +11,7 @@ import { v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan } from "./access";
-import { place, resolveSources, type SourceRef } from "./artifacts";
+import { homeSpaceOf, place, resolveSources, type SourceRef } from "./artifacts";
 import { placeForTier } from "./lists";
 
 export type Tier = 1 | 2 | 3;
@@ -90,7 +90,7 @@ export const resolve = internalQuery({
         // falls through: a new output from Markdown is placed like create_artifact (no explicit space)
         case "create_artifact": {
           const { sources, sensitiveOrigins } = await resolveSources(ctx, actor, refs(a.sources), scope);
-          const placed = await place(ctx, actor, sources, sensitiveOrigins, tool === "create_artifact" ? a.spaceId : undefined, scope);
+          const placed = await place(ctx, actor, sources, sensitiveOrigins, tool === "create_artifact" ? a.spaceId : undefined, scope, { home: await homeSpaceOf(ctx, userId, threadId) });
           return tierFor(userId, placed.space, placed.classification === "sensitive");
         }
         case "run_analysis": {
@@ -107,7 +107,7 @@ export const resolve = internalQuery({
             if (space.sensitive) sensitive = true;
             sources.push({ type: "file" as const, id: file._id, spaceId: space._id });
           }
-          const placed = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true });
+          const placed = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true, home: await homeSpaceOf(ctx, userId, threadId) });
           return tierFor(userId, placed.space, sensitive);
         }
         default:

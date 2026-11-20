@@ -248,4 +248,25 @@ describe("messages to colleagues and handing them to the assistant", () => {
     const p = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
     expect(must(await s.call("mutation", "chat:send", { threadId: p, text: "سؤال TEAMQ-9", people: [f.ids.mgr] }, tok("mem")))).toBeTruthy();
   });
+
+  test("an output made in a shared chat lands in the chat's space (a card first), so the members see it", async () => {
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL create_artifact {"title":"مخرج الفريق TEAMOUT-1","kind":"markdown","content":"# جدول"}' }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, c, "سوّ لنا مخرج TEAMOUT-Q");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: c }, tok("mem")));
+    const p = view.messages.flatMap((m: any) => m.proposals ?? []).find((x: any) => x.tool === "create_artifact");
+    // A write the team sees: it waits for «نفّذ», it doesn't run in the asker's personal space.
+    expect(p.state).toBe("pending");
+    expect(p.auto).toBeFalsy();
+    must(await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem")));
+    for (const a of ["mgr", "rdr"]) {
+      const seen = must(await s.call("query", "chat:messages", { threadId: c }, tok(a))).messages.flatMap((m: any) => m.proposals ?? []).find((x: any) => x.id === p.id);
+      expect(seen.state).toBe("executed");
+      expect(seen.artifactIds.length).toBe(1);
+    }
+  }, 60_000);
 });
