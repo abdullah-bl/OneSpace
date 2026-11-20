@@ -18,7 +18,7 @@ const STATE: Record<TeamTo["state"], (name: string) => string> = {
 };
 const TONE: Record<TeamTo["state"], string> = { pending: "badge", assistant: "badge-primary", self: "badge-primary", done: "badge-positive" };
 
-export function TeamMessage({ messageId, author, mine, text, to, canWrite, busy }: { messageId: string; author: string | null; mine: boolean; text: string; to: TeamTo[]; canWrite: boolean; busy: boolean }) {
+export function TeamMessage({ messageId, author, mine, text, to, viaAssistant, canWrite, busy }: { messageId: string; author: string | null; mine: boolean; text: string; to: TeamTo[]; viaAssistant?: boolean; canWrite: boolean; busy: boolean }) {
   const handoff = useMutation(api.chat.handoff);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
@@ -39,6 +39,7 @@ export function TeamMessage({ messageId, author, mine, text, to, canWrite, busy 
       <span className="flex items-center gap-1.5 text-xs font-medium text-muted">
         <Icon name="users" size={13} />
         {mine ? "أنت" : (author ?? "زميل")} ← {to.map((t) => (t.mine ? "أنت" : t.name)).join("، ")}
+        {viaAssistant && <span className="text-faint">· عبر المساعد</span>}
       </span>
       <div className="max-w-[85%] rounded-2xl rounded-ss-md border border-line bg-surface px-4 py-2.5 text-[15px] leading-7">
         <div className="whitespace-pre-wrap [overflow-wrap:anywhere]" dir="auto">

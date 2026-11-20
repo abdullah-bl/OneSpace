@@ -642,7 +642,7 @@ export const messages = query({
       agentNames.set(mm.agentId, ag?.live?.name ?? ag?.draft?.name ?? "وكيل");
     }
     const out = page.page
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.text)
+      .filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !metas.get(m.id)?.withdrawnAt)
       .map((m) => {
         const mm = metas.get(m.id);
         return {
@@ -664,7 +664,7 @@ export const messages = query({
           feedback: mm?.feedback ?? null,
           proposals: proposals.get(m.id) ?? [],
           // plans/16: a message to colleagues (who it's for, what each did with it), or a question that hands one to the assistant.
-          team: mm?.team ? { to: mm.team.to.map((t) => ({ userId: t.userId as string, name: askers.get(t.userId) ?? "زميل", state: t.state, mine: t.userId === me.userId })) } : null,
+          team: mm?.team ? { to: mm.team.to.map((t) => ({ userId: t.userId as string, name: askers.get(t.userId) ?? "زميل", state: t.state, mine: t.userId === me.userId })), viaAssistant: !!mm.viaAssistant } : null,
           handoffOf: mm?.handoffOf ?? null,
           // plans/16: in a shared chat each answer says whose request it is (it ran with their permissions).
           forName: shared && m.role === "assistant" && mm ? (askers.get(mm.userId) ?? null) : null,
@@ -795,6 +795,11 @@ async function assertIdle(ctx: MutationCtx, threadId: string) {
   if (busy) throw new OneBaseError("انتظر حتى تكتمل الإجابة الحالية");
 }
 
+/** plans/16: the request asks to tell, send to, or hand something to someone («خلّ محمد…», «أرسلها للمدير»). */
+export function asksToNotify(q: string): boolean {
+  return /(^|\s)و?(خل|خلّ|خلي|خلّي|بلغ|بلّغ|أبلغ|ابلغ|أرسل|ارسل|ارسلها|أرسلها|وزع|وزّع|كلم|كلّم|نبه|نبّه|اطلب من|قل ل|قول ل|منشن|تواصل مع|ذكّر|ذكر)/.test(q) || /@\S/.test(q.replace(/@(المساعد|مساعد|ai|assistant)/gi, ""));
+}
+
 /** plans/16: «@المساعد», «@مساعد», «@ai» or «@assistant» typed in a message calls the assistant. */
 export function callsAssistant(text: string): boolean {
   return /(^|[\s(«"'])@(المساعد|مساعد|ai|assistant)(?=$|[\s،,.:؛؟?!)»"'])/i.test(text);
@@ -810,6 +815,61 @@ async function teamRecipients(ctx: MutationCtx, me: Id<"users">, meta: Doc<"thre
   }
   return out.slice(0, 10);
 }
+
+/** Arabic names compared loosely: no diacritics or tatweel, one form of alef/ya/ta marbuta. */
+const looseName = (s: string) =>
+  s
+    .toLowerCase()
+    .replace(/[\u064B-\u0652\u0640]/g, "")
+    .replace(/[إأآ]/g, "ا")
+    .replace(/ى/g, "ي")
+    .replace(/ة/g, "ه")
+    .replace(/^@/, "")
+    .replace(/\s+/g, " ")
+    .trim();
+
+/**
+ * notify_colleague (plans/16): a team message from the person who called the assistant, to up to 3
+ * colleagues who can read this shared chat, named as the user wrote them (or by id). Errors are
+ * returned (the model is told what to fix); nothing is saved unless it works.
+ */
+export const notifyFromTool = internalMutation({
+  args: { userId: v.id("users"), threadId: v.string(), people: v.array(v.string()), message: v.string() },
+  handler: async (ctx, a): Promise<{ ok: true; messageId: string; names: string[] } | { ok: false; error: string }> => {
+    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", a.threadId)).unique();
+    if (!meta || !isSharedThread(meta) || !meta.spaceId) return { ok: false, error: "الإرسال للزملاء متاح في المحادثات المشتركة فقط" };
+    if (!(await threadAllows(ctx, a.userId, meta, "write"))) return { ok: false, error: "لا تملك الكتابة في هذه المحادثة" };
+    const text = a.message.trim();
+    if (!text) return { ok: false, error: "الرسالة فارغة" };
+    const wanted = [...new Set(a.people.map((p) => p.trim()).filter(Boolean))];
+    if (!wanted.length) return { ok: false, error: "سمِّ من ترسل إليه" };
+    if (wanted.length > 3) return { ok: false, error: "ثلاثة أشخاص على الأكثر في رسالة واحدة" };
+    // The chat's readers: the space's members (and its manager), minus the caller.
+    const members = await ctx.db.query("spaceMembers").withIndex("by_space_user", (q) => q.eq("spaceId", meta.spaceId!)).collect();
+    const people: { id: Id<"users">; name: string; email: string }[] = [];
+    for (const m of members) {
+      if (m.userId === a.userId || !(await threadAllows(ctx, m.userId, meta, "read"))) continue;
+      const u = await ctx.db.get(m.userId);
+      people.push({ id: m.userId, name: u?.name ?? "", email: u?.email ?? "" });
+    }
+    const ids: Id<"users">[] = [];
+    for (const w of wanted) {
+      const byId = people.find((p) => p.id === w);
+      const key = looseName(w);
+      const exact = byId ? [byId] : people.filter((p) => looseName(p.name) === key || p.email.toLowerCase() === key);
+      const hits = exact.length ? exact : people.filter((p) => key.length >= 2 && looseName(p.name).includes(key));
+      if (hits.length === 0) return { ok: false, error: `لا أحد باسم «${w}» يرى هذه المحادثة` };
+      if (hits.length > 1) return { ok: false, error: `«${w}» يطابق أكثر من شخص: ${hits.map((p) => p.name || p.email).join("، ")}. اسأل الموظف من يقصد` };
+      if (!ids.includes(hits[0]!.id)) ids.push(hits[0]!.id);
+    }
+    const messageId = await ctx.components.chat.saveMessage({ threadId: a.threadId, role: "user", text });
+    await ctx.db.insert("messageMeta", { messageId, threadId: a.threadId, userId: a.userId, citations: [], toolRuns: [], abstained: false, viaAssistant: true, team: { to: ids.map((userId) => ({ userId, state: "pending" as const })) } });
+    const actor = await actorFor(ctx, a.userId);
+    if (actor) await mentionInChat(ctx, actor, meta, ids, text);
+    await ctx.db.patch(meta._id, { lastAt: Date.now() });
+    return { ok: true, messageId, names: ids.map((id) => people.find((p) => p.id === id)!.name || "زميل") };
+  },
+});
 
 const HANDOFF_NOTE = {
   self: (who: string) => `${who} تولّى طلبك بنفسه`,
@@ -1095,7 +1155,7 @@ export const turnContext = internalQuery({
       for (const [mid, uid] of askers) askers.set(mid, names.get(uid) ?? "موظف");
       for (const m of teamRows)
         askers.set(m.messageId, `${names.get(m.userId) ?? "موظف"} إلى ${m.team!.to.map((t) => names.get(t.userId) ?? "زميل").join(" و")}، رسالة بين الزملاء وليست سؤالاً لك`);
-      context.push(`هذه محادثة مشتركة يقرؤها كل أعضاء المساحة، ويسأل فيها أكثر من موظف (اسم السائل قبل كل سؤال). السؤال الحالي من ${names.get(turn.userId) ?? "موظف"}. لا تذكر فيها شيئاً شخصياً عن أحد.`);
+      context.push(`هذه محادثة مشتركة يقرؤها كل أعضاء المساحة، ويسأل فيها أكثر من موظف (اسم السائل قبل كل سؤال). السؤال الحالي من ${names.get(turn.userId) ?? "موظف"}. لا تذكر فيها شيئاً شخصياً عن أحد. إن طلب منك إبلاغ زميل أو تسليمه شيئاً فاستخدم notify_colleague، ولا تكتب «@اسم» في إجابتك فهي لا تصله.`);
     }
     // Memory (plans/09): the asker's index and the space's, unless the level or this chat turns it off.
     const memory = !meta.test && !meta.noMemory && level.memory;
@@ -1132,10 +1192,10 @@ export const turnContext = internalQuery({
     const afterRun = run && run.userId === turn.userId && run.threadId === turn.threadId && run.state === "executed" ? { tool: run.tool, label: run.label, result: run.result ?? "" } : null;
     const defaultAgent = (await ctx.db.query("agents").collect()).find((a) => a.isDefault && a.enabled && a.live);
     const page = await ctx.components.chat.listMessages({ threadId: turn.threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const notes = new Map(
-      (await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect()).filter((x) => x.modelNote).map((x) => [x.messageId, x.modelNote!]),
-    );
-    const kept = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text);
+    const metaRows = await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect();
+    const notes = new Map(metaRows.filter((x) => x.modelNote).map((x) => [x.messageId, x.modelNote!]));
+    const withdrawn = new Set(metaRows.filter((x) => x.withdrawnAt).map((x) => x.messageId));
+    const kept = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !withdrawn.has(m.id));
     const msgs = kept.map((m) => ({ role: m.role as "user" | "assistant", text: m.text! + (notes.has(m.id) ? `\n(تفاصيل للنموذج: ${notes.get(m.id)})` : "") }));
     // plans/16: the question is this turn's own message (a retry names it), never a colleague's
     // message posted after it; messages between colleagues are never the question.
@@ -1169,7 +1229,7 @@ export const turnContext = internalQuery({
         draft: agent.draft,
         name: agent.config.name,
         instructions: agent.config.instructions,
-        allowedTools: [...levelTools(level, agentTools(agent.config)).filter((t) => !(shared && SHARED_CHAT_BLOCKED.has(t))), ...(memory ? MEMORY_TOOLS : []), ...PERSONAL_TOOLS],
+        allowedTools: [...levelTools(level, agentTools(agent.config)).filter((t) => !(shared && SHARED_CHAT_BLOCKED.has(t))), ...(memory ? MEMORY_TOOLS : []), ...PERSONAL_TOOLS.filter((t) => shared || t !== "notify_colleague")],
         modelRole,
         maxSteps: agent.config.maxSteps,
         grounding: groundingOf(agent.config),
@@ -1895,6 +1955,8 @@ export const runTurn = internalAction({
             if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
             // Same for a skill: saved at once only when the person's own message asks for one.
             if (tool.name === "create_skill" && tier === 1 && !asksForSkill(c.question)) tier = 2;
+            // plans/16: messages a colleague at once only when the request asks to tell someone.
+            if (tool.name === "notify_colleague" && tier === 1 && !asksToNotify(c.question)) tier = 2;
             plans.push({ tc, tool, kind: tier === 1 && autoRunEnabled() ? "auto" : "proposal", tier });
           } else plans.push({ tc, tool, kind: "read" });
         }
@@ -2155,7 +2217,8 @@ export const readForTool = internalQuery({
       return "لا يمكن قراءة هذه المحادثة.";
     }
     const page = await ctx.components.chat.listMessages({ threadId: a.threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const all = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text).map((m, i) => ({ n: i + 1, role: m.role as string, text: m.text! }));
+    const withdrawn = new Set((await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", a.threadId)).collect()).filter((x) => x.withdrawnAt).map((x) => x.messageId));
+    const all = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !withdrawn.has(m.id)).map((m, i) => ({ n: i + 1, role: m.role as string, text: m.text! }));
     // The question being answered now is not "older".
     const msgs = all.at(-1)?.role === "user" ? all.slice(0, -1) : all;
     if (!msgs.length) return "لا رسائل سابقة في هذه المحادثة.";
@@ -2341,6 +2404,8 @@ export const confirmProposal = action({
     let spaceIds: string[] = [];
     try {
       const out = await tool.run(tctx, proposal.args);
+      // A refused write (ToolResult.failed) is a failure on the card too, not «تم».
+      if (out.failed) throw new Error(out.display ?? out.content);
       result = out.content;
       display = out.display;
       artifactIds = out.artifactIds ?? [];
@@ -2372,6 +2437,11 @@ export const undo = mutation({
     if (u.deleteMemories?.length) await undoMemories(ctx, me.userId, u.deleteMemories);
     if (u.deleteSkills?.length) await undoSkills(ctx, me.userId, u.deleteSkills);
     if (u.deleteLists?.length || u.lists) await undoLists(ctx, me.userId, { deleteLists: u.deleteLists, ...(u.lists ?? {}) });
+    // plans/16: a message the assistant sent for me: withdrawn (hidden), only if it is mine and in this chat.
+    for (const mid of u.withdrawMessages ?? []) {
+      const row = await ctx.db.query("messageMeta").withIndex("by_message", (q) => q.eq("messageId", mid)).unique();
+      if (row && row.userId === me.userId && row.threadId === p.threadId && row.viaAssistant) await ctx.db.patch(row._id, { withdrawnAt: Date.now() });
+    }
     const mine = async (spaceId: Id<"spaces">) => {
       const space = await ctx.db.get(spaceId);
       if (!space || space.kind !== "personal" || space.ownerId !== me.userId) return false;

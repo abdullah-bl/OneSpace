@@ -47,6 +47,8 @@ export type ToolResult = {
     deleteMemories?: string[];
     deleteSkills?: string[];
     deleteLists?: string[];
+    /** plans/16: team messages the assistant sent (notify_colleague): withdrawn, not deleted. */
+    withdrawMessages?: string[];
     lists?: { listId: string; deleteRows: string[]; restoreRows: { rowId?: string; cells: Record<string, string | number | boolean | null>; order: number }[] };
     restore?: { artifactId: string; version: number };
   };

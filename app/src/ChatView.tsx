@@ -25,7 +25,7 @@ type Mention = { kind: "file" | "space" | "agent" | "person" | "assistant"; id: 
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
 type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean; team?: { to: TeamTo[] } | null; handoffOf?: string | null; forName?: string | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean; team?: { to: TeamTo[]; viaAssistant?: boolean } | null; handoffOf?: string | null; forName?: string | null };
 type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
@@ -924,7 +924,7 @@ function MessageView({ m, isLast, canWrite, busy, onRetry, onReask, onOpenArtifa
   const checks = useMemo(() => new Map(m.citations.filter((c) => c.check).map((c) => [c.n, c.check!])), [m.citations]);
   const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys()), checks) : ""), [m.text, byN, checks, m.role]);
 
-  if (m.role === "user" && m.team) return <TeamMessage messageId={m.id} author={m.author ?? null} mine={!!m.mine} text={m.text ?? ""} to={m.team.to} canWrite={canWrite} busy={!!busy} />;
+  if (m.role === "user" && m.team) return <TeamMessage messageId={m.id} author={m.author ?? null} mine={!!m.mine} text={m.text ?? ""} to={m.team.to} viaAssistant={!!m.team.viaAssistant} canWrite={canWrite} busy={!!busy} />;
   if (m.role === "user" && m.handoffOf) return <HandoffLine by={m.mine ? "أنت" : (m.author ?? "زميل")} />;
   if (m.role === "user")
     return (
@@ -1109,6 +1109,11 @@ function proposalSummary(p: Proposal): string[] {
   if (a.title) out.push(`العنوان: ${a.title}`);
   if (a.kind) out.push(`النوع: ${a.kind}`);
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
+  if (p.tool === "notify_colleague") {
+    if (Array.isArray(a.people)) out.push(`إلى: ${a.people.join("، ")}`);
+    if (a.message) out.push(`الرسالة: ${String(a.message).slice(0, 300)}`);
+    return out;
+  }
   if (p.tool === "publish_output") {
     out.push(`لمن: ${a.audience === "public" ? "أي أحد معه الرابط (بلا تسجيل دخول)" : a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
     if (typeof a.version === "number") out.push(`النسخة: ${a.version}`);
@@ -1293,7 +1298,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
               {title}
             </span>
             <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : pending ? (p.mine === false ? "ينتظر موافقة من طلبه" : "ينتظر موافقتك") : st.label}</span>
-            {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
+            {p.auto && p.state === "executed" && <span className="meta">{p.tool === "notify_colleague" ? "في هذه المحادثة" : "في مساحتك الخاصة"}</span>}
             {p.tier === 3 && pending && <span className="badge-warning">حسّاس أو رسمي</span>}
           </div>
           {pending && view?.effect && <p className="mt-1 text-xs text-muted">{view.effect(p.args ?? {})}</p>}

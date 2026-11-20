@@ -495,6 +495,8 @@ export default defineSchema({
       }),
     ),
     handoffOf: v.optional(v.string()), // plans/16: this question hands a colleague's team message to the assistant
+    viaAssistant: v.optional(v.boolean()), // plans/16: a team message the assistant sent for its caller (notify_colleague)
+    withdrawnAt: v.optional(v.number()), // «تراجع» on that message: hidden from the chat and from the model
   })
     .index("by_message", ["messageId"])
     .index("by_thread", ["threadId"])

@@ -57,6 +57,10 @@ export const resolve = internalQuery({
           const { space } = await assertCan(ctx, userId, String(a.spaceId ?? ""), "read");
           return space.sensitive ? 3 : 2;
         }
+        case "notify_colleague":
+          // plans/16: a message in the shared chat its members already read; chat.ts asks first
+          // unless the request names someone to tell.
+          return 1;
         case "publish_output":
           // Public: anyone with the link, no sign-in — marked as such on the card.
           return a.audience === "public" ? 3 : 2;

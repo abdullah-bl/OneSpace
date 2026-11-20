@@ -323,4 +323,63 @@ describe("calling the assistant (unit)", () => {
     for (const t of ["@ai print", "@المساعد لخّص", "لو سمحت @مساعد", "(@AI)", "@assistant, go", "شف هذا @المساعد"]) expect(callsAssistant(t)).toBe(true);
     for (const t of ["mail me at x@ai.com", "@airport", "المساعد لخّص", "@المساعدة", "block him"]) expect(callsAssistant(t)).toBe(false);
   });
+
+  const chatReqs = (mark: string) => ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages ?? []).includes(mark));
+  const bell = async (a: string) => must(await s.call("query", "notifications:list", {}, tok(a))) as any[];
+
+  test("asked to tell a colleague, the assistant sends a team message for its caller; «تراجع» withdraws it", async () => {
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL notify_colleague {"people":["موظف mgr"],"message":"راجع المقارنة NOTIFYMSG-1"}' }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, c, "جهّز المقارنة وخلّ موظف mgr يراجعها NOTIFYQ-1");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: c }, tok("mgr")));
+    const sent = view.messages.find((m: any) => m.text.includes("NOTIFYMSG-1"));
+    expect(sent.team).toMatchObject({ viaAssistant: true });
+    expect(sent.team.to.map((x: any) => [x.name, x.state, x.mine])).toEqual([["موظف mgr", "pending", true]]);
+    expect(sent.author).toBe("موظف mem");
+    expect((await bell("mgr")).some((n: any) => n.kind === "chat.mention" && n.threadId === c && n.body.includes("NOTIFYMSG-1"))).toBe(true);
+    // It ran at once (asked for), with «تراجع» for mem only; undo hides the message for everyone.
+    const p = view.messages.flatMap((m: any) => m.proposals ?? []).find((x: any) => x.tool === "notify_colleague");
+    expect([p.state, p.auto]).toEqual(["executed", true]);
+    expect((await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mgr"))).ok).toBe(false);
+    must(await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mem")));
+    for (const a of ["mem", "mgr", "rdr"]) expect(must(await s.call("query", "chat:messages", { threadId: c }, tok(a))).messages.some((m: any) => m.text.includes("NOTIFYMSG-1"))).toBe(false);
+  }, 60_000);
+
+  test("not asked to tell anyone, it's a card first; an unknown name is a failed step; a private chat doesn't offer it", async () => {
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL notify_colleague {"people":["موظف mgr"],"message":"NOTIFYMSG-2"}\nCALL_TOOL notify_colleague {"people":["شخص-غير-موجود"],"message":"NOTIFYMSG-3"}' }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    const priv = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, c, "لخّص العروض NOTIFYQ-2");
+      await ask(s, tok("mem")!, priv, "لخّص العروض NOTIFYQ-PRIV");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: c }, tok("mem")));
+    const props = view.messages.flatMap((m: any) => m.proposals ?? []).filter((x: any) => x.tool === "notify_colleague");
+    expect(props.map((x: any) => x.state)).toEqual(["pending", "pending"]);
+    expect(view.messages.some((m: any) => m.text === "NOTIFYMSG-2")).toBe(false);
+    // The unknown name fails when confirmed, and nothing is sent.
+    const bad = props.find((x: any) => JSON.stringify(x.args).includes("شخص-غير-موجود"));
+    const r = must(await s.call("action", "chat:confirmProposal", { proposalId: bad.id }, tok("mem")));
+    expect(r.ok).toBe(false);
+    expect(String(r.result)).toContain("لا أحد باسم");
+    expect(JSON.stringify(must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).messages.map((m: any) => m.text))).not.toContain("NOTIFYMSG-3");
+    // A private chat: the tool isn't offered.
+    const req = chatReqs("NOTIFYQ-PRIV").at(-1)!;
+    expect((req.body.tools ?? []).map((t: any) => t.function.name)).not.toContain("notify_colleague");
+    expect((chatReqs("NOTIFYQ-2").at(-1)!.body.tools ?? []).map((t: any) => t.function.name)).toContain("notify_colleague");
+  }, 60_000);
+});
+
+describe("asking the assistant to tell someone (unit)", () => {
+  test("«خلّ محمد…», «أرسلها للمدير», «@محمد» are asks; a plain request isn't", async () => {
+    const { asksToNotify } = await import("../onebase/chat");
+    for (const t of ["جهّز المقارنة وخلّ محمد يراجعها", "أرسلها للمدير", "بلّغ سارة بالموعد", "@المساعد لخّص و@محمد يعتمد"]) expect(asksToNotify(t)).toBe(true);
+    for (const t of ["لخّص العروض", "@المساعد اكتب تقرير", "كم الميزانية؟"]) expect(asksToNotify(t)).toBe(false);
+  });
 });

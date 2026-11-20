@@ -42,6 +42,16 @@ A turn's question is its own message (`turns.userMessageId`; a retry names it), 
 - **The assistant reads messages between colleagues as context.** In its history they are marked «رسالة بين الزملاء وليست سؤالاً لك».
 - **Composer:** when a shared chat's message names people, a line says who it goes to and that the assistant won't reply, with «واسأل المساعد أيضاً».
 
+## The assistant tells colleagues: `notify_colleague`
+
+Asked «خلّ محمد يراجعها» or «أرسلها للمدير», the assistant sends a team message for its caller, marked «عبر المساعد».
+- **Delivery:** the people named are notified and get the same card as any message to them.
+- **Where and to whom:** shared chats only; up to 3 people who can read the chat, matched by name.
+- **When it runs at once:** when the request asks to tell someone (`asksToNotify`). Otherwise it is a card.
+- **«تراجع»:** withdraws the message, which is hidden from the chat and from the model (`messageMeta.withdrawnAt`).
+- **It grants nothing:** the assistant never works with the colleague's permissions. Only they can hand the request to it.
+- **Plain text doesn't notify:** a «@اسم» the model writes in its answer reaches no one, and its instructions say so.
+
 ## Why the person named presses, not the author
 
 A message from one person must not make the assistant act with another person's permissions. Only the person named can start a turn as themselves. Every action they would confirm still waits for their «نفّذ».

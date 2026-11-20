@@ -25,6 +25,7 @@ import { read_app } from "./read_app";
 import { test_app } from "./test_app";
 import { read_chat } from "./read_chat";
 import { read_tasks } from "./read_tasks";
+import { notify_colleague } from "./notify_colleague";
 
 export const tools: Record<string, AppTool> = {
   // Phase 4: outputs, records, templates
@@ -54,6 +55,7 @@ export const tools: Record<string, AppTool> = {
   read_list,
   read_chat,
   read_tasks,
+  notify_colleague,
   // plans/11: publish an output or an app (a plain page may carry a form bound to a list).
   publish_output,
   // plans/13: build an app (files, handlers, list grants), test it in a browser, read it back.
@@ -65,7 +67,7 @@ export const tools: Record<string, AppTool> = {
 /** Memory tools follow the employee's level and the chat («بلا ذاكرة»), not the agent's tool list. */
 export const MEMORY_TOOLS = ["remember", "recall"];
 /** Tools every agent gets, whatever its tool list: the user's own skills and the lists they can write (checked per call). */
-export const PERSONAL_TOOLS = ["create_skill", "use_skill", "create_list", "update_list", "read_list", "read_chat", "read_tasks", "publish_output", "write_app", "read_app", "test_app"];
+export const PERSONAL_TOOLS = ["create_skill", "use_skill", "create_list", "update_list", "read_list", "read_chat", "read_tasks", "notify_colleague", "publish_output", "write_app", "read_app", "test_app"];
 
 export function getTool(name: string): AppTool | undefined {
   return Object.hasOwn(tools, name) ? tools[name] : undefined;
