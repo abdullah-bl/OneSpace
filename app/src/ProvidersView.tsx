@@ -14,20 +14,45 @@ const ROLES: { key: Role; title: string; detail: string }[] = [
   { key: "vision", title: "نموذج الرؤية", detail: "قراءة الصور والملفات الممسوحة" },
   { key: "decide", title: "نموذج القرار", detail: "قرارات صغيرة قبل الإجابة وبعدها. اختر نموذجاً صغيراً سريعاً" },
 ];
-/** Models that can't chat, by their usual names: shown with a tag and not offered for a role. */
-function special(model: string): string | null {
+/**
+ * What a model can do (onebase/lib/modelServers.ts, from the server's list on «افحص»): it orders and
+ * filters each role's picker; trying the model before saving is what decides.
+ */
+type Kind = "chat" | "vision" | "decide" | "embed" | "rerank" | "audio" | "media";
+const KIND_TAG: Partial<Record<Kind, string>> = { vision: "يقرأ الصور", decide: "نموذج قرار", embed: "تضمين", rerank: "ترتيب", audio: "صوت", media: "صور/فيديو" };
+function kindsOf(p: { modelInfo: { id: string; kinds: string[] }[] } | undefined, model: string): Kind[] {
+  const known = p?.modelInfo.find((x) => x.id === model)?.kinds as Kind[] | undefined;
+  if (known?.length) return known;
   const m = model.toLowerCase();
-  if (/embed|bge-|e5-|gte-|nomic-embed/.test(m)) return "تضمين";
-  if (/rerank/.test(m)) return "ترتيب";
-  if (/tts|whisper|speech|audio|phonon/.test(m)) return "صوت";
-  if (/ltx|diffusion|sdxl|flux/.test(m)) return "صور/فيديو";
-  return null;
+  if (/embed|bge-|e5-|gte-|nomic-embed|minilm/.test(m)) return ["embed"];
+  if (/rerank/.test(m)) return ["rerank"];
+  if (/tts|whisper|speech|phonon|audar/.test(m)) return ["audio"];
+  if (/ltx|diffusion|sdxl|flux/.test(m)) return ["media"];
+  return ["chat"];
 }
+function fits(kinds: Kind[], role: Role | "embed") {
+  if (role === "embed") return kinds.includes("embed");
+  if (role === "decide") return kinds.includes("decide") || kinds.includes("chat");
+  return kinds.includes("chat");
+}
+/** The models of a provider that can be tried for a role, the most fitting first. */
+function modelsFor(p: Provider | undefined, role: Role | "embed"): string[] {
+  if (!p) return [];
+  const best = (m: string) => {
+    const k = kindsOf(p, m);
+    return (role === "decide" && k.includes("decide")) || (role === "vision" && k.includes("vision")) ? 0 : 1;
+  };
+  return p.models.filter((m) => fits(kindsOf(p, m), role)).sort((a, b) => best(a) - best(b));
+}
+const tagsOf = (p: Provider | undefined, m: string) => kindsOf(p, m).map((k) => KIND_TAG[k]).filter(Boolean) as string[];
 
 const PRESETS = [
-  { label: "llama.cpp / vLLM", url: "http://localhost:8000/v1" },
+  { label: "llama.cpp / Unsloth", url: "http://localhost:8080/v1" },
   { label: "Ollama", url: "http://localhost:11434/v1" },
-  { label: "OpenAI متوافق", url: "https://api.example.com/v1" },
+  { label: "LM Studio", url: "http://localhost:1234/v1" },
+  { label: "vLLM", url: "http://localhost:8000/v1" },
+  { label: "OpenRouter", url: "https://openrouter.ai/api/v1" },
+  { label: "متوافق مع OpenAI", url: "https://api.example.com/v1" },
 ];
 
 type Data = NonNullable<ReturnType<typeof useQuery<typeof api.providers.list>>>;
@@ -128,21 +153,29 @@ function Decisions({ data, onError }: { data: Data; onError: (e: string) => void
   );
 }
 
-function RoleCard({ role, data, onError }: { role: (typeof ROLES)[number]; data: Data; onError: (e: string) => void }) {
+function RoleCard({ role, data }: { role: (typeof ROLES)[number]; data: Data; onError: (e: string) => void }) {
   const setRole = useMutation(api.providers.setRole);
+  const tryRole = useAction(api.providers.tryRole);
   const cur = data.roles[role.key];
   const env = data.env[role.key];
   const [providerId, setProviderId] = useState<string>(cur?.providerId ?? "");
   const [model, setModel] = useState(cur?.model ?? "");
   const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const p = data.providers.find((x) => x._id === (open ? providerId : cur?.providerId));
+  const options = modelsFor(p, role.key);
   const save = async () => {
-    onError("");
+    setError("");
+    setBusy(true);
     try {
-      await setRole({ role: role.key, providerId: providerId || null, model: providerId ? model : undefined });
+      if (providerId) await tryRole({ role: role.key, providerId, model });
+      else await setRole({ role: role.key, providerId: null });
       setOpen(false);
     } catch (e) {
-      onError(errorText(e));
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
     }
   };
   return (
@@ -174,6 +207,7 @@ function RoleCard({ role, data, onError }: { role: (typeof ROLES)[number]; data:
             onClick={() => {
               setProviderId(cur?.providerId ?? "");
               setModel(cur?.model ?? "");
+              setError("");
               setOpen(true);
             }}
           >
@@ -182,7 +216,7 @@ function RoleCard({ role, data, onError }: { role: (typeof ROLES)[number]; data:
         </>
       ) : (
         <div className="mt-3 space-y-2">
-          <select className="input w-full text-sm" value={providerId} onChange={(e) => (setProviderId(e.target.value), setModel(""))}>
+          <select className="input w-full text-sm" value={providerId} onChange={(e) => (setProviderId(e.target.value), setModel(""), setError(""))}>
             <option value="">إعدادات الخادم{env.configured ? ` (${env.model})` : ""}</option>
             {data.providers
               .filter((x) => x.enabled)
@@ -193,21 +227,26 @@ function RoleCard({ role, data, onError }: { role: (typeof ROLES)[number]; data:
               ))}
           </select>
           {providerId &&
-            (p?.models.length ? (
-              <select className="input w-full text-sm" dir="ltr" value={model} onChange={(e) => setModel(e.target.value)}>
+            (options.length ? (
+              <select className="input w-full text-sm" dir="ltr" value={model} onChange={(e) => (setModel(e.target.value), setError(""))}>
                 <option value="">اختر نموذجاً…</option>
-                {p.models
-                  .filter((m) => !special(m))
-                  .map((m) => (
-                    <option key={m}>{m}</option>
-                  ))}
+                {options.map((m) => (
+                  <option key={m} value={m}>
+                    {m}
+                    {tagsOf(p, m).length ? ` · ${tagsOf(p, m).join("، ")}` : ""}
+                  </option>
+                ))}
               </select>
+            ) : p?.models.length ? (
+              <p className="text-xs text-negative">لا نموذج لدى هذا المزوّد يصلح لهذا الدور.</p>
             ) : (
               <input className="input w-full text-sm" dir="ltr" placeholder="اسم النموذج (افحص المزوّد لعرض قائمته)" value={model} onChange={(e) => setModel(e.target.value)} />
             ))}
+          {providerId && <p className="text-[11px] leading-4 text-muted">{role.key === "vision" ? "يُجرَّب النموذج بصورة صغيرة قبل الحفظ." : "يُجرَّب النموذج بطلب قصير قبل الحفظ."}</p>}
+          {error && <p className="text-xs leading-5 text-negative">{error}</p>}
           <div className="flex gap-2">
-            <button className="btn-primary h-8 text-xs" disabled={!!providerId && !model.trim()} onClick={() => void save()}>
-              احفظ
+            <button className="btn-primary h-8 text-xs" disabled={busy || (!!providerId && !model.trim())} onClick={() => void save()}>
+              {busy ? "يجرّب…" : providerId ? "جرّب واحفظ" : "احفظ"}
             </button>
             <button className="btn-ghost h-8 text-xs" onClick={() => setOpen(false)}>
               إلغاء
@@ -223,7 +262,7 @@ function ProviderRow({ p, roles: roles_, data: data_, onEdit, onError }: { p: Pr
   const check = useAction(api.providers.check);
   const save = useMutation(api.providers.save);
   const remove = useMutation(api.providers.remove);
-  const setRole = useMutation(api.providers.setRole);
+  const tryRole = useAction(api.providers.tryRole);
   const setEmbedding = useAction(api.providers.setEmbedding);
   const [busy, setBusy] = useState(false);
   const [showModels, setShowModels] = useState(false);
@@ -259,6 +298,7 @@ function ProviderRow({ p, roles: roles_, data: data_, onEdit, onError }: { p: Pr
         <p className="truncate text-xs text-muted" dir="ltr">
           {p.baseUrl}
           {p.hasKey ? " · 🔑" : ""}
+          {p.flavorLabel ? ` · ${p.flavorLabel}` : ""}
         </p>
         <p className="mt-0.5 text-xs">
           {!p.lastCheck ? (
@@ -319,8 +359,12 @@ function ProviderRow({ p, roles: roles_, data: data_, onEdit, onError }: { p: Pr
                       </span>
                     ))}
                     {data_.embed.choice?.providerId === p._id && data_.embed.choice.model === m && <span className="badge-primary">التضمين</span>}
-                    {special(m) && <span className="badge">{special(m)}</span>}
-                    {p.enabled && special(m) === "تضمين" && (
+                    {tagsOf(p, m).map((t) => (
+                      <span key={t} className="badge">
+                        {t}
+                      </span>
+                    ))}
+                    {p.enabled && kindsOf(p, m).includes("embed") && (
                       <Menu
                         label={`استخدم ${m}`}
                         items={[
@@ -337,14 +381,14 @@ function ProviderRow({ p, roles: roles_, data: data_, onEdit, onError }: { p: Pr
                         ]}
                       />
                     )}
-                    {p.enabled && !special(m) && (
+                    {p.enabled && ROLES.some((r) => fits(kindsOf(p, m), r.key)) && (
                       <Menu
                         label={`استخدم ${m}`}
-                        items={ROLES.map((r) => ({
-                          label: `استخدمه كـ${r.title}`,
+                        items={ROLES.filter((r) => fits(kindsOf(p, m), r.key)).map((r) => ({
+                          label: `جرّبه واستخدمه كـ${r.title}`,
                           icon: "check" as const,
                           disabled: roles.some((x) => x.key === r.key),
-                          onSelect: () => void run(() => setRole({ role: r.key, providerId: p._id, model: m })),
+                          onSelect: () => void run(() => tryRole({ role: r.key, providerId: p._id, model: m })),
                         }))}
                       />
                     )}
@@ -429,8 +473,9 @@ function ProviderForm({ provider, onDone }: { provider: Provider | null; onDone:
   );
 }
 
-function EmbedCard({ data, onError }: { data: Data; onError: (e: string) => void }) {
+function EmbedCard({ data }: { data: Data; onError: (e: string) => void }) {
   const setEmbedding = useAction(api.providers.setEmbedding);
+  const [error, setError] = useState("");
   const cur = data.embed.choice;
   const p = cur ? data.providers.find((x) => x._id === cur.providerId) : null;
   const [open, setOpen] = useState(false);
@@ -438,16 +483,16 @@ function EmbedCard({ data, onError }: { data: Data; onError: (e: string) => void
   const [model, setModel] = useState(cur?.model ?? "");
   const [busy, setBusy] = useState(false);
   const chosen = data.providers.find((x) => x._id === providerId);
-  const embedModels = chosen ? chosen.models.filter((m) => special(m) === "تضمين") : [];
+  const embedModels = modelsFor(chosen, "embed");
   const save = async () => {
-    onError("");
+    setError("");
     setBusy(true);
     try {
       const r = await setEmbedding({ providerId: providerId || null, model: providerId ? model : undefined });
       setOpen(false);
       if (r.needsReindex) await tell("تغيّر نموذج التضمين", "البحث في الملفات متوقف حتى تعيد الفهرسة: اضغط «أعد الفهرسة» أعلى الصفحة.");
     } catch (e) {
-      onError(errorText(e));
+      setError(errorText(e));
     } finally {
       setBusy(false);
     }
@@ -479,6 +524,7 @@ function EmbedCard({ data, onError }: { data: Data; onError: (e: string) => void
             onClick={() => {
               setProviderId(cur?.providerId ?? "");
               setModel(cur?.model ?? "");
+              setError("");
               setOpen(true);
             }}
           >
@@ -487,7 +533,7 @@ function EmbedCard({ data, onError }: { data: Data; onError: (e: string) => void
         </>
       ) : (
         <div className="mt-3 space-y-2">
-          <select className="input w-full text-sm" value={providerId} onChange={(e) => (setProviderId(e.target.value), setModel(""))}>
+          <select className="input w-full text-sm" value={providerId} onChange={(e) => (setProviderId(e.target.value), setModel(""), setError(""))}>
             <option value="">إعدادات الخادم{data.embed.env.configured ? ` (${data.embed.env.model})` : ""}</option>
             {data.providers
               .filter((x) => x.enabled)
@@ -509,6 +555,7 @@ function EmbedCard({ data, onError }: { data: Data; onError: (e: string) => void
               <input className="input w-full text-sm" dir="ltr" placeholder="اسم نموذج التضمين" value={model} onChange={(e) => setModel(e.target.value)} />
             ))}
           <p className="text-[11px] leading-4 text-muted">يُجرَّب النموذج قبل الحفظ: يجب أن يعطي {data.embed.dimensions} بُعداً. وتغييره يتطلب إعادة الفهرسة.</p>
+          {error && <p className="text-xs leading-5 text-negative">{error}</p>}
           <div className="flex gap-2">
             <button className="btn-primary h-8 text-xs" disabled={busy || (!!providerId && !model.trim())} onClick={() => void save()}>
               {busy ? "يجرّب…" : "جرّب واحفظ"}
