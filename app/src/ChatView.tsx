@@ -6,12 +6,12 @@
 // copied or retried. Write tools arrive as proposal cards ("نفّذ"); their outputs open in a side
 // panel. Threads opened from a task, test threads and scheduled-task threads use the same screen.
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
 import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
 import { openSkillDraft } from "./SkillsView";
-import { Icon } from "./icons";
+import { Icon, type IconName } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { CITE_CHECK, renderAnswer } from "./markdown";
 
@@ -1015,6 +1015,109 @@ function PublishedLinks({ url, listId }: { url: string; listId?: string }) {
   );
 }
 
+/**
+ * How a waiting action reads on its card: what it is (noun, not the running label), what «نفّذ»
+ * will do, and the button's own verb. Tools not listed use their label and «نفّذ».
+ */
+/** A command or name in Latin letters inside Arabic text: isolated so it doesn't flip («/name»). */
+const Ltr = ({ children }: { children: ReactNode }) => (
+  <bdi dir="ltr" className="rounded bg-raised px-1 font-mono text-[0.92em]">
+    {children}
+  </bdi>
+);
+
+const ACTION_VIEW: Record<string, { icon: IconName; title: (a: any) => ReactNode; effect?: (a: any) => ReactNode; confirm: string; shown?: string[] }> = {
+  create_skill: {
+    icon: "bulb",
+    title: (a) => <>مهارة جديدة: {a.title || a.name}</>,
+    effect: (a) =>
+      a.scope === "space" ? (
+        "تُحفظ لكل أعضاء مساحة المحادثة، ويعتمدها مديرها إن لم تكن مديرها."
+      ) : (
+        <>
+          تُحفظ في «مهاراتي»، وتستدعيها متى شئت بكتابة <Ltr>/{a.name ?? "اسمها"}</Ltr>
+        </>
+      ),
+    confirm: "احفظ المهارة",
+    shown: ["title"],
+  },
+  remember: { icon: "memory", title: () => "حفظ في الذاكرة", effect: () => "يتذكّره المساعد في محادثاتك القادمة، وتستطيع حذفه من «الذاكرة».", confirm: "احفظ" },
+  create_artifact: { icon: "file", title: (a) => `مخرج جديد${a.title ? `: ${a.title}` : ""}`, effect: () => "يُنشأ المخرج ويُفتح في اللوحة الجانبية.", confirm: "أنشئه", shown: ["title"] },
+  update_artifact: { icon: "pencil", title: (a) => `تعديل المخرج${a.title ? `: ${a.title}` : ""}`, effect: () => "تُحفظ نسخة جديدة، وتبقى السابقة في سجل النسخ.", confirm: "احفظ التعديل", shown: ["title"] },
+  create_list: { icon: "table", title: (a) => `قائمة جديدة${a.title ? `: ${a.title}` : ""}`, confirm: "أنشئ القائمة", shown: ["title"] },
+  update_list: { icon: "table", title: () => "تحديث القائمة", confirm: "حدّث القائمة" },
+  export_document: { icon: "download", title: () => "تصدير مستند", confirm: "صدّر" },
+  fill_template: { icon: "file", title: () => "تعبئة قالب", confirm: "عبّئ القالب" },
+  run_analysis: { icon: "code", title: () => "تشغيل تحليل", effect: () => "يعمل الكود في بيئة معزولة على الملفات المذكورة فقط.", confirm: "شغّل" },
+  publish_output: { icon: "globe", title: (a) => `نشر صفحة${a.title ? `: ${a.title}` : ""}`, confirm: "انشر", shown: ["title"] },
+};
+
+/** Field names as the person reads them; ids and internal fields are left to «البيانات الخام». */
+const ARG_LABEL: Record<string, string> = {
+  name: "الاسم",
+  title: "العنوان",
+  description: "متى تُستخدم",
+  instructions: "التعليمات",
+  text: "النص",
+  content: "المحتوى",
+  code: "الكود",
+  note: "ملاحظة",
+};
+const HIDDEN_ARG = /(^|_)(id|ids)$|Id$|Ids$|^scope$|^kind$|^runIds$/;
+
+/** The readable preview of an action: short fields inline, long text rendered and folded. */
+function ActionArgs({ args, skip = [] }: { args: any; skip?: string[] }) {
+  const [raw, setRaw] = useState(false);
+  const fields = Object.entries(args ?? {}).filter(([k, v]) => ARG_LABEL[k] && !skip.includes(k) && typeof v === "string" && v.trim() && !HIDDEN_ARG.test(k)) as [string, string][];
+  const short = fields.filter(([k, v]) => v.length <= 160 && !v.includes("\n") && k !== "code");
+  const long = fields.filter((f) => !short.includes(f));
+  return (
+    <div className="mt-3 space-y-3 border-t border-rule pt-3">
+      {short.length > 0 && (
+        <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+          {short.map(([k, v]) => (
+            <Fragment key={k}>
+              <dt className="text-muted">{ARG_LABEL[k]}</dt>
+              <dd className="text-ink" dir="auto">
+                {/^[\x20-\x7e]+$/.test(v) ? <Ltr>{v}</Ltr> : v}
+              </dd>
+            </Fragment>
+          ))}
+        </dl>
+      )}
+      {long.map(([k, v]) => (
+        <div key={k}>
+          <p className="mb-1 text-xs text-muted">{ARG_LABEL[k]}</p>
+          {k === "code" ? (
+            <pre className="max-h-64 overflow-auto rounded-md bg-sunken p-3 font-mono text-[11px] leading-5" dir="ltr">
+              {v}
+            </pre>
+          ) : (
+            <div className="md md-compact max-h-64 overflow-auto rounded-md bg-sunken px-3 py-2" dir="auto" dangerouslySetInnerHTML={{ __html: renderAnswer(v, new Set()) }} />
+          )}
+        </div>
+      ))}
+      <button className="text-xs text-faint hover:text-muted" onClick={() => setRaw(!raw)} aria-expanded={raw}>
+        {raw ? "أخفِ البيانات الخام" : "البيانات الخام"}
+      </button>
+      {raw && (
+        <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-md bg-sunken p-2 text-[11px]" dir="ltr">
+          {JSON.stringify(args, null, 2)}
+        </pre>
+      )}
+    </div>
+  );
+}
+
+/** «ينتهي بعد 23 ساعة»: the full date stays in the tooltip. */
+function expiresIn(at: number) {
+  const m = Math.max(0, Math.round((at - Date.now()) / 60_000));
+  if (m < 60) return `ينتهي بعد ${m} دقيقة`;
+  const h = Math.round(m / 60);
+  if (h < 48) return `ينتهي بعد ${h} ساعة`;
+  return `ينتهي بعد ${Math.round(h / 24)} أيام`;
+}
+
 function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id: string) => void }) {
   const confirm = useAction(api.chat.confirmProposal);
   const cancel = useMutation(api.chat.cancelProposal);
@@ -1022,7 +1125,12 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
   const [kept, setKept] = useState<string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const pending = p.state === "pending";
+  const [open, setOpen] = useState(pending);
   const st = PROPOSAL_STATE[p.state] ?? { label: p.state, tone: "bg-raised" };
+  const view = ACTION_VIEW[p.tool];
+  const title = view?.title(p.args ?? {}) ?? p.label.replace(/…$/, "");
+  const summary = proposalSummary(p).filter((l) => !l.startsWith("العنوان:") || !view);
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true);
     setError("");
@@ -1035,68 +1143,85 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
     }
   };
   return (
-    <div className="rounded-lg border border-line bg-surface p-3 text-sm">
-      <div className="flex flex-wrap items-center gap-2">
-        <span className="font-medium">{p.label.replace(/…$/, "")}</span>
-        <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : st.label}</span>
-        {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
-        {p.tier === 3 && p.state === "pending" && <span className="badge-warning">حسّاس أو رسمي</span>}
-        {p.state === "pending" && <span className="ms-auto text-xs text-muted num">حتى {new Date(p.expiresAt).toLocaleString("ar-SA-u-nu-latn", { dateStyle: "short", timeStyle: "short" })}</span>}
+    <div className={`rounded-lg border bg-surface text-sm ${pending ? "border-warning/40 shadow-sm" : "border-line"}`}>
+      <div className="flex items-start gap-3 p-3">
+        <span className={`mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-md ${pending ? "bg-warning-soft text-warning" : "bg-raised text-muted"}`}>
+          <Icon name={view?.icon ?? "play"} size={16} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="font-medium" dir="auto">
+              {title}
+            </span>
+            <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : pending ? "ينتظر موافقتك" : st.label}</span>
+            {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
+            {p.tier === 3 && pending && <span className="badge-warning">حسّاس أو رسمي</span>}
+          </div>
+          {pending && view?.effect && <p className="mt-1 text-xs text-muted">{view.effect(p.args ?? {})}</p>}
+          {summary.length > 0 && (
+            <ul className="mt-1 text-xs text-muted">
+              {summary.map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <button className="btn-ghost h-8 shrink-0 px-2 text-xs" onClick={() => setOpen(!open)} aria-expanded={open}>
+          {open ? "أخفِ المعاينة" : "معاينة"}
+          <Icon name={open ? "up" : "down"} size={13} />
+        </button>
       </div>
-      {proposalSummary(p).length > 0 && (
-        <ul className="mt-1 text-xs text-muted">
-          {proposalSummary(p).map((l) => (
-            <li key={l}>{l}</li>
-          ))}
-        </ul>
+      {open && (
+        <div className="px-3 pb-1">
+          <ActionArgs args={p.args} skip={view?.shown} />
+        </div>
       )}
-      <details className="mt-1 text-xs text-muted">
-        <summary className="cursor-pointer">التفاصيل</summary>
-        <pre className="mt-1 max-h-48 overflow-auto whitespace-pre-wrap rounded bg-raised p-2 text-[11px]" dir="ltr">
-          {JSON.stringify(p.args, null, 2)}
-        </pre>
-      </details>
-      {p.state === "executed" && p.display ? (
-        <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
-      ) : p.result &&
-        (p.state === "executed" ? (
-          <details className="mt-1 text-xs text-muted">
-            <summary className="cursor-pointer">الناتج</summary>
-            <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
-              {p.result}
-            </pre>
-          </details>
-        ) : (
-          <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
-        ))}
-      <div className="mt-2 flex flex-wrap gap-2">
-        {p.auto && p.state === "executed" && (
-          <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
-            <Icon name="retry" size={14} /> تراجع
-          </button>
-        )}
-        {p.state === "pending" && (
-          <>
-            <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
-              نفّذ
+      <div className="px-3 pb-3">
+        {p.state === "executed" && p.display ? (
+          <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
+        ) : p.result &&
+          (p.state === "executed" ? (
+            <details className="mt-1 text-xs text-muted">
+              <summary className="cursor-pointer">الناتج</summary>
+              <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
+                {p.result}
+              </pre>
+            </details>
+          ) : (
+            <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
+          ))}
+        <div className="mt-2 flex flex-wrap items-center gap-2">
+          {p.auto && p.state === "executed" && (
+            <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
+              <Icon name="retry" size={14} /> تراجع
             </button>
-            <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(() => cancel({ proposalId: p.id }))}>
-              إلغاء
-            </button>
-          </>
-        )}
-        {p.artifactIds.map((id) => (
-          <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
-        ))}
-        {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
-        {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
-          <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
-            <Icon name="table" size={14} /> افتح القائمة
-          </a>
-        )}
+          )}
+          {pending && (
+            <>
+              <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
+                <Icon name="check" size={14} /> {busy ? "يُنفَّذ…" : (view?.confirm ?? "نفّذ")}
+              </button>
+              <button className="btn-ghost h-8" disabled={busy} onClick={() => void run(() => cancel({ proposalId: p.id }))}>
+                لا، شكراً
+              </button>
+              <span className="ms-auto text-xs text-faint num" title={new Date(p.expiresAt).toLocaleString("ar-SA-u-nu-latn", { dateStyle: "medium", timeStyle: "short" })}>
+                {expiresIn(p.expiresAt)}
+              </span>
+            </>
+          )}
+          {p.artifactIds.map((id) => (
+            <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
+          ))}
+          {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
+          {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
+            <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
+              <Icon name="table" size={14} /> افتح القائمة
+            </a>
+          )}
+        </div>
+        {error && <p className="mt-1 text-xs text-negative">{error}</p>}
+        {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
       </div>
-      {error && <p className="mt-1 text-xs text-negative">{error}</p>}
-      {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
     </div>
   );
 }
