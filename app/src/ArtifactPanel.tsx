@@ -14,15 +14,15 @@ import { PublishBox } from "./PublishView";
 import { Icon, type IconName } from "./icons";
 import { EmptyState, Menu, type MenuItem, ask } from "./ui";
 
-type Kind = "markdown" | "html" | "table";
+type Kind = "markdown" | "html" | "table" | "app";
 type Opened = { _id: string; title: string; kind: Kind; version: number; currentVersion: number; content: string; sha256: string; classification: string };
 type Format = "docx" | "pdf" | "pptx";
 
-const KIND_LABEL: Record<string, string> = { markdown: "مستند", html: "صفحة HTML", table: "جدول" };
-const KIND_ICON: Record<string, IconName> = { markdown: "file", html: "code", table: "table" };
+const KIND_LABEL: Record<string, string> = { markdown: "مستند", html: "صفحة HTML", table: "جدول", app: "تطبيق" };
+const KIND_ICON: Record<string, IconName> = { markdown: "file", html: "code", table: "table", app: "code" };
 const FORMAT_LABEL: Record<Format, string> = { docx: "Word", pdf: "PDF", pptx: "PowerPoint" };
 /** What each kind can download as (mirrors onebase/lib/docExport.ts formatsFor). */
-const DOC_FORMATS: Record<Kind, Format[]> = { markdown: ["docx", "pdf", "pptx"], table: ["docx", "pdf", "pptx"], html: ["pdf"] };
+const DOC_FORMATS: Record<Kind, Format[]> = { markdown: ["docx", "pdf", "pptx"], table: ["docx", "pdf", "pptx"], html: ["pdf"], app: [] };
 
 export function saveBase64(fileName: string, mime: string, base64: string) {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -32,6 +32,63 @@ export function saveBase64(fileName: string, mime: string, base64: string) {
   a.download = fileName;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+/**
+ * An app (plans/13): its files as text (React escapes them; nothing of it runs in the app's origin),
+ * its grants, and «جرّبه», which opens a test link on the content origin where nothing is saved.
+ */
+function AppView({ artifactId, version, content, canTest }: { artifactId: string; version: number; content: string; canTest: boolean }) {
+  const files = useMemo(() => {
+    try {
+      return Object.entries((JSON.parse(content).files ?? {}) as Record<string, string>);
+    } catch {
+      return [];
+    }
+  }, [content]);
+  const info = useQuery(api.apps.info, { artifactId, version }) as { grants: string[]; handlers: string[] } | null | undefined;
+  const testLink = useMutation(api.apps.testLink);
+  const [open, setOpen] = useState(files.find(([p]) => p === "index.html")?.[0] ?? files[0]?.[0] ?? "");
+  const [err, setErr] = useState("");
+  const body = files.find(([p]) => p === open)?.[1] ?? "";
+  return (
+    <div className="flex h-full flex-col">
+      <div className="shrink-0 space-y-2 border-b border-line px-3 py-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2">
+          {canTest && (
+            <button
+              className="btn-secondary h-8 text-xs"
+              onClick={() => {
+                setErr("");
+                const w = window.open("about:blank", "_blank", "noopener");
+                void testLink({ artifactId }).then(
+                  (url: string) => (w ? (w.location.href = url) : window.open(url, "_blank", "noopener,noreferrer")),
+                  (e: unknown) => (w?.close(), setErr(errorText(e))),
+                );
+              }}
+              title="يفتح التطبيق كما يراه الزائر؛ ما ترسله فيه لا يُحفظ"
+            >
+              <Icon name="eye" size={14} /> جرّبه
+            </button>
+          )}
+          {info?.handlers.length ? <span className="text-muted">معالجات الخادم: {info.handlers.join("، ")}</span> : null}
+        </div>
+        {info && (info.grants.length ? <ul className="list-inside list-disc text-muted">{info.grants.map((g) => <li key={g}>{g}</li>)}</ul> : <p className="text-muted">لا يكتب في أي قائمة ولا يقرأ منها.</p>)}
+        {err && <p className="text-negative">{err}</p>}
+      </div>
+      <div className="flex shrink-0 gap-1 overflow-x-auto border-b border-line px-2 py-1.5" role="tablist" aria-label="ملفات التطبيق">
+        {files.map(([p]) => (
+          <button key={p} role="tab" aria-selected={p === open} className={`shrink-0 rounded px-2 py-1 text-xs ${p === open ? "bg-primary-soft font-medium text-primary" : "text-muted hover:bg-sunken"}`} onClick={() => setOpen(p)} dir="ltr">
+            {p}
+            {p.startsWith("server/") && <span className="ms-1 text-[10px] text-warning" dir="rtl">خاص بالخادم</span>}
+          </button>
+        ))}
+      </div>
+      <pre className="min-h-0 flex-1 overflow-auto bg-sunken p-3 text-[12.5px] leading-6" dir="ltr">
+        {body}
+      </pre>
+    </div>
+  );
 }
 
 export function SandboxedFrame({ html, title, className = "h-[60vh]" }: { html: string; title: string; className?: string }) {
@@ -232,7 +289,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   const more: MenuItem[] = [
     { label: details ? "إخفاء التفاصيل" : "التفاصيل", icon: "eye", onSelect: () => setDetails(!details) },
     { label: "انشر برابط…", icon: "globe", onSelect: () => setPublishing(true) },
-    ...(kind !== "table" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
+    ...(kind !== "table" && kind !== "app" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
     ...(writable.length ? (["divider", ...writable.map((s): MenuItem => ({ label: `نقل إلى ${s.kind === "personal" ? "مساحتي" : s.name}`, icon: "folder", onSelect: () => moveTo(s._id) }))] as MenuItem[]) : []),
     ...(canWrite
       ? (["divider", { label: "حذف المخرج", danger: true, onSelect: () => void ask(`حذف «${meta?.artifact.title}» بكل نسخه؟`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run(async () => (await remove({ artifactId: artifactId as any }), onClose())); })}] as MenuItem[])
@@ -287,7 +344,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
             <Icon name="pencil" size={16} />
           </button>
         )}
-        <Menu label={busy ? "يجهّز الملف…" : "تنزيل"} icon="download" items={downloads.map((m) => (m === "divider" ? m : { ...m, disabled: !!busy }))} />
+        {downloads.length > 0 && <Menu label={busy ? "يجهّز الملف…" : "تنزيل"} icon="download" items={downloads.map((m) => (m === "divider" ? m : { ...m, disabled: !!busy }))} />}
         <Menu label="المزيد" items={more} />
       </header>
       {publishing && <PublishBox artifactId={artifactId} onClose={() => setPublishing(false)} />}
@@ -303,7 +360,8 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
       <div ref={body} className="@container relative min-h-0 flex-1 bg-surface">
         {!doc && !error && <div className="grid h-full place-items-center text-sm text-faint">يفتح…</div>}
         {doc && kind === "table" && <TableView content={doc.content} />}
-        {doc && kind !== "table" && draft === null && <SandboxedFrame title={doc.title} html={preview} className="h-full" />}
+        {doc && kind === "app" && <AppView artifactId={artifactId} version={doc.version} content={doc.content} canTest={canWrite && wanted === current} />}
+        {doc && kind !== "table" && kind !== "app" && draft === null && <SandboxedFrame title={doc.title} html={preview} className="h-full" />}
         {doc && draft !== null && (
           <div className="grid h-full @3xl:grid-cols-2">
             <textarea

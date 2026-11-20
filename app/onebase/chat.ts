@@ -58,9 +58,14 @@ const ABSTAIN_RE = /لم\s*(أ|ا)جد|لا\s*(أ|ا)علم|لا\s*تتوفر|غ
 const proposalTtl = () => Number(process.env.PROPOSAL_TTL_MS ?? 30 * 60_000);
 const MAX_PROPOSALS_PER_TURN = 5;
 const MAX_PROPOSAL_ARGS = 50_000;
+/** write_app carries whole files (plans/13). */
+const MAX_APP_ARGS = 300_000;
 /** Per-turn budget (plans/07 §D): wall time, generated tokens, sandbox runs started without asking. */
 const turnBudgetMs = () => Number(process.env.TURN_BUDGET_MS ?? 150_000);
 const turnMaxCompletion = () => Number(process.env.TURN_MAX_COMPLETION_TOKENS ?? 16_000);
+/** A turn that builds an app (plans/13: write, test, fix) writes whole files: a longer budget, under the GPU queue's 10-minute job limit. */
+const appTurnBudgetMs = () => Number(process.env.APP_TURN_BUDGET_MS ?? 480_000);
+const appTurnMaxCompletion = () => Number(process.env.APP_TURN_MAX_COMPLETION_TOKENS ?? 40_000);
 const MAX_SANDBOX_RUNS = 3;
 const STOP_NOTE = "\n\n*(أُوقفت الإجابة)*";
 const STOPPED_BEFORE_START = "أوقفتَ الإجابة قبل أن تبدأ";
@@ -1422,7 +1427,10 @@ export const runTurn = internalAction({
       for (let step = 0; ; step++) {
         if (await stopped(true)) throw new Error("stopped");
         // The turn's budget (plans/07 §D): wall time and generated tokens. Over it, answer now.
-        if (!forceFinal && step > 0 && (Date.now() - turnStarted > turnBudgetMs() * (think ? 2 : 1) || usage.completion > turnMaxCompletion() * (think ? 2 : 1))) {
+        const building = toolRuns.some((r) => r.name === "write_app");
+        const budgetMs = building ? Math.max(appTurnBudgetMs(), turnBudgetMs()) : turnBudgetMs() * (think ? 2 : 1);
+        const budgetTokens = building ? Math.max(appTurnMaxCompletion(), turnMaxCompletion()) : turnMaxCompletion() * (think ? 2 : 1);
+        if (!forceFinal && step > 0 && (Date.now() - turnStarted > budgetMs || usage.completion > budgetTokens)) {
           forceFinal = true;
           overBudget = true;
         }
@@ -1485,11 +1493,16 @@ export const runTurn = internalAction({
             toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "أُعيد للتعديل" });
           } else if (tool.requiresConfirmation) {
             const size = JSON.stringify(tc.args ?? null).length;
-            if ((tc.args as any)?.__invalid !== undefined || size > MAX_PROPOSAL_ARGS || proposals.length + autoRuns.length >= MAX_PROPOSALS_PER_TURN) {
+            // An app's files are one output with versions (plans/13): its edits don't use up the turn's actions.
+            const isApp = tool.name === "write_app";
+            const counted = proposals.length + autoRuns.filter((r) => r.tool !== "write_app").length;
+            if ((tc.args as any)?.__invalid !== undefined || size > (isApp ? MAX_APP_ARGS : MAX_PROPOSAL_ARGS) || (!isApp && counted >= MAX_PROPOSALS_PER_TURN)) {
               plans.push({ tc, tool, kind: "refused", content: "لم يُقترح هذا الإجراء: الوسائط غير صالحة أو كثيرة." });
               toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: "اقتراح مرفوض" });
               continue;
             }
+            // What the card must show and pin, filled in by the server (publish_output: version, grants).
+            if (tool.prepare) (tc as { args: unknown }).args = await tool.prepare(tctx, tc.args as any).catch(() => tc.args);
             let tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds, threadId: c.turn.threadId });
             // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
             // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).

@@ -9,6 +9,14 @@ export const taskStatus = v.union(v.literal("new"), v.literal("inProgress"), v.l
 export const taskPriority = v.union(v.literal("low"), v.literal("normal"), v.literal("high"), v.literal("urgent"));
 // A task link: a file or a Phase 4 artifact, always in the task's own space (tasks.ts).
 export const taskLinkType = v.union(v.literal("file"), v.literal("artifact"));
+/** plans/13: what an app may do with one list (lib/appFiles.ts Grant); columns and sender are column keys. */
+export const appGrant = v.object({
+  listId: v.string(),
+  write: v.union(v.literal("none"), v.literal("page"), v.literal("handler")),
+  read: v.union(v.literal("none"), v.literal("own"), v.literal("aggregate")),
+  columns: v.optional(v.array(v.string())),
+  sender: v.optional(v.string()),
+});
 export const listColumnType = v.union(v.literal("text"), v.literal("number"), v.literal("date"), v.literal("status"), v.literal("select"), v.literal("person"), v.literal("check"));
 export const listCell = v.union(v.string(), v.number(), v.boolean(), v.null());
 
@@ -210,18 +218,13 @@ export default defineSchema({
         maxReplies: v.optional(v.number()),
         onePerReader: v.boolean(),
         replies: v.number(),
-        // A quiz: code marks each reply against the key and writes the score (and level) columns.
-        quiz: v.optional(
-          v.object({
-            answers: v.array(v.object({ key: v.string(), correct: v.string(), points: v.number() })),
-            scoreKey: v.string(),
-            levelKey: v.optional(v.string()),
-            bands: v.array(v.object({ min: v.number(), label: v.string() })),
-            showResult: v.boolean(),
-          }),
-        ),
+        // Legacy (plans/11 quiz mode, removed in plans/13): read only by apps.migrateQuizForms,
+        // which turns such a publication into an app whose handler marks it.
+        quiz: v.optional(v.any()),
       }),
     ),
+    // plans/13: an app publication. Its grants, copied from the published version (what the card showed).
+    app: v.optional(v.object({ grants: v.record(v.string(), appGrant), rows: v.number() })),
   })
     .index("by_slug", ["slug"])
     .index("by_artifact", ["artifactId"])
@@ -254,10 +257,30 @@ export default defineSchema({
     anon: v.optional(v.boolean()),
     rowId: v.string(),
     at: v.number(),
+    // plans/13: the visitor who added the row through an app («own» reads, request.visitor.rows):
+    // "u:<userId>" signed in, "a:<key>" a public page's anonymous visitor (one page load).
+    visitor: v.optional(v.string()),
+    // Legacy (plans/11 quiz marking), no longer written.
     score: v.optional(v.number()),
     max: v.optional(v.number()),
     level: v.optional(v.string()),
-  }).index("by_pub_user", ["publicationId", "userId", "at"]),
+  })
+    .index("by_pub_user", ["publicationId", "userId", "at"])
+    .index("by_pub_visitor", ["publicationId", "visitor"]),
+
+  // plans/13 §4: a test link for a draft app (test_app, «جرّبه»). Writes are dry-run and recorded here.
+  appTests: defineTable({
+    tokenHash: v.string(),
+    artifactId: v.id("artifacts"),
+    version: v.number(),
+    userId: v.id("users"),
+    publicationId: v.optional(v.id("publications")), // a publication's «جرّبها»: its pinned version and grants
+    grants: v.record(v.string(), appGrant),
+    events: v.array(v.any()),
+    expiresAt: v.number(),
+  })
+    .index("by_hash", ["tokenHash"])
+    .index("by_expiry", ["expiresAt"]),
 
   // ---- Phase 5: sandbox runs ----
 

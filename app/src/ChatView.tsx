@@ -970,8 +970,15 @@ function proposalSummary(p: Proposal): string[] {
   if (a.format) out.push(`الصيغة: ${({ docx: "Word", pdf: "PDF", pptx: "PowerPoint" } as Record<string, string>)[a.format] ?? a.format}`);
   if (p.tool === "publish_output") {
     out.push(`لمن: ${a.audience === "public" ? "أي أحد معه الرابط (بلا تسجيل دخول)" : a.audience === "workspace" ? "كل الموظفين" : "أعضاء المساحة"}`);
-    if (a.form?.quiz) out.push(`اختبار يُصحَّح آلياً: ${Object.keys(a.form.quiz.answers ?? {}).length} سؤالاً`);
+    if (typeof a.version === "number") out.push(`النسخة: ${a.version}`);
+    if (Array.isArray(a.grants)) out.push(...(a.grants.length ? a.grants.map((g: string) => `يستطيع التطبيق: ${g}`) : ["التطبيق لا يكتب في أي قائمة ولا يقرأ منها"]));
     else if (a.form) out.push("نموذج تُحفظ ردوده في قائمة");
+    return out;
+  }
+  if (p.tool === "write_app") {
+    const files = a.files && typeof a.files === "object" ? Object.keys(a.files) : [];
+    if (files.length) out.push(`الملفات: ${files.join("، ")}`);
+    if (a.data && typeof a.data === "object") out.push(`القوائم: ${Object.keys(a.data).join("، ")}`);
     return out;
   }
   if (a.skill) out.push(`سكربت المهارة: /${a.skill}${a.script ? ` (${a.script})` : ""}`);

@@ -11,14 +11,15 @@ import { Icon, type IconName } from "./icons";
 import { relTime, startChatWith } from "./ChatView";
 import { EmptyState, PageHeader } from "./ui";
 
-type Kind = "markdown" | "html" | "table" | "image";
+type Kind = "markdown" | "html" | "table" | "image" | "app";
 const KINDS: { key: Kind; label: string; icon: IconName }[] = [
   { key: "markdown", label: "مستندات", icon: "file" },
   { key: "table", label: "جداول", icon: "table" },
   { key: "html", label: "صفحات", icon: "code" },
   { key: "image", label: "صور ورسوم", icon: "eye" },
+  { key: "app", label: "تطبيقات", icon: "code" },
 ];
-const KIND_ONE: Record<Kind, string> = { markdown: "مستند", table: "جدول", html: "صفحة", image: "صورة" };
+const KIND_ONE: Record<Kind, string> = { markdown: "مستند", table: "جدول", html: "صفحة", image: "صورة", app: "تطبيق" };
 
 export function WorksView({ spaces }: { spaces: SpaceInfo[] }) {
   const [q, setQ] = useState("");

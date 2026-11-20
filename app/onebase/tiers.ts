@@ -73,6 +73,18 @@ export const resolve = internalQuery({
         }
         case "update_artifact":
           return await artifactTier(ctx, userId, a.artifactId);
+        case "write_app": {
+          // A new version of an app: where it is. A new app: where its lists are, else where a new list goes.
+          if (a.appId) return await artifactTier(ctx, userId, a.appId);
+          const first = a.data && typeof a.data === "object" ? (Object.values(a.data)[0] as any)?.listId : undefined;
+          const lid = first ? ctx.db.normalizeId("lists", String(first)) : null;
+          const list = lid ? await ctx.db.get(lid) : null;
+          if (list) {
+            const { space } = await assertCan(ctx, userId, list.spaceId, "write");
+            return tierFor(userId, space, false);
+          }
+          return tierFor(userId, await placeForTier(ctx, userId, threadId, scopeSpaceIds), false);
+        }
         case "export_document":
           if (a.artifactId) return await artifactTier(ctx, userId, a.artifactId);
         // falls through: a new output from Markdown is placed like create_artifact (no explicit space)

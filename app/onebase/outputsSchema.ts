@@ -5,7 +5,7 @@ import { defineTable } from "onebase/server";
 import { v } from "onebase/values";
 
 export const cellValue = v.union(v.string(), v.number(), v.boolean(), v.null());
-export const artifactKind = v.union(v.literal("markdown"), v.literal("html"), v.literal("table"));
+export const artifactKind = v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("app"));
 export const subjectKind = v.union(v.literal("nationalId"), v.literal("employeeNo"));
 export const columnType = v.union(v.literal("text"), v.literal("number"), v.literal("date"), v.literal("boolean"));
 export const columnDef = v.object({ key: v.string(), header: v.string(), type: columnType, required: v.boolean() });

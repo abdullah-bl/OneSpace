@@ -21,6 +21,7 @@ import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 import { maskSecrets } from "./lib/secrets";
 import { IMPORT_LIMITS, parseSkillPackage, SkillImportError } from "./lib/skillImport";
+import { parseApp } from "./lib/appFiles";
 
 export const NAME_RE = /^[\p{L}\p{N}_-]{2,40}$/u;
 const TITLE_MAX = 80;
@@ -36,6 +37,7 @@ const MAX_FILES = 4; // kept from a chat (scripts and an example)
 const IMPORT_MAX_FILES = IMPORT_LIMITS.files + 1;
 const SCRIPT_MAX = 50_000;
 const EXAMPLE_MAX = 20_000;
+const APP_SKILL_MAX = 200_000;
 
 function clean(i: Input): Input {
   const name = String(i.name ?? "").trim().replace(/^\//, "").replace(/\s+/g, "-");
@@ -141,6 +143,17 @@ async function captureFiles(ctx: QueryCtx | MutationCtx, userId: Id<"users">, th
     if (await blocked(a.spaceId)) continue;
     const ver = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", a._id).eq("version", a.currentVersion)).unique();
     if (!ver || ver.runId) continue; // a run's output is data; its script already makes that shape
+    if (a.kind === "app") {
+      // An app (plans/13 §7): its files and handlers (server/ included), to rebuild the same kind of
+      // app with write_app fromSkill. Its grants aren't kept: a new app gets its own lists.
+      let total = 0;
+      for (const [path, content] of Object.entries(parseApp(ver.content).files)) {
+        total += content.length;
+        if (total > APP_SKILL_MAX) break;
+        files.push({ name: `app/${path}`, kind: "reference", content: maskSecrets(content) });
+      }
+      break;
+    }
     const ext = a.kind === "html" ? "html" : a.kind === "table" ? "csv" : "md";
     files.push({ name: `example.${ext}`, kind: "example", content: maskSecrets(ver.content).slice(0, EXAMPLE_MAX) });
     break;
@@ -162,8 +175,13 @@ export function skillFilesText(name: string, files: SkillFile[] | undefined): st
         (inline ? ` للاطلاع فقط:\n\`\`\`python\n${f.content}\n\`\`\`` : ` لقراءته: use_skill مع name="${name}" و file="${f.name}".`),
     );
   }
+  const app = all.filter((f) => f.name.startsWith("app/"));
+  if (app.length)
+    parts.push(
+      `تطبيق محفوظ في المهارة (${app.length} ملفات: ${app.map((f) => f.name.slice(4)).join("، ")}). لبناء تطبيق من نوعه: write_app مع fromSkill="${name}" ينسخ ملفاته (ومعالجاته في server/)، ثم اقرأه بـ read_app وغيّر ما يخص الطلب الجديد (المحتوى، الأسئلة، المفتاح، النصوص)، وأنشئ قوائمه من جديد واربطها بـ data، ثم test_app.`,
+    );
   for (const f of all.filter((x) => x.kind === "example")) parts.push(`نموذج المخرج ${f.name}: حافظ على بنيته وعناوينه وترتيبه وتنسيقه، والمحتوى من الطلب الجديد:\n\n${f.content}`);
-  const refs = all.filter((f) => f.kind === "reference" || (f.kind === "script" && !f.name.endsWith(".py")));
+  const refs = all.filter((f) => !f.name.startsWith("app/") && (f.kind === "reference" || (f.kind === "script" && !f.name.endsWith(".py"))));
   if (refs.length)
     parts.push(
       `ملفات مرجعية للمهارة (لا تحمّل إلا ما تحتاجه للطلب، بأداة use_skill مع name="${name}" و file=اسم الملف):\n` + refs.map((f) => `- ${f.name} (${f.content.length} حرفاً)`).join("\n"),
@@ -638,6 +656,17 @@ export const scriptForTool = internalQuery({
     return { id: hit._id as string, name: hit.name, version: hit.version ?? 1, script: f.name, code: f.content };
   },
 });
+
+/** write_app fromSkill: the app files a skill this chat may use keeps (app/…), as a starting point. */
+export async function appFilesFromSkill(ctx: QueryCtx | MutationCtx, userId: Id<"users">, name: string, threadId: string | undefined, scopeSpaceIds: string[]): Promise<Record<string, string>> {
+  const { own, shared } = await usableSkills(ctx, userId, await chatSpace(ctx, userId, threadId, scopeSpaceIds));
+  const n = name.trim().replace(/^\//, "");
+  const hit = shared.find((s) => s.name === n) ?? own.find((s) => s.name === n);
+  if (!hit) throw new OneBaseError(`لا توجد مهارة /${n} في هذه المحادثة`);
+  const files = Object.fromEntries((hit.files ?? []).filter((f) => f.name.startsWith("app/")).map((f) => [f.name.slice(4), f.content]));
+  if (!Object.keys(files).length) throw new OneBaseError(`المهارة /${n} لا تحوي تطبيقاً`);
+  return files;
+}
 
 /** create_skill with scope "space": the chat's own shared space, never one the model names. */
 export const spaceForTool = internalQuery({

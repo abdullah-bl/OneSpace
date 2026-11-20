@@ -60,5 +60,10 @@ export type AppTool<Args = any> = {
   requiresConfirmation?: boolean;
   /** Its output is data for the model, not an answer: after "نفّذ" the agent writes the reply from it. */
   answerAfterRun?: boolean;
+  /**
+   * Optional: fills in, from the server, what the confirmation card must show and pin before it is
+   * proposed (publish_output: the app's version and grants). Its result is what «نفّذ» runs.
+   */
+  prepare?(t: ToolContext, args: Args): Promise<Args>;
   run(t: ToolContext, args: Args): Promise<ToolResult>;
 };

@@ -56,7 +56,7 @@ export function isTitleRequest(r: any) {
 export function offered(req: any): string[] {
   return (req.body.tools ?? [])
     .map((t: any) => t.function.name)
-    .filter((n: string) => n !== "remember" && n !== "recall" && n !== "create_skill" && n !== "use_skill" && !n.endsWith("_list") && n !== "publish_output")
+    .filter((n: string) => n !== "remember" && n !== "recall" && n !== "create_skill" && n !== "use_skill" && !n.endsWith("_list") && n !== "publish_output" && !n.endsWith("_app"))
     .sort();
 }
 
