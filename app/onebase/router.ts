@@ -10,6 +10,7 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
 import { agentTools, effectiveScope, narrowByMentions, visibleTo } from "./agents";
 import { chat, type UsageTrack } from "./ai";
 import { tools as registry } from "./tools";
+import { threadAllows } from "./access";
 
 export type Candidate = { agentId: string; name: string; description: string; tools: string[]; isDefault: boolean };
 export type RouteInput = { question: string; recent: string[]; mentioned: string[]; candidates: Candidate[]; previous?: string | null; skill?: string | null };
@@ -59,7 +60,7 @@ export const candidates = internalQuery({
     const turn = await ctx.db.get(turnId);
     if (!turn) return { state: "gone", route: null };
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).unique();
-    if (!meta || meta.userId !== turn.userId) return { state: "gone", route: null };
+    if (!meta || !(await threadAllows(ctx, turn.userId, meta, "write"))) return { state: "gone", route: null };
     if (turn.state !== "queued") return { state: turn.state, route: null };
     if (meta.agentId || meta.agentDraft || meta.test || turn.scheduleId || turn.afterProposal) return { state: turn.state, route: null };
 

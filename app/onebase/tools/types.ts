@@ -16,6 +16,8 @@ export type ToolContext = {
   threadId?: string;
   agentId?: string;
   taskId?: string;
+  /** plans/14: the turn is in a chat the members of this space read. Nothing personal of the asker goes in. */
+  sharedSpaceId?: Id<"spaces">;
 };
 
 export type Citation = {

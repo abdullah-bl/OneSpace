@@ -193,21 +193,35 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           <h2 className="section-title">محادثاتك هنا</h2>
           {threads && <span className="meta num">{threads.length}</span>}
           <span className="meta ms-auto inline-flex items-center gap-1">
-            <Icon name="lock" size={12} /> لا يراها غيرك
+            {space.kind === "shared" ? (
+              <>
+                <Icon name="users" size={12} /> المشتركة للأعضاء، والخاصة لك
+              </>
+            ) : (
+              <>
+                <Icon name="lock" size={12} /> لا يراها غيرك
+              </>
+            )}
           </span>
         </div>
         {threads?.length === 0 && (
-          <p className="mt-3 rounded-xl border border-dashed border-control p-5 text-center text-sm text-muted">لا محادثات بعد. كل محادثة تبدؤها هنا تعرف {space.kind === "personal" ? "ملفاتك" : "تعليمات المساحة وملفاتها"}.</p>
+          <p className="mt-3 rounded-xl border border-dashed border-control p-5 text-center text-sm text-muted">
+            لا محادثات بعد. كل محادثة تبدؤها هنا تعرف {space.kind === "personal" ? "ملفاتك" : "تعليمات المساحة وملفاتها، وتُشارك مع أعضاء المساحة إلا إن جعلتها خاصة"}.
+          </p>
         )}
         {!!threads?.length && (
           <ul className="card mt-3 divide-y divide-rule overflow-hidden">
             {shownChats!.map((t) => (
               <li key={t.threadId}>
                 <a href={`#/chat/${t.threadId}`} className="flex items-center gap-3 px-4 py-3 transition-colors hover:bg-sunken">
-                  <Icon name={t.scheduled ? "clock" : "chat"} size={16} className="shrink-0 text-faint" />
+                  <Icon name={t.scheduled ? "clock" : t.shared ? "users" : space.kind === "shared" ? "lock" : "chat"} size={16} className="shrink-0 text-faint" />
                   <span className="min-w-0 flex-1">
                     <span className="block truncate">{t.title}</span>
-                    {t.scheduled && <span className="block text-xs text-muted">مهمة مجدولة</span>}
+                    {t.scheduled ? (
+                      <span className="block text-xs text-muted">مهمة مجدولة</span>
+                    ) : space.kind === "shared" ? (
+                      <span className="block text-xs text-muted">{t.shared ? (t.mine ? "مشتركة · بدأتها أنت" : `مشتركة · بدأها ${t.ownerName ?? "زميل"}`) : "خاصة بك"}</span>
+                    ) : null}
                   </span>
                   <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>
                 </a>

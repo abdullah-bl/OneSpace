@@ -18,9 +18,9 @@ import { CITE_CHECK, renderAnswer } from "./markdown";
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
 type Mention = { kind: "file" | "space" | "agent"; id: string; name: string; spaceId?: string };
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
-type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean };
+type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
-type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null };
+type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean };
 type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
 
 // "اسأل عن هذا الملف" and other entry points hand a draft to the next new chat.
@@ -121,6 +121,9 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   const scrollRef = useRef<HTMLDivElement>(null);
   const homeSpace = threadId ? (data?.spaceId ?? null) : (spaceId ?? null);
   const space = homeSpace ? spaces.find((s) => s._id === homeSpace) : undefined;
+  // plans/14: a new chat in a shared space is shared with its members unless I make it private.
+  const canShareNew = !threadId && space?.kind === "shared" && space.canWrite;
+  const [newShared, setNewShared] = useState(true);
   const turn = data?.turn ?? null;
   const working = !!turn && (turn.state === "queued" || turn.state === "running");
   const agentId = threadId ? ((data?.agentId as string | null) ?? null) : draftAgent;
@@ -138,7 +141,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     setError("");
     try {
       let id = threadId;
-      if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace } : {}) })) as string;
+      if (!id) id = (await createThread({ agentId: draftAgent, ...(homeSpace ? { spaceId: homeSpace, shared: !!canShareNew && newShared } : {}) })) as string;
       await send({ threadId: id, text, mentions: mentions.map((m) => ({ kind: m.kind, id: m.id })), ...(skill ? { skillId: skill.id } : {}), effort });
       stick.current = true;
       if (!threadId) go(`/chat/${id}`);
@@ -181,6 +184,11 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                 {data.task.title}
               </a>
             )}
+            {data?.shared && (
+              <span className="flex shrink-0 items-center gap-1 rounded bg-raised px-2 py-0.5 text-xs text-muted" title="يراها أعضاء المساحة ويسألون فيها">
+                <Icon name="users" size={13} /> مشتركة{data.ownerName ? ` · بدأها ${data.ownerName}` : ""}
+              </span>
+            )}
             {data?.scheduled && <span className="shrink-0 rounded px-2 py-0.5 text-xs text-muted bg-raised">مهمة مجدولة</span>}
             {data?.test && <span className="shrink-0 rounded bg-warning-soft px-2 py-0.5 text-xs text-warning">اختبار مسودة الوكيل</span>}
             {data && data.scope.kind === "file" && <span className="shrink-0 rounded bg-raised px-2 py-0.5 text-xs text-muted">ملف: {data.scopeLabel}</span>}
@@ -190,7 +198,15 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                 <Icon name="memory" size={13} /> بلا ذاكرة
               </span>
             )}
-            <ThreadMenu threadId={threadId!} title={data?.title ?? ""} pinned={!!data?.pinned} noMemory={!!data?.noMemory} go={go} onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")} />
+            <ThreadMenu
+              threadId={threadId!}
+              title={data?.title ?? ""}
+              pinned={!!data?.pinned}
+              noMemory={!!data?.noMemory}
+              access={{ isOwner: data?.isOwner ?? true, shared: !!data?.shared, shareable: !!data?.shareable, canManage: !!data?.canManage }}
+              go={go}
+              onDeleted={() => go(homeSpace ? `/space/${homeSpace}` : "/")}
+            />
           </header>
         )}
         <div
@@ -206,15 +222,37 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               <div className="mb-6">
                 <h1 className="overflow-hidden pb-1 text-[clamp(28px,2.4vw+18px,44px)] leading-tight font-bold tracking-tight"><span key={title} className="block animate-mask">{title}</span></h1>
                 <p className="mt-2 text-muted">
-                  {space
+                  {canShareNew
+                    ? newShared
+                      ? "يراها أعضاء المساحة ويسألون فيها، وتعرف تعليمات المساحة وملفاتها. لا يدخلها شيء من ذاكرتك أو سجلاتك الخاصة."
+                      : "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
+                    : space
                     ? "تُرى هذه المحادثة لك وحدك، وتعرف تعليمات المساحة وملفاتها. اكتب @ لتحدد ملفاً بعينه."
                     : "بماذا أساعدك اليوم؟ اسأل عن أي شيء، أو اطلب كتابة أو ترجمة أو تلخيصاً. اكتب @ لتحدد ملفاً أو مساحة، و/ لمهاراتك."}
                 </p>
+                {canShareNew && (
+                  <div className="mt-3 inline-flex rounded-lg border border-line bg-surface p-0.5 text-sm" role="radiogroup" aria-label="من يرى المحادثة">
+                    {[
+                      { on: true, icon: "users" as const, label: "مشتركة مع المساحة" },
+                      { on: false, icon: "lock" as const, label: "خاصة بي" },
+                    ].map((o) => (
+                      <button
+                        key={o.label}
+                        role="radio"
+                        aria-checked={newShared === o.on}
+                        className={`flex h-8 items-center gap-1.5 rounded-md px-3 ${newShared === o.on ? "bg-active text-ink" : "text-muted hover:text-ink"}`}
+                        onClick={() => setNewShared(o.on)}
+                      >
+                        <Icon name={o.icon} size={14} /> {o.label}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
             {data?.agent?.error && <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">{data.agent.error}</div>}
             {messages.map((m) => (
-              <MessageView key={m.id} m={m} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+              <MessageView key={m.id} m={m} canWrite={data?.canWrite ?? true} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
             {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} />}
@@ -224,7 +262,13 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
           <div className="shrink-0 px-4 pb-4">
             <div className="mx-auto w-full max-w-[760px]">
               {error && <p className="mb-2 text-sm text-negative">{error}</p>}
+              {data && !data.canWrite ? (
+                <p className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-control p-4 text-center text-sm text-muted">
+                  <Icon name="eye" size={15} /> دورك في المساحة قارئ: تقرأ المحادثة ولا تسأل فيها.
+                </p>
+              ) : (
               <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} />
+              )}
             </div>
           </div>
         )}
@@ -235,18 +279,53 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   );
 }
 
-function ThreadMenu({ threadId, title, pinned, noMemory, onDeleted, go }: { threadId: string; title: string; pinned: boolean; noMemory: boolean; onDeleted: () => void; go: (path: string) => void }) {
+type ThreadAccess = { isOwner: boolean; shared: boolean; shareable: boolean; canManage: boolean };
+
+function ThreadMenu({ threadId, title, pinned, noMemory, access, onDeleted, go }: { threadId: string; title: string; pinned: boolean; noMemory: boolean; access: ThreadAccess; onDeleted: () => void; go: (path: string) => void }) {
+  const setShared = useMutation(api.chat.setShared);
   const rename = useMutation(api.chat.rename);
   const setNoMemory = useMutation(api.chat.setNoMemory);
   const setPinned = useMutation(api.chat.setPinned);
-  const del = useMutation(api.chat.deleteThread);
+  const delThread = useMutation(api.chat.deleteThread);
   const draftSkill = useAction(api.skills.draftFromThread);
   const [drafting, setDrafting] = useState(false);
+  const share = async () => {
+    const ok = await ask("مشاركة المحادثة مع أعضاء المساحة؟ سيرون المحادثة كاملة من أولها ويسألون فيها.", { confirmLabel: "شارك" });
+    if (ok) await setShared({ threadId, shared: true }).catch((e) => void tell(errorText(e)));
+  };
+  const unshare = async () => {
+    const ok = await ask(access.isOwner ? "جعل المحادثة خاصة بك؟ لن يراها أعضاء المساحة بعد الآن." : "إخفاء المحادثة عن أعضاء المساحة؟ تبقى لمن بدأها وحده.", { confirmLabel: "اجعلها خاصة" });
+    if (ok) await setShared({ threadId, shared: false }).catch((e) => void tell(errorText(e)));
+  };
+  const del = () =>
+    void ask(access.shared ? "حذف هذه المحادثة نهائياً؟ تُحذف عند كل أعضاء المساحة." : "حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => {
+      if (ok) void delThread({ threadId }).then(onDeleted).catch((e) => void tell(errorText(e)));
+    });
+  // A colleague's shared chat: they can only make it private (a manager) or delete it.
+  if (!access.isOwner)
+    return access.canManage ? (
+      <Menu
+        label="خيارات المحادثة"
+        icon="dots"
+        items={[
+          { label: "إخفاؤها عن المساحة", icon: "lock", onSelect: () => void unshare() },
+          { label: "حذف المحادثة", danger: true, onSelect: del },
+        ]}
+      />
+    ) : null;
   return (
     <Menu
       label={drafting ? "يكتب مسودة المهارة…" : "خيارات المحادثة"}
       icon={drafting ? "clock" : "dots"}
       items={[
+        ...(access.shareable
+          ? [
+              access.shared
+                ? { label: "اجعلها خاصة بي", icon: "lock" as const, onSelect: () => void unshare() }
+                : { label: "شاركها مع أعضاء المساحة", icon: "users" as const, hint: "يرونها كاملة ويسألون فيها", onSelect: () => void share() },
+              "divider" as const,
+            ]
+          : []),
         {
           label: "اصنع مهارة من المحادثة",
           icon: "bot",
@@ -276,7 +355,7 @@ function ThreadMenu({ threadId, title, pinned, noMemory, onDeleted, go }: { thre
               if (t) void rename({ threadId, title: t });
             }),
         },
-        { label: "حذف المحادثة", danger: true, onSelect: () => void ask("حذف هذه المحادثة نهائياً؟", { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void del({ threadId }).then(onDeleted); })},
+        { label: "حذف المحادثة", danger: true, onSelect: del },
       ]}
     />
   );
@@ -785,7 +864,7 @@ function TurnStatus({ threadId, turn, onRetry }: { threadId: string; turn: { sta
   );
 }
 
-function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
+function MessageView({ m, isLast, canWrite, onRetry, onReask, onOpenArtifact }: { m: Msg; isLast: boolean; canWrite: boolean; onRetry: () => void; onReask?: (agentId: string) => void; onOpenArtifact: (id: string) => void }) {
   const feedback = useMutation(api.chat.feedback);
   const [showSteps, setShowSteps] = useState(false);
   const [showParts, setShowParts] = useState(false);
@@ -800,6 +879,7 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
   if (m.role === "user")
     return (
       <div className="flex animate-rise flex-col items-start gap-1.5">
+        {m.author && <span className="text-xs font-medium text-muted">{m.mine ? "أنت" : m.author}</span>}
         {m.attached?.length ? (
           <div className="flex max-w-[85%] flex-wrap gap-1.5">
             {m.attached.map((a, i) => (
@@ -864,9 +944,13 @@ function MessageView({ m, isLast, onRetry, onReask, onOpenArtifact }: { m: Msg; 
       )}
       <div className="flex items-center gap-1 text-xs text-muted">
         <IconButton label={copied ? "نُسخ" : "نسخ"} icon="copy" onClick={() => void navigator.clipboard?.writeText(m.text).then(() => (setCopied(true), setTimeout(() => setCopied(false), 1500)))} />
-        {isLast && <IconButton label="أعد المحاولة" icon="retry" onClick={onRetry} />}
-        <IconButton label="إجابة مفيدة" icon="thumbUp" on={m.feedback === "up"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "up" ? null : "up" })} />
-        <IconButton label="إجابة غير مفيدة" icon="thumbDown" on={m.feedback === "down"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "down" ? null : "down" })} />
+        {isLast && canWrite && <IconButton label="أعد المحاولة" icon="retry" onClick={onRetry} />}
+        {m.mine !== false && (
+          <>
+            <IconButton label="إجابة مفيدة" icon="thumbUp" on={m.feedback === "up"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "up" ? null : "up" })} />
+            <IconButton label="إجابة غير مفيدة" icon="thumbDown" on={m.feedback === "down"} onClick={() => void feedback({ messageId: m.id, value: m.feedback === "down" ? null : "down" })} />
+          </>
+        )}
         {sourceFiles.length > 0 && (
           <button className="ms-1 flex h-8 items-center gap-1 rounded-md px-2 hover:bg-active" onClick={() => setShowSources(!showSources)} aria-expanded={showSources}>
             <Icon name="file" size={14} />
@@ -1153,7 +1237,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
             <span className="font-medium" dir="auto">
               {title}
             </span>
-            <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : pending ? "ينتظر موافقتك" : st.label}</span>
+            <span className={`rounded px-2 py-0.5 text-xs ${st.tone}`}>{p.auto && p.state === "executed" ? "نُفّذ تلقائياً" : pending ? (p.mine === false ? "ينتظر موافقة من طلبه" : "ينتظر موافقتك") : st.label}</span>
             {p.auto && p.state === "executed" && <span className="meta">في مساحتك الخاصة</span>}
             {p.tier === 3 && pending && <span className="badge-warning">حسّاس أو رسمي</span>}
           </div>
@@ -1191,12 +1275,12 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
             <p className="mt-1 whitespace-pre-wrap text-xs text-muted">{p.result}</p>
           ))}
         <div className="mt-2 flex flex-wrap items-center gap-2">
-          {p.auto && p.state === "executed" && (
+          {p.auto && p.state === "executed" && p.mine !== false && (
             <button className="btn-secondary h-8" disabled={busy} onClick={() => void run(async () => setKept(((await undo({ proposalId: p.id })) as { kept: string[] }).kept))}>
               <Icon name="retry" size={14} /> تراجع
             </button>
           )}
-          {pending && (
+          {pending && p.mine !== false && (
             <>
               <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
                 <Icon name="check" size={14} /> {busy ? "يُنفَّذ…" : (view?.confirm ?? "نفّذ")}
@@ -1253,7 +1337,7 @@ export function ChatsPage({ go }: { go: (path: string) => void }) {
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[15px]">{t.title}</span>
                 <span className="block truncate text-xs text-muted">
-                  {[t.spaceName, t.taskId ? "مهمة" : null, t.scheduled ? "مهمة مجدولة" : null].filter(Boolean).join(" · ") || "محادثة حرّة"}
+                  {[t.spaceName, t.shared ? (t.mine ? "مشتركة" : `مشتركة · بدأها ${t.ownerName ?? "زميل"}`) : null, t.taskId ? "مهمة" : null, t.scheduled ? "مهمة مجدولة" : null].filter(Boolean).join(" · ") || "محادثة حرّة"}
                 </span>
               </span>
               <span className="shrink-0 text-xs text-muted num">{relTime(t.lastAt)}</span>

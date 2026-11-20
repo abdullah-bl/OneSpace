@@ -12,6 +12,7 @@ export const my_records: AppTool<Record<string, never>> = {
   description: "Return the signed-in user's own records (their courses, results, issued certificates). Takes no arguments; it always answers about the user who is asking.",
   parameters: { type: "object", additionalProperties: false, properties: {} },
   async run(t) {
+    if (t.sharedSpaceId) return { content: "سجلات الموظف الشخصية لا تُعرض في محادثة مشتركة. اسأل عنها في محادثة خاصة." };
     const r = await t.ctx.runQuery(internal.records.mineForUser, { userId: t.userId });
     if (!r.hasIdentity) return { content: "لا يوجد رقم هوية أو رقم وظيفي مسجّل على حسابك. يضيفه مدير مساحة العمل." };
     if (r.sets.length === 0 && r.documents.length === 0) return { content: "لا توجد سجلات باسمك." };

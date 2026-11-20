@@ -11,7 +11,7 @@ import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertCan, currentSpaceRole, Denied, readableSpaceIds, requireActive, roleAllows } from "./access";
+import { assertCan, currentSpaceRole, Denied, readableSpaceIds, requireActive, roleAllows, threadAllows } from "./access";
 import { writeAudit } from "./audit";
 import { maskSecrets } from "./lib/secrets";
 
@@ -443,7 +443,7 @@ export const removeRow = mutation({
 async function placeFor(ctx: Ctx, userId: Id<"users">, threadId: string | undefined, scopeSpaceIds: string[]) {
   if (threadId) {
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
-    const here = meta && meta.userId === userId ? (meta.spaceId ?? (meta.scope.kind === "space" && meta.scope.id ? ctx.db.normalizeId("spaces", meta.scope.id) : null)) : null;
+    const here = meta && (await threadAllows(ctx, userId, meta, "write")) ? (meta.spaceId ?? (meta.scope.kind === "space" && meta.scope.id ? ctx.db.normalizeId("spaces", meta.scope.id) : null)) : null;
     if (here && scopeSpaceIds.includes(here)) {
       try {
         return (await assertCan(ctx, userId, here, "write")).space;

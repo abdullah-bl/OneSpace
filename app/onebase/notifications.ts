@@ -2,12 +2,13 @@
 // user id. The component's own functions are never exposed: these wrappers take the subject from
 // the session only. A notification about a task is shown only while the reader can still see
 // that task (removed from the space → its notifications disappear from the feed too); one about
-// a chat thread (a scheduled task's result) only while the reader still owns that thread.
+// a chat thread (a scheduled task's result, a colleague's question in a shared chat) only while
+// the reader may still read that thread.
 
 import { v } from "onebase/values";
 import type { Id } from "./_generated/dataModel";
 import { mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertTaskCan, requireActive } from "./access";
+import { assertTaskCan, requireActive, threadAllows } from "./access";
 
 export type NotifyKind =
   | "task.assigned"
@@ -18,13 +19,14 @@ export type NotifyKind =
   | "task.mention"
   | "schedule.result"
   | "schedule.failed"
-  | "schedule.stopped";
+  | "schedule.stopped"
+  | "chat.shared";
 
 /** Publishes one notification to `userId`. Internal helper; callers decide who may receive it. */
 export async function notify(
   ctx: MutationCtx,
   userId: Id<"users">,
-  n: { kind: NotifyKind; title: string; body?: string; taskId?: Id<"tasks">; spaceId?: Id<"spaces">; threadId?: string; scheduleId?: string },
+  n: { kind: NotifyKind; title: string; body?: string; taskId?: Id<"tasks">; spaceId?: Id<"spaces">; threadId?: string; scheduleId?: string; dedupeKey?: string },
 ) {
   const metadata: Record<string, string> = {};
   if (n.taskId) metadata.taskId = n.taskId;
@@ -38,6 +40,7 @@ export async function notify(
     title: n.title,
     ...(n.body ? { body: n.body } : {}),
     metadata,
+    ...(n.dedupeKey ? { dedupeKey: n.dedupeKey } : {}),
   });
 }
 
@@ -59,7 +62,8 @@ async function visibleFeed(ctx: QueryCtx, limit: number) {
     }
     if (meta.threadId) {
       const t = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", meta.threadId!)).unique();
-      if (!t || t.userId !== me.userId) continue;
+      // My own chat, or a shared chat I can still read (plans/14).
+      if (!t || !(await threadAllows(ctx, me.userId, t, "read"))) continue;
     }
     if (meta.scheduleId) {
       const id = ctx.db.normalizeId("schedules", meta.scheduleId);

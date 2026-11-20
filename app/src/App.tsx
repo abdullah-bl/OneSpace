@@ -364,17 +364,19 @@ function Sidebar(props: { me: Me; spaces: SpaceInfo[]; route: string[]; section:
 }
 
 /** A chat in the sidebar; hovering shows a pin button (pinned chats stay at the top). */
-function ThreadLink({ t, current }: { t: { threadId: string; title: string; spaceName: string | null; lastAt: number; pinned: boolean }; current: string | null }) {
+function ThreadLink({ t, current }: { t: { threadId: string; title: string; spaceName: string | null; lastAt: number; pinned: boolean; shared?: boolean; mine?: boolean; ownerName?: string | null }; current: string | null }) {
   const setPinned = useMutation(api.chat.setPinned);
   return (
     <li className="group relative">
       <a
         href={`#/chat/${t.threadId}`}
         className={`flex h-8 items-center gap-2 rounded-md pe-8 ps-3 text-sm ${current === t.threadId ? "bg-active text-ink" : "text-ink hover:bg-active"}`}
-        title={`${t.title}${t.spaceName ? ` · ${t.spaceName}` : ""} · ${relTime(t.lastAt)}`}
+        title={`${t.title}${t.spaceName ? ` · ${t.spaceName}` : ""}${t.shared ? (t.mine === false ? ` · مشتركة، بدأها ${t.ownerName ?? "زميل"}` : " · مشتركة") : ""} · ${relTime(t.lastAt)}`}
       >
+        {t.shared && <Icon name="users" size={13} className="shrink-0 text-faint" aria-label="مشتركة" />}
         <span className="truncate">{t.title}</span>
       </a>
+      {t.mine !== false && (
       <button
         className={`absolute end-1 top-1/2 grid h-6 w-6 -translate-y-1/2 place-items-center rounded text-muted hover:bg-surface hover:text-ink opacity-0 focus:opacity-100 group-hover:opacity-100`}
         aria-label={t.pinned ? `إلغاء تثبيت ${t.title}` : `تثبيت ${t.title}`}
@@ -383,6 +385,7 @@ function ThreadLink({ t, current }: { t: { threadId: string; title: string; spac
       >
         <Icon name={t.pinned ? "x" : "pin"} size={14} />
       </button>
+      )}
     </li>
   );
 }
