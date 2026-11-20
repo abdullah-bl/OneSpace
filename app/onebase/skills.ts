@@ -16,7 +16,7 @@ import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { actorFor, assertCan, Denied, requireActive, requireUserId } from "./access";
+import { actorFor, assertCan, Denied, requireActive, requireUserId, threadAllows } from "./access";
 import { chat, primeAi } from "./ai";
 import { writeAudit } from "./audit";
 import { guardSkill } from "./decisions";
@@ -623,11 +623,11 @@ export async function skillIndex(ctx: QueryCtx, userId: Id<"users">, spaceId: Id
   return lines.length ? `${head}\n${lines.join("\n")}${all.length > lines.length ? `\n(و${all.length - lines.length} غيرها: اكتب اسمها لـ use_skill)` : ""}\n\n${tail}` : tail;
 }
 
-/** The chat's shared space, if it is mine and in this turn's scope (the same rule as the index). */
+/** The chat's shared space, if I may ask in the chat (mine, or shared with me: plans/14) and it is in this turn's scope. */
 async function chatSpace(ctx: QueryCtx | MutationCtx, userId: Id<"users">, threadId: string | undefined, scopeSpaceIds: string[]) {
   if (!threadId) return null;
   const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
-  if (!meta || meta.userId !== userId) return null;
+  if (!meta || !(await threadAllows(ctx, userId, meta, "write"))) return null;
   const here = meta.spaceId ?? (meta.scope.kind === "space" && meta.scope.id ? ctx.db.normalizeId("spaces", meta.scope.id) : null);
   return here && scopeSpaceIds.includes(here) ? here : null;
 }

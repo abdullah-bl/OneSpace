@@ -94,9 +94,9 @@ describe("free-form chats", () => {
 describe("space chats", () => {
   let spaceThread: string;
 
-  test("a chat started in a space is scoped to it, carries its instructions and files, and is listed on the space page for its owner only", async () => {
+  test("a chat started in a space is scoped to it, carries its instructions and files, and is listed on the space page for its owner only (a private one)", async () => {
     must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "SPACEINSTR-UX1: أجب بإيجاز." }, tok("mgr")));
-    spaceThread = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    spaceThread = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
     const m = must(await s.call("query", "chat:messages", { threadId: spaceThread }, tok("mem")));
     expect(m.scope).toEqual({ kind: "space", id: f.spaces.S_plain });
     expect(m.spaceId).toBe(f.spaces.S_plain);
@@ -176,7 +176,8 @@ describe("@mentions in chat narrow the scope and can never widen it", () => {
     expect(r.messages.at(-1).citations).toEqual([]);
     for (const req of chatRequestsWith(ai, "WIDENQ-1")) expect(JSON.stringify(req.body)).not.toContain("CONTENT-S_plain\n");
     // A thread scoped to S_every: mentioning S_plain doesn't reach S_plain.
-    const t2 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every }, tok("mem")));
+    // (A private chat: a shared one refuses an outside mention outright, see shared-chats.test.ts.)
+    const t2 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_every, shared: false }, tok("mem")));
     must(await s.call("mutation", "chat:send", { threadId: t2, text: "CONTENT-S_plain WIDENQ-2", mentions: [{ kind: "space", id: f.spaces.S_plain }] }, tok("mem")));
     const r2 = await waitAnswers(tok("mem")!, t2, 1);
     expect(r2.messages.at(-1).citations).toEqual([]);

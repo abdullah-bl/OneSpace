@@ -22,7 +22,7 @@ import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { onCompleteArgs } from "onebase/components/work-queue";
-import { actorFor, assertCan, assertTaskCan, canBeAssignee, Denied, requireActive, requireUserId, taskRoleAllows } from "./access";
+import { actorFor, assertCan, assertTaskCan, canBeAssignee, currentSpaceRole, Denied, isSharedThread, requireActive, requireUserId, roleAllows, taskRoleAllows, threadAllows, type ThreadUse } from "./access";
 import { agentTools, effectiveScope, groundingOf, MAX_STEPS_LIMIT, MIN_STEPS, narrowByMentions, resolveAgent } from "./agents";
 import { notify } from "./notifications";
 import { queueTurn } from "./lib/turns";
@@ -34,6 +34,8 @@ import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
 import { MEMORY_TOOLS, PERSONAL_TOOLS, tools as registry } from "./tools";
 
+/** Tools that answer about the asker alone: not offered in a chat the space's members read (plans/14). */
+const SHARED_CHAT_BLOCKED = new Set(["my_records"]);
 /** Platform tools: a round that uses only these doesn't count against the agent's tool rounds. */
 const PLATFORM_STEP_FREE = new Set([...PERSONAL_TOOLS, ...MEMORY_TOOLS]);
 /** Every tool round of one answer, whatever counts. */
@@ -174,11 +176,40 @@ async function validateScope(ctx: QueryCtx | MutationCtx, userId: Id<"users">, s
   return { kind: "file", id: file._id };
 }
 
-/** The thread's metadata if `userId` owns it; otherwise the same "not found" as everywhere. */
+/**
+ * The thread's metadata if `userId` owns it (and, for a shared chat, may still read its space);
+ * otherwise the same "not found" as everywhere. For what only the owner does: rename, pin, memory.
+ */
 async function ownThread(ctx: QueryCtx | MutationCtx, userId: Id<"users">, threadId: string): Promise<Doc<"threadMeta">> {
   const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
-  if (!meta || meta.userId !== userId) throw new Denied();
+  if (!meta || meta.userId !== userId || !(await threadAllows(ctx, userId, meta, "read"))) throw new Denied();
   return meta;
+}
+
+/** The thread's metadata if `userId` may read it, or ask in it ("write"): its owner, or for a shared chat its space's members (plans/14). */
+async function useThread(ctx: QueryCtx | MutationCtx, userId: Id<"users">, threadId: string, use: ThreadUse): Promise<Doc<"threadMeta">> {
+  const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
+  if (!meta || !(await threadAllows(ctx, userId, meta, use))) throw new Denied();
+  return meta;
+}
+
+/** A shared chat's owner, or a manager of its space, may delete it or make it private again. */
+async function canManageThread(ctx: QueryCtx | MutationCtx, userId: Id<"users">, meta: Doc<"threadMeta">): Promise<boolean> {
+  if (!isSharedThread(meta)) return meta.userId === userId;
+  if (!(await threadAllows(ctx, userId, meta, "read"))) return false;
+  if (meta.userId === userId) return true;
+  const space = await ctx.db.get(meta.spaceId!);
+  return !!space && roleAllows(await currentSpaceRole(ctx, userId, space), "manage");
+}
+
+/** Display names by user id (the people asking in a shared chat). */
+async function namesOf(ctx: QueryCtx, ids: Iterable<Id<"users">>): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  for (const id of new Set(ids)) {
+    const u = await ctx.db.get(id);
+    out.set(id, u?.name || u?.email || "موظف");
+  }
+  return out;
 }
 
 async function scopeLabel(ctx: QueryCtx, scope: Scope, userId: Id<"users">): Promise<string> {
@@ -214,8 +245,11 @@ async function spaceNameFor(ctx: QueryCtx, userId: Id<"users">, spaceId: Id<"spa
   return cache.get(spaceId) ?? null;
 }
 
-function shapeThread(r: Doc<"threadMeta">, spaceName: string | null) {
+function shapeThread(r: Doc<"threadMeta">, spaceName: string | null, extra?: { mine: boolean; ownerName: string | null }) {
   return {
+    shared: isSharedThread(r),
+    mine: extra?.mine ?? true,
+    ownerName: extra?.ownerName ?? null,
     threadId: r.threadId,
     title: r.title,
     scope: r.scope,
@@ -229,38 +263,75 @@ function shapeThread(r: Doc<"threadMeta">, spaceName: string | null) {
   };
 }
 
-/** My recent chats (all of them: free-form, in spaces, task and scheduled-task threads), searchable by title. */
+/** Colleagues' shared chats I asked in (plans/14), that I can still read: they join my chat list. */
+async function joinedThreads(ctx: QueryCtx, userId: Id<"users">): Promise<Doc<"threadMeta">[]> {
+  const ids = new Set<string>();
+  for (const t of await ctx.db.query("turns").withIndex("by_user", (q) => q.eq("userId", userId)).order("desc").take(500)) ids.add(t.threadId);
+  const out: Doc<"threadMeta">[] = [];
+  for (const id of ids) {
+    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", id)).unique();
+    if (meta && meta.userId !== userId && isSharedThread(meta) && (await threadAllows(ctx, userId, meta, "read"))) out.push(meta);
+  }
+  return out;
+}
+
+/**
+ * The people following a shared chat: its owner and everyone who asked in it, who can still read
+ * it now. They are the ones told when a colleague asks there (not the whole space).
+ */
+async function followersOf(ctx: QueryCtx | MutationCtx, meta: Doc<"threadMeta">): Promise<Id<"users">[]> {
+  const ids = new Set<Id<"users">>([meta.userId]);
+  for (const t of await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", meta.threadId)).collect()) if (!t.scheduleId) ids.add(t.userId);
+  const out: Id<"users">[] = [];
+  for (const id of ids) if (await threadAllows(ctx, id, meta, "read")) out.push(id);
+  return out;
+}
+
+/** One notice per chat per person per hour at most, however many questions follow. */
+const NOTIFY_WINDOW_MS = 60 * 60 * 1000;
+
+/** My recent chats (all of them: free-form, in spaces, task and scheduled-task threads, and shared chats I asked in), searchable by title. */
 export const threads = query({
   args: { q: v.optional(v.string()) },
   handler: async (ctx, { q }) => {
     const me = await requireActive(ctx);
     const needle = (q ?? "").trim().toLowerCase();
     const recent = await ctx.db.query("threadMeta").withIndex("by_user", (q) => q.eq("userId", me.userId)).order("desc").take(2000);
+    const joined = await joinedThreads(ctx, me.userId);
     // Pinned chats first (newest pin first), then the rest by last activity.
     const pinned = recent.filter((r) => r.pinnedAt).sort((a, b) => b.pinnedAt! - a.pinnedAt!);
-    const rows = [...pinned, ...recent.filter((r) => !r.pinnedAt)]
-      .filter((r) => !r.test && (!needle || r.title.toLowerCase().includes(needle)))
-      .slice(0, 100 + pinned.length);
+    const rest = [...recent.filter((r) => !r.pinnedAt), ...joined].sort((a, b) => b.lastAt - a.lastAt);
+    const rows = [...pinned, ...rest].filter((r) => !r.test && (!needle || r.title.toLowerCase().includes(needle))).slice(0, 100 + pinned.length);
     const cache = new Map<string, string | null>();
+    const names = await namesOf(ctx, joined.map((r) => r.userId));
     const out = [];
-    for (const r of rows) out.push(shapeThread(r, await spaceNameFor(ctx, me.userId, r.spaceId, cache)));
+    for (const r of rows) out.push(shapeThread(r, await spaceNameFor(ctx, me.userId, r.spaceId, cache), { mine: r.userId === me.userId, ownerName: names.get(r.userId) ?? null }));
     return out;
   },
 });
 
-/** My chats inside a space (the space page lists them). Other members' chats are never listed. */
+/**
+ * The chats on a space page: my own chats there (private or shared) and, in a shared space, the
+ * chats its members shared with it (plans/14). Other members' private chats are never listed.
+ */
 export const spaceThreads = query({
   args: { spaceId: v.string() },
   handler: async (ctx, { spaceId }) => {
     const me = await requireActive(ctx);
     const { space } = await assertCan(ctx, me.userId, spaceId, "read");
-    const rows = await ctx.db
+    const mine = await ctx.db
       .query("threadMeta")
       .withIndex("by_user_space", (q) => q.eq("userId", me.userId).eq("spaceId", space._id))
       .order("desc")
       .take(100);
+    const shared =
+      space.kind === "shared"
+        ? (await ctx.db.query("threadMeta").withIndex("by_space", (q) => q.eq("spaceId", space._id)).order("desc").take(300)).filter((r) => r.userId !== me.userId && isSharedThread(r)).slice(0, 100)
+        : [];
+    const rows = [...mine, ...shared].filter((r) => !r.test).sort((a, b) => b.lastAt - a.lastAt);
+    const names = await namesOf(ctx, shared.map((r) => r.userId));
     const name = space.kind === "personal" ? "مساحتي" : space.name;
-    return rows.filter((r) => !r.test).map((r) => shapeThread(r, name));
+    return rows.map((r) => shapeThread(r, name, { mine: r.userId === me.userId, ownerName: names.get(r.userId) ?? null }));
   },
 });
 
@@ -286,28 +357,71 @@ async function scopeInSpace(ctx: QueryCtx | MutationCtx, userId: Id<"users">, sp
 
 /**
  * A new chat. With `spaceId` it belongs to that space (I must be able to read it): scoped to the
- * space, with its instructions and file list as context, and listed on the space page — still
- * private to me.
+ * space, with its instructions and file list as context, and listed on the space page. In a shared
+ * space where I can write it is shared with the space's members unless `shared: false` (plans/14).
  */
 export const createThread = mutation({
-  args: { scope: v.optional(scopeValidator), title: v.optional(v.string()), agentId: v.optional(v.union(v.string(), v.null())), spaceId: v.optional(v.string()) },
-  handler: async (ctx, { scope, title, agentId, spaceId }) => {
+  args: { scope: v.optional(scopeValidator), title: v.optional(v.string()), agentId: v.optional(v.union(v.string(), v.null())), spaceId: v.optional(v.string()), shared: v.optional(v.boolean()) },
+  handler: async (ctx, { scope, title, agentId, spaceId, shared }) => {
     const me = await requireActive(ctx);
     let inSpace: Id<"spaces"> | undefined;
     let s: Scope;
+    let share = false;
     if (spaceId) {
-      const { space } = await assertCan(ctx, me.userId, spaceId, "read");
+      const { space, role } = await assertCan(ctx, me.userId, spaceId, "read");
       inSpace = space._id;
       s = await scopeInSpace(ctx, me.userId, space._id, scope);
+      share = space.kind === "shared" && roleAllows(role, "write") && shared !== false;
     } else s = await validateScope(ctx, me.userId, scope ?? { kind: "all" });
     if (agentId) await checkAgent(ctx, me.userId, agentId);
     const name = (title ?? "").trim().slice(0, 80) || "محادثة جديدة";
     const { threadId } = await ctx.components.chat.createThread({ userId: me.userId, title: name });
     const now = Date.now();
-    await ctx.db.insert("threadMeta", { threadId, userId: me.userId, title: name, scope: s, agentId: agentId ?? undefined, spaceId: inSpace, createdAt: now, lastAt: now });
+    await ctx.db.insert("threadMeta", { threadId, userId: me.userId, title: name, scope: s, agentId: agentId ?? undefined, spaceId: inSpace, ...(share ? { shared: true } : {}), createdAt: now, lastAt: now });
+    if (share) await writeAudit(ctx, { userId: me.userId, action: "chat.share", resourceType: "thread", resourceId: threadId, spaceId: inSpace, detail: { shared: true, at: "create" } });
     return threadId;
   },
 });
+
+/**
+ * Shares my space chat with the space's members, or makes it private again (plans/14). Sharing
+ * shows them the whole chat so far. Its owner (who must be able to write in the space) shares it;
+ * the owner or a space manager makes it private. Test, scheduled and task threads stay private.
+ */
+export const setShared = mutation({
+  args: { threadId: v.string(), shared: v.boolean() },
+  handler: async (ctx, { threadId, shared }) => {
+    const me = await requireActive(ctx);
+    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
+    if (!meta || !(await threadAllows(ctx, me.userId, meta, "read"))) throw new Denied();
+    if (shared) {
+      if (meta.userId !== me.userId) throw new Denied();
+      if (!meta.spaceId || meta.test || meta.scheduleId || meta.taskId) throw new OneBaseError("هذه المحادثة لا تُشارك");
+      const { space } = await assertCan(ctx, me.userId, meta.spaceId, "write");
+      if (space.kind !== "shared") throw new OneBaseError("المشاركة في المساحات المشتركة فقط");
+      // Every question so far must stay inside the space: an @mention of another space's file
+      // would show its name to the members.
+      for (const t of await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect())
+        if (!(await mentionsInSpace(ctx, t.mentions, space._id))) throw new OneBaseError("في المحادثة إشارة إلى ملف أو مساحة من خارج هذه المساحة، فلا يمكن مشاركتها");
+    } else if (!(await canManageThread(ctx, me.userId, meta))) throw new Denied();
+    if (!!meta.shared === shared) return;
+    await ctx.db.patch(meta._id, { shared: shared || undefined });
+    await writeAudit(ctx, { userId: me.userId, action: "chat.share", resourceType: "thread", resourceId: threadId, spaceId: meta.spaceId, detail: { shared } });
+  },
+});
+
+/** Whether every @mention points inside `spaceId` (a space chip of it, or one of its files). */
+async function mentionsInSpace(ctx: QueryCtx | MutationCtx, mentions: { kind: "file" | "space"; id: string }[] | undefined, spaceId: Id<"spaces">) {
+  for (const m of mentions ?? []) {
+    if (m.kind === "space" && m.id !== spaceId) return false;
+    if (m.kind === "file") {
+      const id = ctx.db.normalizeId("files", m.id);
+      const f = id ? await ctx.db.get(id) : null;
+      if (!f || f.spaceId !== spaceId) return false;
+    }
+  }
+  return true;
+}
 
 /** Renames my chat. */
 export const rename = mutation({
@@ -351,7 +465,7 @@ export const setAgent = mutation({
   args: { threadId: v.string(), agentId: v.union(v.string(), v.null()) },
   handler: async (ctx, { threadId, agentId }) => {
     const me = await requireActive(ctx);
-    const meta = await ownThread(ctx, me.userId, threadId);
+    const meta = await useThread(ctx, me.userId, threadId, "write");
     if (meta.test) throw new OneBaseError("محادثة اختبار: الوكيل ثابت");
     const r = await checkAgent(ctx, me.userId, agentId);
     await ctx.db.patch(meta._id, { agentId: agentId ? (r.agentId ?? undefined) : undefined });
@@ -398,7 +512,7 @@ export const setScope = mutation({
   args: { threadId: v.string(), scope: scopeValidator },
   handler: async (ctx, { threadId, scope }) => {
     const me = await requireActive(ctx);
-    const meta = await ownThread(ctx, me.userId, threadId);
+    const meta = await useThread(ctx, me.userId, threadId, "write");
     const s = meta.spaceId ? await scopeInSpace(ctx, me.userId, meta.spaceId, scope) : await validateScope(ctx, me.userId, scope);
     await ctx.db.patch(meta._id, { scope: s });
   },
@@ -408,7 +522,9 @@ export const deleteThread = mutation({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const me = await requireActive(ctx);
-    const meta = await ownThread(ctx, me.userId, threadId);
+    const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
+    if (!meta || !(await canManageThread(ctx, me.userId, meta))) throw new Denied();
+    if (meta.userId !== me.userId) await writeAudit(ctx, { userId: me.userId, action: "chat.delete", resourceType: "thread", resourceId: threadId, spaceId: meta.spaceId, detail: { name: meta.title } });
     await ctx.components.chat.deleteThread({ threadId });
     for (const m of await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) await ctx.db.delete(m._id);
     for (const t of await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) await ctx.db.delete(t._id);
@@ -422,24 +538,30 @@ export const messages = query({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const me = await requireActive(ctx);
-    const meta = await ownThread(ctx, me.userId, threadId);
+    const meta = await useThread(ctx, me.userId, threadId, "read");
+    const shared = isSharedThread(meta);
     const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
     const metas = new Map((await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()).map((m) => [m.messageId, m]));
     // The files and spaces each question had attached (its chips), by name. The asker could read
     // them when sending; a file deleted since simply drops out.
     const attached = new Map<string, { kind: "file" | "space"; name: string }[]>();
-    for (const t of await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) {
+    // In a shared chat each question shows who asked it (plans/14).
+    const askedBy = new Map<string, Id<"users">>();
+    const allTurns = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect();
+    for (const t of allTurns) if (t.userMessageId) askedBy.set(t.userMessageId, t.userId);
+    const askers = shared ? await namesOf(ctx, askedBy.values()) : new Map<string, string>();
+    for (const t of allTurns) {
       if (!t.userMessageId || !t.mentions?.length) continue;
       const list: { kind: "file" | "space"; name: string }[] = [];
       for (const m of t.mentions) {
         if (m.kind === "file") {
           const id = ctx.db.normalizeId("files", m.id);
           const f = id ? await ctx.db.get(id) : null;
-          if (f && f.status === "active") list.push({ kind: "file", name: f.name });
+          if (f && f.status === "active" && (!shared || f.spaceId === meta.spaceId)) list.push({ kind: "file", name: f.name });
         } else {
           const id = ctx.db.normalizeId("spaces", m.id);
           const sp = id ? await ctx.db.get(id) : null;
-          if (sp) list.push({ kind: "space", name: sp.kind === "personal" ? "مساحتي" : sp.name });
+          if (sp && (!shared || sp._id === meta.spaceId)) list.push({ kind: "space", name: sp.kind === "personal" ? "مساحتي" : sp.name });
         }
       }
       attached.set(t.userMessageId, list);
@@ -448,7 +570,7 @@ export const messages = query({
     const proposals = new Map<string, ReturnType<typeof shapeProposal>[]>();
     for (const p of await ctx.db.query("proposals").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) {
       if (!proposals.has(p.messageId)) proposals.set(p.messageId, []);
-      const shaped = shapeProposal(p, now);
+      const shaped = { ...shapeProposal(p, now), mine: p.userId === me.userId };
       // An output removed since («تراجع», deleted, moved away) gets no chip: opening it would fail.
       const live: string[] = [];
       for (const aid of shaped.artifactIds) {
@@ -485,6 +607,9 @@ export const messages = query({
           ms: mm?.ms ?? null,
           id: m.id,
           role: m.role as "user" | "assistant",
+          // Shared chats: who asked this question, and whether the answer is to my question (feedback is the asker's).
+          author: shared && m.role === "user" ? (askers.get(askedBy.get(m.id) ?? "") ?? null) : null,
+          mine: m.role === "user" ? (askedBy.get(m.id) ?? meta.userId) === me.userId : (mm?.userId ?? meta.userId) === me.userId,
           text: m.text ?? "",
           citations: mm?.citations ?? [],
           toolRuns: (mm?.toolRuns ?? []).map((t) => ({ name: t.name, label: t.label, ok: t.ok, summary: t.summary })),
@@ -502,6 +627,7 @@ export const messages = query({
       }
       turn = {
         id: last._id,
+        mine: last.userId === me.userId,
         state: last.state,
         label: last.label ?? null,
         streamId: last.streamId ?? null,
@@ -523,8 +649,16 @@ export const messages = query({
       } catch {}
     }
     const spaceName = await spaceNameFor(ctx, me.userId, meta.spaceId, new Map());
+    const isOwner = meta.userId === me.userId;
     return {
       title: meta.title,
+      // plans/14: whether the space's members see this chat, and what I may do in it.
+      shared,
+      shareable: isOwner && !!meta.spaceId && !meta.test && !meta.scheduleId && !meta.taskId && !!spaceName && (await ctx.db.get(meta.spaceId))?.kind === "shared",
+      isOwner,
+      ownerName: shared && !isOwner ? ((await namesOf(ctx, [meta.userId])).get(meta.userId) ?? null) : null,
+      canWrite: await threadAllows(ctx, me.userId, meta, "write"),
+      canManage: await canManageThread(ctx, me.userId, meta),
       pinned: !!meta.pinnedAt,
       noMemory: !!meta.noMemory,
       scope: meta.scope,
@@ -547,7 +681,7 @@ export const stream = query({
   args: { threadId: v.string(), streamId: v.string() },
   handler: async (ctx, { threadId, streamId }) => {
     const me = await requireActive(ctx);
-    await ownThread(ctx, me.userId, threadId);
+    await useThread(ctx, me.userId, threadId, "read");
     const turn = await ctx.db
       .query("turns")
       .withIndex("by_thread", (q) => q.eq("threadId", threadId))
@@ -571,15 +705,20 @@ const MAX_MENTIONS = 10;
 async function checkMentions(ctx: MutationCtx, userId: Id<"users">, meta: Doc<"threadMeta">, mentions: { kind: "file" | "space" | "agent"; id: string }[]) {
   if (mentions.length > MAX_MENTIONS) throw new OneBaseError("إشارات كثيرة في رسالة واحدة");
   const out: { kind: "file" | "space"; id: string }[] = [];
+  // A shared chat is seen by the space's members: it may point only inside its own space.
+  const inside = isSharedThread(meta) ? meta.spaceId! : null;
+  const outside = () => new OneBaseError("في المحادثة المشتركة تشير إلى ملفات هذه المساحة فقط");
   for (const m of mentions) {
     if (m.kind === "space") {
       const { space } = await assertCan(ctx, userId, m.id, "read");
+      if (inside && space._id !== inside) throw outside();
       out.push({ kind: "space", id: space._id });
     } else if (m.kind === "file") {
       const id = ctx.db.normalizeId("files", m.id);
       const file = id ? await ctx.db.get(id) : null;
       if (!file || file.status !== "active") throw new Denied();
       await assertCan(ctx, userId, file.spaceId, "read");
+      if (inside && file.spaceId !== inside) throw outside();
       out.push({ kind: "file", id: file._id });
     } else {
       if (meta.test) throw new OneBaseError("محادثة اختبار: الوكيل ثابت");
@@ -603,7 +742,7 @@ export const send = mutation({
   args: { threadId: v.string(), text: v.string(), mentions: v.optional(v.array(mentionV)), skillId: v.optional(v.string()), effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))) },
   handler: async (ctx, { threadId, text, mentions, skillId, effort }) => {
     const me = await requireActive(ctx);
-    let meta = await ownThread(ctx, me.userId, threadId);
+    let meta = await useThread(ctx, me.userId, threadId, "write");
     const question = text.trim();
     if (!question) throw new OneBaseError("اكتب سؤالاً");
     if (question.length > MAX_QUESTION) throw new OneBaseError("السؤال أطول من اللازم");
@@ -617,6 +756,16 @@ export const send = mutation({
     if (skill) await ctx.db.patch(skill._id, { uses: skill.uses + 1 });
     const turnId = await queueTurn(ctx, { threadId, userId: me.userId, text: question, agentId: agent.agentId, agentVersion: agent.version, mentions: narrow.length ? narrow : undefined, skillId: skill?._id, effort });
     const now = Date.now();
+    // A shared chat (plans/14): tell the people following it that a colleague asked.
+    if (isSharedThread(meta)) {
+      const space = await ctx.db.get(meta.spaceId!);
+      const title = `${me.user.name || "زميل"} سأل في «${meta.title === "محادثة جديدة" ? question.slice(0, 50) : meta.title}»`;
+      const body = `${space?.name ?? "المساحة"}: ${question.replace(/\s+/g, " ").slice(0, 140)}`;
+      for (const uid of await followersOf(ctx, meta)) {
+        if (uid === me.userId) continue;
+        await notify(ctx, uid, { kind: "chat.shared", title, body, threadId, spaceId: meta.spaceId, dedupeKey: `chat:${threadId}:${uid}:${Math.floor(now / NOTIFY_WINDOW_MS)}` });
+      }
+    }
     const firstQuestion = meta.title === "محادثة جديدة";
     await ctx.db.patch(meta._id, { lastAt: now, ...(firstQuestion ? { title: question.replace(/\s+/g, " ").slice(0, 60), titlePending: true } : {}) });
     return turnId;
@@ -628,7 +777,7 @@ export const retry = mutation({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const me = await requireActive(ctx);
-    const meta = await ownThread(ctx, me.userId, threadId);
+    const meta = await useThread(ctx, me.userId, threadId, "write");
     await assertIdle(ctx, threadId);
     const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
     const lastUser = page.page.filter((m) => m.role === "user" && m.text).at(-1);
@@ -768,7 +917,8 @@ export const turnContext = internalQuery({
     const turn = await ctx.db.get(turnId);
     if (!turn) return null;
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).unique();
-    if (!meta || meta.userId !== turn.userId) return null;
+    if (!meta || !(await threadAllows(ctx, turn.userId, meta, "write"))) return null;
+    const shared = isSharedThread(meta);
     // The asker's level (plans/08 §D) bounds the model, thinking, tools and splitting. An admin's
     // «جرّب الوكيل» run tests the agent as configured, so it isn't narrowed.
     const level = meta.test ? UNLIMITED : await levelOf(ctx, turn.userId);
@@ -778,11 +928,21 @@ export const turnContext = internalQuery({
     // The agent, resolved now (an admin may have disabled or narrowed it since the question was sent).
     // The router's pick is resolved like a user's pick: enabled, published, visible to this user.
     const agent = await resolveAgent(ctx, turn.userId, agentOverride ? { agentId: agentOverride } : meta);
-    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false, skill: null, memory: { on: false, autoSave: false } };
+    if ("error" in agent) return { ...base, agentError: agent.error, agent: null, context: [], question: "", history: [], summary: null, compact: null, spaceIds: [] as string[], sharedSpaceId: null, fileIds: undefined, focused: false, asked: null, defaultAgentName: null, isDefaultAgent: false, titlePending: false, scheduled: false, afterRun: null, afterRunMissing: false, skill: null, memory: { on: false, autoSave: false } };
     // Scope = readable spaces right now ∩ the agent's data scope ∩ the thread's scope chips
     // (∩ what the question @mentions: narrowing only).
     const { spaceIds, fileIds } = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId, agent.config.dataScope, meta.scope), mentions);
     const context = [...(await turnExtraContext(ctx, turn.userId, meta, spaceIds)), ...(await mentionContext(ctx, mentions, spaceIds, fileIds))];
+    // plans/14: the space's members read this chat. Nothing personal of the asker goes in (their
+    // memory, their records, sources given to them alone), and the model knows who asks.
+    const askers = new Map<string, string>();
+    if (shared) {
+      for (const t of await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect())
+        if (t.userMessageId) askers.set(t.userMessageId, t.userId);
+      const names = await namesOf(ctx, [...askers.values(), turn.userId] as Id<"users">[]);
+      for (const [mid, uid] of askers) askers.set(mid, names.get(uid) ?? "موظف");
+      context.push(`هذه محادثة مشتركة يقرؤها كل أعضاء المساحة، ويسأل فيها أكثر من موظف (اسم السائل قبل كل سؤال). السؤال الحالي من ${names.get(turn.userId) ?? "موظف"}. لا تذكر فيها شيئاً شخصياً عن أحد.`);
+    }
     // Memory (plans/09): the asker's index and the space's, unless the level or this chat turns it off.
     const memory = !meta.test && !meta.noMemory && level.memory;
     if (memory) context.push(...(await memoryContext(ctx, turn.userId, meta, spaceIds)));
@@ -799,7 +959,7 @@ export const turnContext = internalQuery({
     }
     // External data sources this employee may read (only if the agent and level allow the tool).
     if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
-      const sources = sourcesContext(await sourcesFor(ctx, turn.userId));
+      const sources = sourcesContext(await sourcesFor(ctx, turn.userId, shared ? meta.spaceId : undefined));
       if (sources) context.push(sources);
     }
     // What the question explicitly points at (@file / @space / a file chat). The sender could read
@@ -821,9 +981,10 @@ export const turnContext = internalQuery({
     const notes = new Map(
       (await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect()).filter((x) => x.modelNote).map((x) => [x.messageId, x.modelNote!]),
     );
-    const msgs = page.page
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.text)
-      .map((m) => ({ role: m.role as "user" | "assistant", text: m.text! + (notes.has(m.id) ? `\n(تفاصيل للنموذج: ${notes.get(m.id)})` : "") }));
+    const kept = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text);
+    const msgs = kept.map((m) => ({ role: m.role as "user" | "assistant", text: m.text! + (notes.has(m.id) ? `\n(تفاصيل للنموذج: ${notes.get(m.id)})` : "") }));
+    // Shared chats: earlier questions carry their asker's name (the current one is named in the context).
+    const withAsker = (from: number, to: number) => msgs.slice(from, to).map((m, i) => (askers.has(kept[from + i]!.id) ? { ...m, text: `[${askers.get(kept[from + i]!.id)}]: ${m.text}` } : m));
     const lastUser = msgs.map((m) => m.role).lastIndexOf("user");
     const sum = meta.summary && meta.summary.covered <= Math.max(0, lastUser) ? meta.summary : null;
     const covered = sum?.covered ?? 0;
@@ -831,7 +992,7 @@ export const turnContext = internalQuery({
     // After this turn (question + answer), the next one keeps the last HISTORY_KEEP verbatim:
     // fold what falls out of that window into the summary once there's enough of it.
     const target = Math.max(0, lastUser + 2 - HISTORY_KEEP);
-    const compact = lastUser >= 0 && target - covered >= SUMMARY_STEP ? { from: covered, to: target, prev: sum?.text ?? "", msgs: msgs.slice(covered, target) } : null;
+    const compact = lastUser >= 0 && target - covered >= SUMMARY_STEP ? { from: covered, to: target, prev: sum?.text ?? "", msgs: withAsker(covered, target) } : null;
     return {
       ...base,
       agentError: null,
@@ -841,7 +1002,7 @@ export const turnContext = internalQuery({
         draft: agent.draft,
         name: agent.config.name,
         instructions: agent.config.instructions,
-        allowedTools: [...levelTools(level, agentTools(agent.config)), ...(memory ? MEMORY_TOOLS : []), ...PERSONAL_TOOLS],
+        allowedTools: [...levelTools(level, agentTools(agent.config)).filter((t) => !(shared && SHARED_CHAT_BLOCKED.has(t))), ...(memory ? MEMORY_TOOLS : []), ...PERSONAL_TOOLS],
         modelRole: level.model === "fast" ? ("fast" as const) : agent.config.modelRole,
         maxSteps: agent.config.maxSteps,
         grounding: groundingOf(agent.config),
@@ -850,10 +1011,11 @@ export const turnContext = internalQuery({
       context,
       // Attached files are chips in the composer, not "@name" in the text: name them for the model.
       question: lastUser >= 0 ? msgs[lastUser]!.text + (asked.length ? `\n\n(الملفات المرفقة بهذا الطلب: ${asked.map((n) => `«${n}»`).join("، ")})` : "") : "",
-      history: msgs.slice(histStart, Math.max(0, lastUser)),
+      history: withAsker(histStart, Math.max(0, lastUser)),
       summary: sum?.text ?? null,
       compact,
       spaceIds: spaceIds as string[],
+      sharedSpaceId: shared ? (meta.spaceId as string) : null,
       fileIds,
       // The question is about specific files (a file-scoped chat or @file mentions): show their best passages whatever their score.
       focused: !!fileIds?.length,
@@ -908,9 +1070,11 @@ export const stop = mutation({
   args: { threadId: v.string() },
   handler: async (ctx, { threadId }) => {
     const me = await requireActive(ctx);
-    await ownThread(ctx, me.userId, threadId);
+    const meta = await useThread(ctx, me.userId, threadId, "write");
     const turn = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).order("desc").first();
     if (!turn || (turn.state !== "queued" && turn.state !== "running")) return { stopped: false };
+    // In a shared chat: the person who asked, or whoever manages the chat.
+    if (turn.userId !== me.userId && !(await canManageThread(ctx, me.userId, meta))) throw new OneBaseError("هذه إجابة لسؤال زميلك");
     if (turn.state === "queued") {
       await ctx.db.patch(turn._id, { state: "failed", error: STOPPED_BEFORE_START, finishedAt: Date.now(), label: undefined });
     } else {
@@ -1254,6 +1418,7 @@ export const runTurn = internalAction({
       scopeFileIds: c.fileIds,
       threadId: c.turn.threadId,
       agentId: agent.agentId ?? undefined,
+      sharedSpaceId: (c.sharedSpaceId as Id<"spaces"> | null) ?? undefined,
     };
     const toolRuns: { name: string; label: string; args: unknown; ok: boolean; summary: string }[] = [];
     const proposals: { tool: string; label: string; args: unknown; tier?: Tier }[] = [];
@@ -1715,7 +1880,7 @@ async function runPart(
     const offered = agent.allowedTools.includes("run_analysis") && Object.hasOwn(registry, "run_analysis") ? [...reads, "run_analysis"] : reads;
     let sandboxRuns = 0;
     const userId = pc.turn.userId as Id<"users">;
-    const tctx: ToolContext = { ctx, userId, scopeSpaceIds: pc.spaceIds as Id<"spaces">[], scopeFileIds: pc.fileIds, threadId: pc.turn.threadId, agentId: agent.agentId ?? undefined };
+    const tctx: ToolContext = { ctx, userId, scopeSpaceIds: pc.spaceIds as Id<"spaces">[], scopeFileIds: pc.fileIds, threadId: pc.turn.threadId, agentId: agent.agentId ?? undefined, sharedSpaceId: (pc.sharedSpaceId as Id<"spaces"> | null) ?? undefined };
     const add = (list: Source[]) => {
       for (const s of list) {
         s.n = o.sources.length + 1;
@@ -1853,7 +2018,7 @@ export const claimProposal = internalMutation({
     const p = id ? await ctx.db.get(id) : null;
     if (!p || p.userId !== userId || !(await actorFor(ctx, userId))) return { denied: true as const };
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", p.threadId)).unique();
-    if (!meta || meta.userId !== userId) return { denied: true as const };
+    if (!meta || !(await threadAllows(ctx, userId, meta, "write"))) return { denied: true as const };
     const now = Date.now();
     if (p.state !== "pending") return { error: p.state === "running" || p.state === "executed" ? "نُفّذ هذا الإجراء من قبل" : "لم يعد هذا الإجراء قابلاً للتنفيذ" };
     if (now > p.expiresAt) {
@@ -1872,9 +2037,10 @@ export const claimProposal = internalMutation({
     const tool = Object.hasOwn(registry, p.tool) ? registry[p.tool] : undefined;
     const memoryTool = PERSONAL_TOOLS.includes(p.tool) || (MEMORY_TOOLS.includes(p.tool) && (await memoryOn(ctx, userId, meta)));
     if (!tool || !tool.requiresConfirmation || !(memoryTool || agentTools(agent.config).includes(p.tool))) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
+    if (isSharedThread(meta) && SHARED_CHAT_BLOCKED.has(p.tool)) return await fail("هذه الأداة لا تعمل في المحادثة المشتركة");
     const scope = await effectiveScope(ctx, userId, agent.config.dataScope, meta.scope);
     await ctx.db.patch(p._id, { state: "running", decidedAt: now });
-    return { proposal: { id: p._id, tool: p.tool, args: p.args, threadId: p.threadId, agentId: p.agentId ?? null }, spaceIds: scope.spaceIds as string[], fileIds: scope.fileIds };
+    return { proposal: { id: p._id, tool: p.tool, args: p.args, threadId: p.threadId, agentId: p.agentId ?? null }, spaceIds: scope.spaceIds as string[], fileIds: scope.fileIds, sharedSpaceId: isSharedThread(meta) ? (meta.spaceId as string) : null };
   },
 });
 
@@ -1938,6 +2104,7 @@ export const confirmProposal = action({
       scopeFileIds: claim.fileIds,
       threadId: proposal.threadId,
       agentId: proposal.agentId ?? undefined,
+      sharedSpaceId: (claim.sharedSpaceId as Id<"spaces"> | null) ?? undefined,
     };
     let ok = true;
     let result: string;
@@ -1971,7 +2138,7 @@ export const undo = mutation({
     const id = ctx.db.normalizeId("proposals", proposalId);
     const p = id ? await ctx.db.get(id) : null;
     if (!p || p.userId !== me.userId) throw new Denied();
-    await ownThread(ctx, me.userId, p.threadId);
+    await useThread(ctx, me.userId, p.threadId, "write");
     if (!p.auto || p.state !== "executed") throw new OneBaseError("لا يمكن التراجع عن هذا الإجراء");
     const u = (p.undo ?? {}) as NonNullable<ToolResult["undo"]>;
     if (u.deleteMemories?.length) await undoMemories(ctx, me.userId, u.deleteMemories);
@@ -2025,7 +2192,7 @@ export const cancelProposal = mutation({
     const id = ctx.db.normalizeId("proposals", proposalId);
     const p = id ? await ctx.db.get(id) : null;
     if (!p || p.userId !== me.userId) throw new Denied();
-    await ownThread(ctx, me.userId, p.threadId);
+    await useThread(ctx, me.userId, p.threadId, "write");
     if (p.state !== "pending") throw new OneBaseError("لم يعد هذا الإجراء بانتظار التأكيد");
     await ctx.db.patch(p._id, { state: "cancelled", decidedAt: Date.now() });
     await writeAudit(ctx, { userId: me.userId, action: "ai.cancel", resourceType: "proposal", resourceId: p._id, detail: { tool: p.tool, agentId: p.agentId ?? null } });

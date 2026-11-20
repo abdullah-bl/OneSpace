@@ -421,6 +421,9 @@ export default defineSchema({
     // UX redesign: a chat started inside a space belongs to it (listed on the space page, scoped
     // to it, with its instructions and file list as context). Still private to its owner.
     spaceId: v.optional(v.id("spaces")),
+    // plans/14: a chat in a shared space that the space's members see and ask in (access.ts
+    // threadAllows). Off = private to its owner, as every chat was before.
+    shared: v.optional(v.boolean()),
     titlePending: v.optional(v.boolean()), // the fast model names the chat after its first answer
     scheduleId: v.optional(v.string()), // the results thread of a scheduled task (schedules.ts)
     // Long chats: the fast model's running summary of the messages older than the verbatim window
@@ -431,7 +434,8 @@ export default defineSchema({
   })
     .index("by_thread", ["threadId"])
     .index("by_user", ["userId", "lastAt"])
-    .index("by_user_space", ["userId", "spaceId", "lastAt"]),
+    .index("by_user_space", ["userId", "spaceId", "lastAt"])
+    .index("by_space", ["spaceId", "lastAt"]),
 
   // Structured citations, tool runs and feedback for an assistant message.
   messageMeta: defineTable({

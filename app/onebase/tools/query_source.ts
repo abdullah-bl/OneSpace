@@ -39,7 +39,7 @@ export const query_source: AppTool<Args> = {
     additionalProperties: false,
   },
   async run(t: ToolContext, args: Args): Promise<ToolResult> {
-    const found = await t.ctx.runQuery(internal.dataSources.forUser, { userId: t.userId, sourceId: String(args?.source ?? "") });
+    const found = await t.ctx.runQuery(internal.dataSources.forUser, { userId: t.userId, sourceId: String(args?.source ?? ""), ...(t.sharedSpaceId ? { spaceId: t.sharedSpaceId } : {}) });
     if ("error" in found) return { content: found.error };
     const req: SourceRequest = { sql: args.sql, path: args.path, params: args.params, query: args.query, tool: args.tool, arguments: args.arguments };
     const asked = args.sql ?? (args.query ? `search: ${args.query}` : args.tool ? `mcp: ${args.tool} ${JSON.stringify(args.arguments ?? {}).slice(0, 500)}` : `GET ${args.path ?? ""} ${args.params ? JSON.stringify(args.params) : ""}`);
