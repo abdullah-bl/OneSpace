@@ -292,6 +292,90 @@ describe("@mentions in task comments and the الإشارات inbox", () => {
   }
 });
 
+// ---------------------------------------------------------------- @people in a space chat
+
+describe("@person in a shared space's chat tells them this one message; the chat stays private", () => {
+  const inbox = async (who: string) => must(await s.call("query", "mentions:inbox", {}, tok(who))) as any[];
+  const bell = async (who: string) => must(await s.call("query", "notifications:list", {}, tok(who))) as any[];
+
+  test("mentions:suggest lists the space's named members in its chat (not me, not outsiders); none outside a shared space", async () => {
+    const r = must(await s.call("query", "mentions:suggest", { spaceId: f.spaces.S_plain, q: "" }, tok("mem")));
+    const ids = r.people.map((p: any) => p.id);
+    expect(ids).toContain(f.ids.mgr);
+    expect(ids).toContain(f.ids.rdr);
+    for (const x of ["mem", "out", "admin", "pend", "dis"]) expect(ids).not.toContain(f.ids[x]);
+    expect(r.people.every((p: any) => p.kind === "person")).toBe(true);
+    // Narrowed by the query.
+    expect(must(await s.call("query", "mentions:suggest", { spaceId: f.spaces.S_plain, q: "rdr" }, tok("mem"))).people.map((p: any) => p.id)).toEqual([f.ids.rdr]);
+    // No people in a general chat, in my personal space, or for an "everyone" reader of S_every.
+    expect(must(await s.call("query", "mentions:suggest", { q: "" }, tok("mem"))).people).toEqual([]);
+    expect(must(await s.call("query", "mentions:suggest", { spaceId: f.spaces.P_mem, q: "" }, tok("mem"))).people).toEqual([]);
+    expect(must(await s.call("query", "mentions:suggest", { spaceId: f.spaces.S_every, q: "" }, tok("out"))).people).toEqual([]);
+  });
+
+  test("on send each named member gets a notification and a «الإشارات» row with that message only; the assistant still answers", async () => {
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    const text = "أعمل الآن على مقارنة عروض الموردين CHATMENTION-1";
+    must(await s.call("mutation", "chat:send", { threadId: t, text, people: [f.ids.mgr, f.ids.rdr, f.ids.out, f.ids.admin, f.ids.dis, f.ids.mem, "nope"] }, tok("mem")));
+    const answered = await waitAnswers(tok("mem")!, t, 1);
+    const answer = answered.messages.filter((x: any) => x.role === "assistant").at(-1).text as string;
+    for (const who of ["mgr", "rdr"]) {
+      const row = (await inbox(who)).find((x: any) => x.excerpt.includes("CHATMENTION-1"));
+      expect(row).toMatchObject({ source: "chat", taskId: null, spaceId: f.spaces.S_plain, spaceName: "لجنة-المشتريات-QX71", by: "موظف mem", excerpt: text, read: false });
+      const note = (await bell(who)).find((n: any) => n.kind === "chat.mention" && n.body?.includes("CHATMENTION-1"));
+      expect(note).toMatchObject({ spaceId: f.spaces.S_plain, threadId: null, taskId: null });
+      // Nothing that reaches them carries the thread or the answer.
+      const seen = JSON.stringify([await inbox(who), await bell(who)]);
+      expect(seen).not.toContain(t);
+      if (answer) expect(seen).not.toContain(answer);
+      expect((await s.call("query", "chat:messages", { threadId: t }, tok(who))).ok).toBe(false);
+    }
+    // Outsiders, the workspace admin, a disabled account, me: nothing (and no error at send).
+    for (const who of ["out", "admin", "mem"]) {
+      expect(JSON.stringify(await inbox(who))).not.toContain("CHATMENTION-1");
+      expect(JSON.stringify(await bell(who))).not.toContain("CHATMENTION-1");
+    }
+  }, 30_000);
+
+  test("outside a shared space's chat, @person does nothing; losing access to the space hides the row and the notification", async () => {
+    const general = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: general, text: "CHATMENTION-2", people: [f.ids.mgr] }, tok("mem")));
+    const personal = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.P_mem }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: personal, text: "CHATMENTION-3", people: [f.ids.mgr] }, tok("mem")));
+    expect(JSON.stringify(await inbox("mgr"))).not.toMatch(/CHATMENTION-[23]/);
+    expect(JSON.stringify(await bell("mgr"))).not.toMatch(/CHATMENTION-[23]/);
+
+    must(await s.call("mutation", "spaces:addMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp, role: "reader" }, tok("mgr")));
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_sens }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: t, text: "CHATMENTION-4", people: [f.ids.tmp] }, tok("mem")));
+    expect((await inbox("tmp")).some((x: any) => x.excerpt === "CHATMENTION-4")).toBe(true);
+    expect((await bell("tmp")).some((n: any) => n.kind === "chat.mention" && n.body === "CHATMENTION-4")).toBe(true);
+    must(await s.call("mutation", "spaces:removeMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp }, tok("mgr")));
+    expect(JSON.stringify(await inbox("tmp"))).not.toContain("CHATMENTION-4");
+    expect(JSON.stringify(await bell("tmp"))).not.toContain("CHATMENTION-4");
+    expect(must(await s.call("query", "mentions:unreadCount", {}, tok("tmp")))).toBe(0);
+    // Too many people in one message is refused before anything is sent.
+    const t2 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    expect((await s.call("mutation", "chat:send", { threadId: t2, text: "x", people: Array.from({ length: 21 }, () => f.ids.mgr) }, tok("mem"))).ok).toBe(false);
+  }, 30_000);
+
+  // Per actor × space: the sender must be a named member who can read the space; the recipient
+  // (rdr, or mgr when rdr is the sender) gets the row only then.
+  for (const sp of SPACES) {
+    for (const a of ACTORS) {
+      const role = expectedAllowed(a, sp, "taskView"); // named member of a shared space
+      test(`chat:send with @person in a chat of ${sp} | ${a} → ${role ? "delivered" : "nothing"}`, async () => {
+        const marker = `CHATMENTION-M-${sp}-${a}`;
+        const target = a === "rdr" ? "mgr" : "rdr";
+        const created = await s.call("mutation", "chat:createThread", { spaceId: f.spaces[sp] }, tok(a));
+        check(created, expectedAllowed(a, sp, "read"));
+        if (created.ok) must(await s.call("mutation", "chat:send", { threadId: created.value, text: marker, people: [f.ids[target]] }, tok(a)));
+        expect((await inbox(target)).some((x: any) => x.excerpt === marker)).toBe(role);
+      }, 20_000);
+    }
+  }
+});
+
 // ---------------------------------------------------------------- scheduled tasks
 
 const daily = { kind: "daily", time: "08:00" };

@@ -43,6 +43,7 @@ function Feed({ onClose, go }: { onClose: () => void; go: (path: string) => void
                 if (n.threadId) go(`/chat/${n.threadId}`);
                 else if (n.scheduleId) go("/schedules");
                 else if (n.taskId) go(`/tasks/${n.taskId}`);
+                else if (n.spaceId) go(`/space/${n.spaceId}`);
                 onClose();
               }}
             >

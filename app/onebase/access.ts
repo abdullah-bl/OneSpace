@@ -173,6 +173,18 @@ export function canBeAssignee(role: SpaceRole | null): boolean {
   return role === "manager" || role === "member";
 }
 
+/** A named member of a shared space (a spaceMembers row, not "everyone") who can read it right now. */
+export async function namedReader(ctx: Ctx, userId: Id<"users">, space: Doc<"spaces">): Promise<boolean> {
+  if (space.kind !== "shared") return false;
+  const role = await currentSpaceRole(ctx, userId, space);
+  return role !== "everyone" && roleAllows(role, "read");
+}
+
+/** A task's assignees: its list, or the single assignee of a row written before tasks had several. */
+export function assigneesOf(task: Doc<"tasks">): Id<"users">[] {
+  return task.assigneeIds ?? (task.assigneeId ? [task.assigneeId] : []);
+}
+
 /** Throws Denied (same message as a missing space) unless `userId` may do `action` on tasks of the space. */
 export async function assertTaskCan(
   ctx: Ctx,

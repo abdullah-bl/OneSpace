@@ -108,15 +108,18 @@ export default defineSchema({
     .index("by_hash", ["tokenHash"])
     .index("by_expiry", ["expiresAt"]),
 
-  // Phase 3: a task lives in one shared space and is assigned to one of its members (manager or
-  // member). Links point at things in the same space only (checked when added and again when read).
+  // Phase 3: a task lives in one shared space and is assigned to some of its members (managers or
+  // members): one task shared by all its assignees, with one status. `assigneeIds` is the list;
+  // `assigneeId` is the single assignee of rows written before it (read by tasks.assigneesOf,
+  // cleared whenever the task's assignees are written). Links point at things in the same space only (checked when added and again when read).
   // threadId is the chat thread opened for the task (Phase 2); a generic string until chat exists.
   tasks: defineTable({
     spaceId: v.id("spaces"),
     title: v.string(),
     body: v.optional(v.string()),
     createdBy: v.id("users"),
-    assigneeId: v.id("users"),
+    assigneeId: v.optional(v.id("users")), // legacy single assignee (see above)
+    assigneeIds: v.optional(v.array(v.id("users"))),
     due: v.optional(v.number()),
     priority: taskPriority,
     status: taskStatus,
@@ -126,8 +129,7 @@ export default defineSchema({
     updatedAt: v.number(),
     closedAt: v.optional(v.number()),
   })
-    .index("by_space", ["spaceId"])
-    .index("by_assignee", ["assigneeId"]),
+    .index("by_space", ["spaceId"]),
 
   taskComments: defineTable({
     taskId: v.id("tasks"),
@@ -491,14 +493,17 @@ export default defineSchema({
 
   // ---- UX redesign: mentions inbox and scheduled tasks ----
 
-  // "@person" in a task comment. Shown in the mentioned person's "الإشارات" list only while they
-  // can still view the task (checked on every read, like notifications).
+  // "@person" in a task comment, or in a chat that belongs to a shared space (source "chat": only
+  // that one message's text is kept here; the thread stays private and is never linked). Shown in
+  // the mentioned person's "الإشارات" list only while they can still view the task / read the
+  // space (checked on every read, like notifications).
   mentions: defineTable({
     userId: v.id("users"), // who was mentioned
     byId: v.id("users"),
-    taskId: v.id("tasks"),
+    source: v.optional(v.literal("chat")), // none = a task comment
+    taskId: v.optional(v.id("tasks")),
     spaceId: v.id("spaces"),
-    commentId: v.id("taskComments"),
+    commentId: v.optional(v.id("taskComments")),
     excerpt: v.string(),
     createdAt: v.number(),
     readAt: v.optional(v.number()),

@@ -72,9 +72,9 @@ export async function buildFixture(s: Server): Promise<Fixture> {
   for (const sp of ["S_plain", "S_every", "S_sens"] as const) files[sp] = await addFile(s, tokens.mgr!, spaces[sp], FILE_NAMES[sp], `CONTENT-${sp}`);
   const tasks = {} as Record<SpaceKey, string>;
   for (const sp of ["S_plain", "S_every", "S_sens"] as const) {
-    tasks[sp] = must(await s.call("mutation", "tasks:create", { spaceId: spaces[sp], title: TASK_TITLES[sp], assigneeId: ids.mem }, tokens.mgr));
+    tasks[sp] = must(await s.call("mutation", "tasks:create", { spaceId: spaces[sp], title: TASK_TITLES[sp], assigneeIds: [ids.mem] }, tokens.mgr));
   }
-  const dead = must(await s.call("mutation", "tasks:create", { spaceId: spaces.S_plain, title: TASK_TITLES.P_mem, assigneeId: ids.mem }, tokens.mgr));
+  const dead = must(await s.call("mutation", "tasks:create", { spaceId: spaces.S_plain, title: TASK_TITLES.P_mem, assigneeIds: [ids.mem] }, tokens.mgr));
   must(await s.call("mutation", "tasks:remove", { taskId: dead }, tokens.mgr));
   tasks.P_mem = dead; // tasks can't live in a personal space: every call with this id must be denied
   must(await s.call("mutation", "admin:disable", { userId: ids.dis }, admin));

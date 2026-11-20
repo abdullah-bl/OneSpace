@@ -84,7 +84,7 @@ describe("✓ a space manager assigns a task, the employee is notified, attaches
     const log = must(await q("audit:list", { spaceId: f.spaces.S_plain }, "mgr"));
     const mineLog = log.filter((r: any) => r.resourceId === taskId);
     expect(mineLog.map((r: any) => r.action).sort()).toEqual(["task.assign", "task.close"]);
-    expect(mineLog.find((r: any) => r.action === "task.assign").detail).toMatchObject({ taskTitle: "تقرير-الربع-FL01", assigneeId: f.ids.mem });
+    expect(mineLog.find((r: any) => r.action === "task.assign").detail).toMatchObject({ taskTitle: "تقرير-الربع-FL01", assigneeIds: f.ids.mem });
 
     // markAllRead clears the bell.
     must(await m("notifications:markAllRead", {}, "mem"));
@@ -209,7 +209,7 @@ describe("✓ a task is seen only by members of its space, and can't be assigned
     expect(JSON.stringify(await feed("tmp"))).not.toContain("RM05");
     // the manager sees the assignee is no longer a member, and reassigns
     const row = must(await q("tasks:board", { spaceId: f.spaces.S_plain }, "mgr")).find((t: any) => t._id === taskId);
-    expect(row.assigneeActive).toBe(false);
+    expect(row.assignees).toEqual([{ userId: f.ids.tmp, name: "موظف tmp", active: false }]);
     must(await m("tasks:assign", { taskId, assigneeId: f.ids.mem }, "mgr"));
     must(await m("tasks:remove", { taskId }, "mgr"));
   });
@@ -335,4 +335,110 @@ describe("space instructions (the space as a project)", () => {
     // personal spaces have no instructions editor
     expect((await m("spaces:setInstructions", { spaceId: f.spaces.P_mem, instructions: "x" }, "mem")).ok).toBe(false);
   });
+});
+
+describe("one task, several assignees", () => {
+  const ACTORS = ["admin", "mgr", "mem", "rdr", "out", "pend", "dis", "tmp", "anon"];
+
+  test("each assignee is notified, sees it in «مهامي», works on it; the manager still reviews and closes", async () => {
+    must(await m("spaces:addMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp, role: "member" }, "mgr"));
+    const taskId = must(await m("tasks:create", { spaceId: f.spaces.S_plain, title: "مشتركة-MA01", assigneeIds: [f.ids.mem, f.ids.tmp, f.ids.mem] }, "mgr")) as string;
+    const row = must(await q("tasks:get", { taskId }, "rdr"));
+    expect(row.assigneeIds).toEqual([f.ids.mem, f.ids.tmp]); // repeats dropped, order kept
+    expect(row.assignees.map((a: any) => [a.name, a.active])).toEqual([["موظف mem", true], ["موظف tmp", true]]);
+    for (const who of ["mem", "tmp"]) {
+      expect((await feed(who)).some((n) => n.kind === "task.assigned" && n.taskId === taskId)).toBe(true);
+      expect(must(await q("tasks:mine", {}, who)).some((t: any) => t._id === taskId)).toBe(true);
+      const mine = must(await q("tasks:get", { taskId }, who));
+      expect(mine.isAssignee).toBe(true);
+      expect(mine.canAttach).toBe(true);
+    }
+    // Not an assignee: the reader, and the manager who isn't one (still manages it).
+    expect(must(await q("tasks:get", { taskId }, "rdr")).isAssignee).toBe(false);
+    expect(must(await q("tasks:mine", {}, "mgr")).some((t: any) => t._id === taskId)).toBe(false);
+
+    // Any assignee moves it forward and attaches; one shared status.
+    must(await m("tasks:setStatus", { taskId, status: "inProgress" }, "tmp"));
+    must(await m("tasks:addLink", { taskId, type: "file", id: f.files.S_plain }, "mem"));
+    must(await m("notifications:markAllRead", {}, "mgr"));
+    must(await m("tasks:setStatus", { taskId, status: "review" }, "mem"));
+    expect((await feed("mgr")).some((n) => n.kind === "task.review" && n.taskId === taskId && !n.read)).toBe(true);
+    // An assignee can't close it; the manager does, and every assignee hears.
+    expect((await m("tasks:setStatus", { taskId, status: "done" }, "tmp")).ok).toBe(false);
+    must(await m("tasks:setStatus", { taskId, status: "done" }, "mgr"));
+    for (const who of ["mem", "tmp"]) expect((await feed(who)).some((n) => n.kind === "task.closed" && n.taskId === taskId)).toBe(true);
+    must(await m("tasks:setStatus", { taskId, status: "inProgress" }, "mgr"));
+    for (const who of ["mem", "tmp"]) expect((await feed(who)).some((n) => n.kind === "task.returned" && n.taskId === taskId)).toBe(true);
+
+    // A comment by one assignee reaches the other assignee and the manager.
+    must(await m("tasks:comment", { taskId, body: "أنهيت الجزء الأول MA01-C" }, "tmp"));
+    expect((await feed("mem")).some((n) => n.kind === "task.comment" && n.body?.includes("MA01-C"))).toBe(true);
+    expect((await feed("mgr")).some((n) => n.kind === "task.comment" && n.body?.includes("MA01-C"))).toBe(true);
+    must(await m("tasks:remove", { taskId }, "mgr"));
+    must(await m("spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp }, "mgr"));
+  });
+
+  test("assign sets the whole list: only the added are notified, the removed lose the task's work, one audit row says who", async () => {
+    must(await m("spaces:addMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp, role: "member" }, "mgr"));
+    const taskId = must(await m("tasks:create", { spaceId: f.spaces.S_plain, title: "إعادة-إسناد-MA02", assigneeIds: [f.ids.mem] }, "mgr")) as string;
+    must(await m("notifications:markAllRead", {}, "mem"));
+    must(await m("tasks:assign", { taskId, assigneeIds: [f.ids.mem, f.ids.tmp] }, "mgr"));
+    expect((await feed("tmp")).some((n) => n.kind === "task.assigned" && n.taskId === taskId)).toBe(true);
+    expect((await feed("mem")).some((n) => n.kind === "task.assigned" && n.taskId === taskId && !n.read)).toBe(false); // already on it
+    // Same set again: nothing changes, nothing is logged.
+    must(await m("tasks:assign", { taskId, assigneeIds: [f.ids.tmp, f.ids.mem] }, "mgr"));
+    must(await m("tasks:assign", { taskId, assigneeIds: [f.ids.tmp] }, "mgr"));
+    expect(must(await q("tasks:mine", {}, "mem")).some((t: any) => t._id === taskId)).toBe(false);
+    expect(must(await q("tasks:get", { taskId }, "mem")).isAssignee).toBe(false); // still a member: views, can't work
+    expect((await m("tasks:setStatus", { taskId, status: "inProgress" }, "mem")).ok).toBe(false);
+    expect((await m("tasks:addLink", { taskId, type: "file", id: f.files.S_plain }, "mem")).ok).toBe(false);
+    must(await m("tasks:setStatus", { taskId, status: "inProgress" }, "tmp"));
+
+    const log = must(await q("audit:list", { spaceId: f.spaces.S_plain }, "mgr")).filter((r: any) => r.resourceId === taskId && r.action === "task.assign");
+    expect(log.length).toBe(3); // created, +tmp, −mem
+    const details = log.map((r: any) => r.detail);
+    expect(details).toContainEqual(expect.objectContaining({ assigneeIds: `${f.ids.mem},${f.ids.tmp}`, added: f.ids.tmp, removed: null, from: f.ids.mem }));
+    expect(details).toContainEqual(expect.objectContaining({ assigneeIds: f.ids.tmp, assigneeNames: "موظف tmp", added: null, removed: f.ids.mem }));
+    must(await m("tasks:remove", { taskId }, "mgr"));
+    must(await m("spaces:removeMember", { spaceId: f.spaces.S_plain, userId: f.ids.tmp }, "mgr"));
+  });
+
+  test("every assignee must be a manager or member; an empty or oversized list is refused; the old single assigneeId still works", async () => {
+    const base = { spaceId: f.spaces.S_plain, title: "x" };
+    expect((await m("tasks:create", { ...base, assigneeIds: [] }, "mgr")).ok).toBe(false);
+    expect((await m("tasks:create", base, "mgr")).ok).toBe(false);
+    expect((await m("tasks:create", { ...base, assigneeIds: Array(21).fill(f.ids.mem).map((x, i) => (i ? f.ids.mgr : x)) }, "mgr")).ok).toBe(true); // 21 entries, 2 people
+    for (const target of ["out", "rdr", "pend", "dis", "admin"]) {
+      expect((await m("tasks:create", { ...base, assigneeIds: [f.ids.mem, f.ids[target]] }, "mgr")).ok).toBe(false);
+      expect((await m("tasks:assign", { taskId: f.tasks.S_plain, assigneeIds: [f.ids.mem, f.ids[target]] }, "mgr")).ok).toBe(false);
+    }
+    expect((await m("tasks:assign", { taskId: f.tasks.S_plain, assigneeIds: [] }, "mgr")).ok).toBe(false);
+    expect(must(await q("tasks:get", { taskId: f.tasks.S_plain }, "mgr")).assigneeIds).toEqual([f.ids.mem]); // untouched
+    const legacy = must(await m("tasks:create", { ...base, title: "قديم-MA03", assigneeId: f.ids.mem }, "mgr")) as string;
+    expect(must(await q("tasks:get", { taskId: legacy }, "mem")).assigneeIds).toEqual([f.ids.mem]);
+    for (const t of must(await q("tasks:board", { spaceId: f.spaces.S_plain }, "mgr"))) if (t.title === "x" || t.title === "قديم-MA03") must(await m("tasks:remove", { taskId: t._id }, "mgr"));
+  });
+
+  // Per actor: who may set a list of assignees, and who may then work on the task.
+  for (const a of ACTORS) {
+    const manages = a === "mgr";
+    test(`tasks:create / tasks:assign with several assignees | ${a} → ${manages ? "allowed" : "denied"}`, async () => {
+      const r = await m("tasks:create", { spaceId: f.spaces.S_plain, title: `قائمة-${a}`, assigneeIds: [f.ids.mem, f.ids.mgr] }, a);
+      expect(r.ok).toBe(manages);
+      if (r.ok) must(await m("tasks:remove", { taskId: r.value }, "mgr"));
+      else if (!["pend", "dis", "anon"].includes(a)) expect(r.error).toContain(NOT_FOUND); // same answer as a missing space
+      const re = await m("tasks:assign", { taskId: f.tasks.S_plain, assigneeIds: [f.ids.mem, f.ids.mgr] }, a);
+      expect(re.ok).toBe(manages);
+      if (re.ok) must(await m("tasks:assign", { taskId: f.tasks.S_plain, assigneeIds: [f.ids.mem] }, "mgr"));
+    });
+    // On a task assigned to mem and mgr: both work on it; readers, outsiders and inactive accounts can't.
+    const works = a === "mem" || a === "mgr";
+    test(`an assignee among several moves the task forward | ${a} → ${works ? "allowed" : "denied"}`, async () => {
+      const taskId = must(await m("tasks:create", { spaceId: f.spaces.S_plain, title: `عمل-${a}`, assigneeIds: [f.ids.mem, f.ids.mgr] }, "mgr")) as string;
+      expect((await m("tasks:setStatus", { taskId, status: "inProgress" }, a)).ok).toBe(works);
+      const mine = await q("tasks:mine", {}, a);
+      if (mine.ok) expect(mine.value.some((t: any) => t._id === taskId)).toBe(works);
+      must(await m("tasks:remove", { taskId }, "mgr"));
+    });
+  }
 });

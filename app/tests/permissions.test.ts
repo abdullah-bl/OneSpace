@@ -145,7 +145,7 @@ const OPS: Op[] = [
     name: "tasks:create",
     need: "taskManage",
     run: async (a, sp) => {
-      const r = await s.call("mutation", "tasks:create", { spaceId: f.spaces[sp], title: "مهمة اختبار", assigneeId: f.ids.mem, priority: "high", due: Date.now() + 86_400_000 }, tok(a));
+      const r = await s.call("mutation", "tasks:create", { spaceId: f.spaces[sp], title: "مهمة اختبار", assigneeIds: [f.ids.mem, f.ids.mgr], priority: "high", due: Date.now() + 86_400_000 }, tok(a));
       if (r.ok) must(await s.call("mutation", "tasks:remove", { taskId: r.value }, tok("mgr")));
       return r;
     },
@@ -158,7 +158,7 @@ const OPS: Op[] = [
   {
     name: "tasks:assign",
     need: "taskManage",
-    run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:assign", { taskId, assigneeId: f.ids.mgr }, tok(a))),
+    run: (a, sp) => withTask(sp, async (taskId) => s.call("mutation", "tasks:assign", { taskId, assigneeIds: [f.ids.mgr, f.ids.mem] }, tok(a))),
   },
   {
     name: "tasks:setStatus (new → inProgress)",
@@ -210,7 +210,7 @@ const OPS: Op[] = [
 /** Runs `fn` on a fresh task in the space (mgr creates it for mem, removes it after). P_mem: a dead id. */
 async function withTask(sp: SpaceKey, fn: (taskId: string) => Promise<Result>): Promise<Result> {
   if (sp === "P_mem") return fn(f.tasks.P_mem);
-  const taskId = must(await s.call("mutation", "tasks:create", { spaceId: f.spaces[sp], title: "مهمة مؤقتة", assigneeId: f.ids.mem }, tok("mgr")));
+  const taskId = must(await s.call("mutation", "tasks:create", { spaceId: f.spaces[sp], title: "مهمة مؤقتة", assigneeIds: [f.ids.mem] }, tok("mgr")));
   try {
     return await fn(taskId);
   } finally {
