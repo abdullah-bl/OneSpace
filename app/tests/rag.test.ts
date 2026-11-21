@@ -16,7 +16,8 @@ const tok = (a: string) => (f.tokens as any)[a] as string;
 
 beforeAll(async () => {
   ai = startFakeAI();
-  s = await new Server(undefined, aiEnv(ai)).start();
+  // Small OCR settings so the batched OCR (several steps, a page limit) shows with a few pages.
+  s = await new Server(undefined, aiEnv(ai, { OCR_MAX_PAGES: "5", OCR_BATCH_PAGES: "2", OCR_CONCURRENCY: "2" })).start();
   f = await buildFixture(s);
 }, 60_000);
 
@@ -84,6 +85,28 @@ describe("ingestion: every type gets a visible status and lands in the index", (
     expect(oc.page).toBe(3);
     expect(ai.requests.some((r) => JSON.stringify(r.body).includes("image_url"))).toBe(true);
     expect(OCR_TEXT).toContain("OCRWORD-4471");
+  });
+
+  test("scanned pages are read in batches up to the page limit, and a retry reuses the pages already read", async () => {
+    const images = () => ai.requests.filter((r) => JSON.stringify(r.body).includes("image_url")).length;
+    const before = images();
+    const bytes = pdf([["Scanned archive BATCHKEY-5150 cover page."], "SCAN", "SCAN", "SCAN", "SCAN", "SCAN", "SCAN", "SCAN"]);
+    const id = await addBytes(s, tok("mgr"), f.spaces.S_every, "archive-scan.pdf", bytes, "application/pdf");
+    const st = await waitIngest(s, tok("mgr"), f.spaces.S_every, id);
+    // 7 scanned pages, limit 5: read in 3 batches (2+2+1), the rest noted on the file.
+    expect(st).toMatchObject({ state: "ready", kind: "pdf", ocr: true, pages: 8, note: "قُرئت أول 5 صفحة ممسوحة فقط", ocrProgress: null });
+    expect(images() - before).toBe(5);
+    const t = await newThread(s, tok("out"));
+    const a = await ask(s, tok("out"), t, "OCRWORD-4471 لائحة الأرشفة");
+    const pages = a.citations.filter((c: any) => c.fileId === id).map((c: any) => c.page);
+    expect(pages.length).toBeGreaterThan(0);
+    for (const p of pages) expect(p).toBeGreaterThanOrEqual(2);
+
+    // Retry (same version): the saved pages are used, nothing is sent to the vision model again.
+    const mid = images();
+    must(await s.call("mutation", "ingest:retry", { fileId: id }, tok("mgr")));
+    expect(await waitIngest(s, tok("mgr"), f.spaces.S_every, id)).toMatchObject({ state: "ready", ocr: true });
+    expect(images()).toBe(mid);
   });
 
   test("Excel is described (sheets, columns, rows), not chunked as text", async () => {

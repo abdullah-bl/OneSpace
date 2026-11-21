@@ -373,7 +373,9 @@ export default defineSchema({
     spaceId: v.id("spaces"),
     version: v.number(),
     state: v.union(v.literal("pending"), v.literal("processing"), v.literal("ready"), v.literal("failed"), v.literal("skipped")),
-    step: v.optional(v.string()), // "extract" | "embed": shown while processing
+    step: v.optional(v.string()), // "extract" | "ocr" | "embed": shown while processing
+    ocrDone: v.optional(v.number()), // batched OCR progress: scanned pages read so far …
+    ocrTotal: v.optional(v.number()), // … of this many
     error: v.optional(v.string()),
     kind: v.optional(v.string()), // pdf | docx | sheet | text | image | unsupported
     ocr: v.boolean(), // some pages were read by the vision model (lower accuracy)
@@ -388,6 +390,16 @@ export default defineSchema({
     guardedVersion: v.optional(v.number()),
     updatedAt: v.number(),
   }).index("by_file", ["fileId"]),
+
+  // Text the vision model read from a scanned PDF page, saved page by page as the batched OCR
+  // steps go (ingest.ts), so a failed or restarted ingest continues instead of reading again.
+  // Kept for the file's current version (a re-index doesn't re-read); other versions are removed.
+  ocrPages: defineTable({
+    fileId: v.id("files"),
+    version: v.number(),
+    page: v.number(),
+    text: v.string(),
+  }).index("by_file_version_page", ["fileId", "version", "page"]),
 
   // The chunks of every indexed file, with a normalized "shadow" copy for Arabic keyword search
   // (the rag component holds the vectors). Searched only with a spaceId filter (= namespace).
