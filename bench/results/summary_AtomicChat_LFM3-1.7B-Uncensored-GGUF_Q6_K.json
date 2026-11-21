@@ -1,0 +1,70 @@
+{
+ "model": "AtomicChat/LFM3-1.7B-Uncensored-GGUF:Q6_K",
+ "chats": [
+  {
+   "id": "project",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    2931,
+    4194,
+    4843,
+    4784,
+    4750,
+    5805,
+    5099
+   ],
+   "chars": 1759,
+   "passed": 6,
+   "of": 8,
+   "missed": [
+    "budget-old-gone",
+    "open"
+   ]
+  },
+  {
+   "id": "hr",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    1898,
+    3818,
+    4875,
+    6602,
+    11674,
+    8735,
+    11421
+   ],
+   "chars": 3833,
+   "passed": 7,
+   "of": 7,
+   "missed": []
+  },
+  {
+   "id": "finance",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    2391,
+    3671,
+    4888,
+    6592,
+    8080,
+    7225,
+    7229
+   ],
+   "chars": 2477,
+   "passed": 7,
+   "of": 7,
+   "missed": []
+  }
+ ],
+ "passed": 20,
+ "of": 22,
+ "foldMs": {
+  "n": 21,
+  "p50": 4888,
+  "p90": 8735,
+  "max": 11674
+ }
+}
