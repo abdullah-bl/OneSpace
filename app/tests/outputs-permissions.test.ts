@@ -194,6 +194,19 @@ const OPS: Op[] = [
     spaces: SPACES,
     run: (a, sp) => s.call("mutation", "records:createSet", { spaceId: f.spaces[sp], name: "x", columns: COLUMNS, subjectColumn: "nid", subjectKind: "nationalId" }, tok(a)),
   },
+  { name: "records:analyzeFile", need: "manage", spaces: SPACES, run: (a, sp) => s.call("action", "records:analyzeFile", { spaceId: f.spaces[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
+  {
+    name: "records:createFromFile",
+    need: "manage",
+    spaces: SPACES,
+    run: (a, sp) =>
+      s.call(
+        "action",
+        "records:createFromFile",
+        { spaceId: f.spaces[sp], name: "x", fileName: "a.xlsx", dataBase64: xlsx, columns: [{ header: "رقم الهوية", type: "text", required: true }, { header: "الدورة", type: "text", required: true }], ownerHeader: "رقم الهوية", ownerKind: "nationalId", uniqueBy: ["رقم الهوية", "الدورة"] },
+        tok(a),
+      ),
+  },
   { name: "records:previewImport", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "records:previewImport", { recordSetId: o.sets[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
   { name: "records:commitImport", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "records:commitImport", { recordSetId: o.sets[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
   {

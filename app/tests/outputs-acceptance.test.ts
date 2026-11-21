@@ -102,6 +102,101 @@ describe("✓ an Excel file with missing columns or duplicate rows is rejected w
   });
 });
 
+describe("plans/17: a record set starts from the file, and the manager only chooses", () => {
+  const analyze = async (data: string, token = T("mgr")) => s.call("action", "records:analyzeFile", { spaceId: f.spaces.S_plain, fileName: "دورات_الموظفين.xlsx", dataBase64: data }, token);
+
+  test("analyzeFile guesses types, the owner column (with how many ids are accounts) and uniqueness; writes nothing", async () => {
+    const before = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    const a = must(await analyze(await xlsxBase64(COURSE_HEADERS, COURSE_ROWS)));
+    expect(a.ok).toBe(true);
+    expect(a.name).toBe("دورات الموظفين");
+    expect(a.rowCount).toBe(4);
+    expect(a.columns.map((c: any) => [c.header, c.type, c.required, c.idLike])).toEqual([
+      ["رقم الهوية", "text", true, true],
+      ["الاسم", "text", true, false],
+      ["الدورة", "text", true, false],
+      ["تاريخ الإتمام", "date", true, false],
+      ["الساعات", "number", true, false],
+    ]);
+    // mem and out have this national id on their accounts; ghost has none.
+    expect(a.owner).toEqual({ header: "رقم الهوية", kind: "nationalId", matched: 2, distinct: 3 });
+    expect(a.uniqueBy).toEqual(["رقم الهوية", "الدورة"]);
+    expect(must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length).toBe(before);
+  });
+
+  test("an empty or unreadable file comes back as errors, not a guess", async () => {
+    expect(must(await analyze(await xlsxBase64(COURSE_HEADERS, [])))).toMatchObject({ ok: false, errors: ["الملف لا يحوي أي صف بيانات"] });
+    expect(must(await analyze(Buffer.from("hello").toString("base64"))).ok).toBe(false);
+  });
+
+  test("createFromFile: only the chosen columns, generated keys, version 1, and the owner sees their rows", async () => {
+    const data = await xlsxBase64(COURSE_HEADERS, COURSE_ROWS);
+    const r = must(
+      await s.call(
+        "action",
+        "records:createFromFile",
+        {
+          spaceId: f.spaces.S_plain,
+          name: "من ملف",
+          fileName: "c.xlsx",
+          dataBase64: data,
+          columns: [
+            { header: "رقم الهوية", type: "text", required: true },
+            { header: "الدورة", type: "text", required: true },
+            { header: "تاريخ الإتمام", type: "date", required: true },
+          ],
+          ownerHeader: "رقم الهوية",
+          ownerKind: "nationalId",
+          uniqueBy: ["الدورة"],
+        },
+        T("mgr"),
+      ),
+    );
+    expect(r).toMatchObject({ ok: true, version: 1, rowCount: 4 });
+    const set = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).find((x: any) => x._id === r.recordSetId);
+    expect(set.columns.map((c: any) => [c.key, c.header])).toEqual([["c1", "رقم الهوية"], ["c2", "الدورة"], ["c3", "تاريخ الإتمام"]]);
+    expect(set.subjectColumn).toBe("c1");
+    expect(set.uniqueBy).toEqual(["c1", "c2"]);
+    const mine = must(await s.call("query", "records:mine", {}, T("mem")));
+    const rows = mine.sets.find((x: any) => x.recordSetId === r.recordSetId).rows.map((x: any) => x.data);
+    expect(rows).toEqual([
+      { c1: IDS.mem, c2: "إدارة المشاريع", c3: "2026-01-15" },
+      { c1: IDS.mem, c2: "Excel المتقدم", c3: "2026-03-02" },
+    ]);
+  });
+
+  test("a file that fails the chosen definition creates nothing and lists every error", async () => {
+    const before = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    const data = await xlsxBase64(COURSE_HEADERS, COURSE_ROWS);
+    const r = must(
+      await s.call(
+        "action",
+        "records:createFromFile",
+        {
+          spaceId: f.spaces.S_plain,
+          name: "مكرر",
+          fileName: "c.xlsx",
+          dataBase64: data,
+          columns: [{ header: "رقم الهوية", type: "text", required: true }, { header: "الاسم", type: "number", required: true }],
+          ownerHeader: "رقم الهوية",
+          ownerKind: "nationalId",
+          uniqueBy: [],
+        },
+        T("mgr"),
+      ),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e: string) => e.includes("مكرر"))).toBe(true);
+    expect(r.errors.some((e: string) => e.includes('"الاسم" ليست رقم'))).toBe(true);
+    expect(must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length).toBe(before);
+  });
+
+  test("a member who doesn't manage the space can't analyze or create", async () => {
+    const data = await xlsxBase64(COURSE_HEADERS, COURSE_ROWS);
+    expect((await analyze(data, T("mem"))).ok).toBe(false);
+  });
+});
+
 describe("✓ an employee asking for their courses gets only their own records, even if they claim another identity in the chat", () => {
   test("my_records takes no identity argument at all", () => {
     expect(tools.my_records!.parameters).toEqual({ type: "object", additionalProperties: false, properties: {} });
@@ -112,8 +207,8 @@ describe("✓ an employee asking for their courses gets only their own records, 
     const parsed = JSON.parse(r.content);
     const rows = parsed.records.flatMap((x: any) => x.rows);
     expect(parsed.records.length).toBeGreaterThanOrEqual(3); // one per record set that has mem in it
-    expect(rows.every((row: any) => row.nid === IDS.mem)).toBe(true);
-    expect(new Set(rows.map((row: any) => row.course))).toEqual(new Set(["Excel المتقدم", "إدارة المشاريع"]));
+    expect(rows.every((row: any) => (row.nid ?? row.c1) === IDS.mem)).toBe(true); // c1: sets created from a file (plans/17)
+    expect(new Set(rows.map((row: any) => row.course ?? row.c2))).toEqual(new Set(["Excel المتقدم", "إدارة المشاريع"]));
     expect(r.content).not.toContain(IDS.out);
     expect(r.content).not.toContain("GH77");
     expect(parsed.documents.length).toBe(3); // the certificates issued to mem
