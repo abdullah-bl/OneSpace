@@ -201,6 +201,26 @@ File search stores one vector per passage, of the size `EMBED_DIMENSIONS` in `.e
 - **Model size:** the embedding model you choose must give vectors of that size, or be able to shorten them. The app tests this before saving.
 - **Changing the model later:** files must be indexed again. On «مزوّدو النماذج» that is the «أعد الفهرسة» button, and file search pauses until it finishes.
 
+## System tools the app needs
+
+The app server runs a few programs for files and certificates. The Docker image (`app/Dockerfile`) installs them already. If you run the app without Docker (`bun` on the machine itself), install the same packages. On Debian or Ubuntu:
+
+```bash
+sudo apt-get install --no-install-recommends libreoffice-writer-nogui libreoffice-calc-nogui poppler-utils unzip fontconfig fonts-hosny-amiri fonts-noto-core fonts-kacst-one
+```
+
+| Tool | Package | Used for |
+|---|---|---|
+| `soffice` (LibreOffice, headless) | `libreoffice-writer-nogui`, `libreoffice-calc-nogui` | Reading .doc, .odt, .rtf, .xls and .ods files; turning Word certificate templates into PDF |
+| `pdftotext`, `pdftoppm`, `pdfinfo` | `poppler-utils` | Reading PDFs, rendering scanned pages for OCR, certificate previews |
+| `unzip` | `unzip` | Reading the contents of .docx and .xlsx files |
+| `fc-list` | `fontconfig` | Warning when a Word template uses a font the server doesn't have |
+| Arabic fonts | `fonts-hosny-amiri`, `fonts-noto-core`, `fonts-kacst-one` | Certificates print with the right Arabic font (the sample template uses Amiri) |
+
+- **Set `SAL_DISABLE_CUPS=1`** in the app's environment. Without it, LibreOffice waits about 25 seconds per Word file looking for a printer service. The Docker image sets it.
+- **A template needs a font the server lacks:** LibreOffice swaps in another font, so the certificate looks different. Install the font on the server (on Docker, add its package to `app/Dockerfile`), then run `fc-cache -f`.
+- **PowerPoint files** (.ppt, .pptx) aren't converted today. If that changes, add `libreoffice-impress-nogui`.
+
 ## Checking it works
 
 1. **«مزوّدو النماذج»:** each provider shows «يعمل», and each role card names a model. Pressing «جرّب واحفظ» on a role tests it again.
