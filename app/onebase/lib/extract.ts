@@ -38,8 +38,8 @@ export function kindOf(name: string, mime: string): Kind | "convert" {
   return "unsupported";
 }
 
-async function run(cmd: string[], timeoutMs = 120_000): Promise<{ code: number; out: Uint8Array; err: string }> {
-  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+async function run(cmd: string[], timeoutMs = 120_000, env?: Record<string, string>): Promise<{ code: number; out: Uint8Array; err: string }> {
+  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...(env ? { env: { ...process.env, ...env } } : {}) });
   const timer = setTimeout(() => proc.kill(), timeoutMs);
   const [out, err] = await Promise.all([new Response(proc.stdout).arrayBuffer(), new Response(proc.stderr).text()]);
   const code = await proc.exited;
@@ -332,7 +332,8 @@ export async function extract(
     writeFileSync(path, bytes);
     if (kind === "convert") {
       const to = ["xls", "ods"].includes(ext) ? "xlsx" : "docx";
-      const r = await run(["soffice", "--headless", `-env:UserInstallation=file://${dir}/lo`, "--convert-to", to, "--outdir", dir, path], 180_000);
+      // SAL_DISABLE_CUPS: without it LibreOffice waits ~25 s on the printer service when importing .odt, .rtf and .ods.
+      const r = await run(["soffice", "--headless", "--norestore", `-env:UserInstallation=file://${dir}/lo`, "--convert-to", to, "--outdir", dir, path], 180_000, { SAL_DISABLE_CUPS: "1" });
       const out = join(dir, `in.${to}`);
       if (r.code !== 0) throw new Error("تعذّر تحويل الملف بـLibreOffice");
       path = out;
