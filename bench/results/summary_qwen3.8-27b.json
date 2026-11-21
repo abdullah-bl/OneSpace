@@ -1,0 +1,73 @@
+{
+ "model": "qwen3.8-27b",
+ "chats": [
+  {
+   "id": "project",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    17197,
+    25692,
+    27799,
+    32733,
+    32606,
+    33415,
+    33766
+   ],
+   "chars": 1082,
+   "passed": 8,
+   "of": 8,
+   "missed": []
+  },
+  {
+   "id": "hr",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    12799,
+    20705,
+    23841,
+    27435,
+    31076,
+    14054,
+    14860
+   ],
+   "chars": 471,
+   "passed": 2,
+   "of": 7,
+   "missed": [
+    "salary",
+    "deadline",
+    "interviewer",
+    "decision",
+    "analyst"
+   ]
+  },
+  {
+   "id": "finance",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    16693,
+    27983,
+    29601,
+    36810,
+    38994,
+    41124,
+    43362
+   ],
+   "chars": 1408,
+   "passed": 7,
+   "of": 7,
+   "missed": []
+  }
+ ],
+ "passed": 17,
+ "of": 22,
+ "foldMs": {
+  "n": 21,
+  "p50": 27983,
+  "p90": 38994,
+  "max": 43362
+ }
+}

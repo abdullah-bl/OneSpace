@@ -19,7 +19,7 @@ export const SECTION_TITLES: Record<keyof SummarySections, string> = {
 export const CHARS_PER_TOKEN = 3;
 /** A message longer than this goes into the history cut, with a note; the chat keeps it whole. */
 export const LONG_MESSAGE_CHARS = 6000;
-export const SUMMARY_MAX_CHARS = 3000;
+export const SUMMARY_MAX_CHARS = 4000;
 const ITEM_CHARS = 300;
 const MAX_ITEMS = 20;
 
@@ -62,18 +62,19 @@ const clean = (s: unknown, n = ITEM_CHARS) =>
     .replace(/\s+/g, " ")
     .trim()
     .slice(0, n);
+// Over MAX_ITEMS, the newest stay: a fold appends what the new messages added after the old items.
 const list = (x: unknown) =>
-  [...new Set((Array.isArray(x) ? x : typeof x === "string" && x ? [x] : []).map((i) => clean(i)).filter(Boolean))].slice(0, MAX_ITEMS);
+  [...new Set((Array.isArray(x) ? x : typeof x === "string" && x ? [x] : []).map((i) => clean(i)).filter(Boolean))].slice(-MAX_ITEMS);
 
 /** Sections from a model's JSON (or an edit), cleaned and fitted into SUMMARY_MAX_CHARS. */
 export function cleanSections(x: any): SummarySections {
   const s: SummarySections = { topics: clean(x?.topics, 800), facts: list(x?.facts), decisions: list(x?.decisions), open: list(x?.open), outputs: list(x?.outputs) };
-  // Over the cap: drop from the least needed first (outputs, then open items, then the topics
-  // sentence), keeping facts and decisions as long as possible.
+  // Over the cap: the topics sentence is cut first, then the oldest facts, then the oldest
+  // decisions. Outputs (mostly from code) and open items are few and what a later turn needs, so
+  // they go last (bench/summary: a small model fills «facts» with chit-chat).
   const size = () => renderSummary(s).length;
-  for (const key of ["outputs", "open"] as const) while (size() > SUMMARY_MAX_CHARS && s[key].length) s[key].pop();
-  if (size() > SUMMARY_MAX_CHARS) s.topics = s.topics.slice(0, Math.max(0, s.topics.length - (size() - SUMMARY_MAX_CHARS)));
-  for (const key of ["facts", "decisions"] as const) while (size() > SUMMARY_MAX_CHARS && s[key].length) s[key].shift();
+  if (size() > SUMMARY_MAX_CHARS) s.topics = s.topics.slice(0, Math.max(200, s.topics.length - (size() - SUMMARY_MAX_CHARS)));
+  for (const key of ["facts", "decisions", "open", "outputs"] as const) while (size() > SUMMARY_MAX_CHARS && s[key].length) s[key].shift();
   return s;
 }
 
@@ -135,6 +136,29 @@ export function parseSummary(text: string): SummarySections | null {
   } catch {
     return null;
   }
+}
+
+/**
+ * What the chat's tools did, known by code rather than by the model: one line per executed action
+ * (a list made, a file exported, a message sent). The small summary model often drops these
+ * (bench/summary), so they are added after each fold. Links and ids are left out.
+ */
+export function outputLine(a: { tool: string; label: string; display?: string | null; args?: any }): string | null {
+  const text = (a.display ?? "")
+    .replace(/#\/\S+/g, "")
+    .replace(/\s*[a-z0-9]{18,}\s*/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  const title = typeof a.args?.title === "string" ? a.args.title.trim() : "";
+  const line = text || (title ? `${a.label.replace(/…$/, "")}: «${title}»` : "");
+  return line ? line.slice(0, 200) : null;
+}
+
+/** The fold's sections plus the outputs code recorded for the folded messages (newest last, no repeats). */
+export function withCodeOutputs(s: SummarySections, outputs: string[]): SummarySections {
+  if (!outputs.length) return s;
+  const have = new Set(s.outputs);
+  return cleanSections({ ...s, outputs: [...s.outputs, ...outputs.filter((o) => !have.has(o))] });
 }
 
 /** A summary saved before sections existed: its text as the topics. */

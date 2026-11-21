@@ -7,7 +7,7 @@ import { Server, must } from "./harness";
 import { buildFixture, SPACES, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
 import { ask, waitIngest } from "./rag-helpers";
-import { capForHistory, cleanSections, historyWindow, parseSummary, renderSummary, sectionsOf, SUMMARY_MAX_CHARS, summaryPrompt } from "../onebase/lib/chatSummary";
+import { capForHistory, cleanSections, historyWindow, outputLine, parseSummary, renderSummary, sectionsOf, SUMMARY_MAX_CHARS, summaryPrompt, withCodeOutputs } from "../onebase/lib/chatSummary";
 
 describe("history budget and summary (unit)", () => {
   test("the window keeps the newest messages that fit, at least 4 and at most maxKeep", () => {
@@ -26,6 +26,18 @@ describe("history budget and summary (unit)", () => {
     expect(historyWindow(small, 29, 0, 1000, { maxLag: 12 }).start).toBe(17);
   });
 
+  test("what the chat's actions made comes from the records: no links or ids, no repeats, kept when the model drops it", () => {
+    expect(outputLine({ tool: "create_list", label: "ينشئ قائمة…", display: "أُنشئت القائمة «مهام البوابة» في مساحتي (0 صف). #/list/ezebc3rw3jg7ds9gp71t" })).toBe("أُنشئت القائمة «مهام البوابة» في مساحتي (0 صف).");
+    expect(outputLine({ tool: "create_artifact", label: "ينشئ مخرجاً…", args: { title: "إعلان الوظائف" } })).toBe("ينشئ مخرجاً: «إعلان الوظائف»");
+    expect(outputLine({ tool: "x", label: "y" })).toBeNull();
+    const s = withCodeOutputs({ topics: "t", facts: [], decisions: [], open: [], outputs: ["أ"] }, ["أ", "ب"]);
+    expect(s.outputs).toEqual(["أ", "ب"]);
+    // Over the cap, the newest stay.
+    const many = cleanSections({ topics: "", facts: Array.from({ length: 25 }, (_, i) => `حقيقة ${i}`), decisions: [], open: [], outputs: [] });
+    expect(many.facts.at(-1)).toBe("حقيقة 24");
+    expect(many.facts).not.toContain("حقيقة 0");
+  });
+
   test("a very long message goes in cut, with a pointer to read_chat", () => {
     const t = "ن".repeat(20_000);
     const c = capForHistory(t);
@@ -34,14 +46,15 @@ describe("history budget and summary (unit)", () => {
     expect(capForHistory("قصير")).toBe("قصير");
   });
 
-  test("sections are cleaned and fitted: facts and decisions are kept longest", () => {
-    const many = (p: string) => Array.from({ length: 20 }, (_, i) => `${p} ${i} ${"x".repeat(120)}`);
-    const s = cleanSections({ topics: "موضوع", facts: many("حقيقة"), decisions: many("قرار"), open: many("مفتوح"), outputs: many("مخرج") });
+  test("sections are cleaned and fitted: outputs and open items are kept longest, the oldest facts go first", () => {
+    const many = (p: string, n = 20) => Array.from({ length: n }, (_, i) => `${p} ${i} ${"x".repeat(120)}`);
+    const s = cleanSections({ topics: "موضوع", facts: many("حقيقة"), decisions: many("قرار", 5), open: many("مفتوح", 3), outputs: many("مخرج", 3) });
     expect(renderSummary(s).length).toBeLessThanOrEqual(SUMMARY_MAX_CHARS);
-    expect(s.outputs.length).toBe(0);
-    expect(s.open.length).toBe(0);
-    expect(s.facts.length).toBeGreaterThan(0);
-    expect(s.decisions.length).toBeGreaterThan(0);
+    expect(s.outputs.length).toBe(3);
+    expect(s.open.length).toBe(3);
+    expect(s.decisions.length).toBe(5);
+    expect(s.facts.length).toBeLessThan(20);
+    expect(s.facts.at(-1)).toContain("حقيقة 19");
     expect(parseSummary("not json")).toBeNull();
     expect(parseSummary('{"topics":"","facts":[],"decisions":[],"open":[],"outputs":[]}')).toBeNull();
     expect(parseSummary('```json\n{"topics":"t","facts":["الميزانية 40 ألف"],"decisions":[],"open":[],"outputs":[]}\n```')?.facts).toEqual(["الميزانية 40 ألف"]);
@@ -151,6 +164,27 @@ describe("long chats", () => {
       must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
     }
   }, 60_000);
+
+  test("a list made early in the chat stays in the summary's outputs, from the records", async () => {
+    const LIST = { title: "قائمة الملخص LCOUT-1", columns: [{ name: "البند", type: "text" }], rows: [{ البند: "أ" }] };
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: `CALL_TOOL create_list ${JSON.stringify(LIST)}` }, tok("mgr")));
+    const t3 = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, t3, "سوّ لي قائمة OUTQ-1");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    // A list in a shared space is a card: «نفّذ» makes it an executed action of that answer.
+    const card = must(await s.call("query", "chat:messages", { threadId: t3 }, tok("mem"))).messages.flatMap((m: any) => m.proposals ?? []).find((p: any) => p.tool === "create_list");
+    expect(must(await s.call("action", "chat:confirmProposal", { proposalId: card.id }, tok("mem"))).ok).toBe(true);
+    for (let i = 2; i <= 7; i++) {
+      await ask(s, tok("mem")!, t3, `سؤال ${i} OUTQ-${i} ${"تفصيل ".repeat(20)}`);
+      await Bun.sleep(120);
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: t3 }, tok("mem")));
+    expect(view.summary.sections.outputs.join(" ")).toContain("قائمة الملخص LCOUT-1");
+    expect(view.summary.sections.outputs.join(" ")).not.toContain("#/list/");
+  }, 120_000);
 
   test("one very long message goes into the next turns cut; the chat keeps it whole", async () => {
     const t2 = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));

@@ -16,6 +16,8 @@ const STATE: Record<TeamTo["state"], (name: string) => string> = {
   self: (n) => `يتولاها ${n}`,
   done: (n) => `أنهاها ${n}`,
 };
+// The same states about me, in the second person («بانتظارك»، not «بانتظار أنت»).
+const MY_STATE: Record<TeamTo["state"], string> = { pending: "بانتظارك", assistant: "سلّمتها للمساعد", self: "تتولاها", done: "أنهيتها" };
 const TONE: Record<TeamTo["state"], string> = { pending: "badge", assistant: "badge-primary", self: "badge-primary", done: "badge-positive" };
 
 export function TeamMessage({ messageId, author, mine, text, to, viaAssistant, canWrite, busy }: { messageId: string; author: string | null; mine: boolean; text: string; to: TeamTo[]; viaAssistant?: boolean; canWrite: boolean; busy: boolean }) {
@@ -49,7 +51,7 @@ export function TeamMessage({ messageId, author, mine, text, to, viaAssistant, c
       <div className="flex flex-wrap items-center gap-1.5">
         {to.map((t) => (
           <span key={t.userId} className={TONE[t.state]}>
-            {STATE[t.state](t.mine ? "أنت" : t.name)}
+            {t.mine ? MY_STATE[t.state] : STATE[t.state](t.name)}
           </span>
         ))}
       </div>
@@ -82,11 +84,11 @@ export function TeamMessage({ messageId, author, mine, text, to, viaAssistant, c
 }
 
 /** The question that hands a colleague's message to the assistant: one quiet line, not a bubble. */
-export function HandoffLine({ by }: { by: string }) {
+export function HandoffLine({ by }: { by: string | null }) {
   return (
     <div className="flex items-center gap-2 text-xs text-muted">
       <Icon name="bot" size={13} />
-      <span>{by} سلّم الطلب للمساعد</span>
+      <span>{by ? `${by} سلّم الطلب للمساعد` : "سلّمتَ الطلب للمساعد"}</span>
     </div>
   );
 }

@@ -925,7 +925,7 @@ function MessageView({ m, isLast, canWrite, busy, onRetry, onReask, onOpenArtifa
   const html = useMemo(() => (m.role === "assistant" ? renderAnswer(m.text, new Set(byN.keys()), checks) : ""), [m.text, byN, checks, m.role]);
 
   if (m.role === "user" && m.team) return <TeamMessage messageId={m.id} author={m.author ?? null} mine={!!m.mine} text={m.text ?? ""} to={m.team.to} viaAssistant={!!m.team.viaAssistant} canWrite={canWrite} busy={!!busy} />;
-  if (m.role === "user" && m.handoffOf) return <HandoffLine by={m.mine ? "أنت" : (m.author ?? "زميل")} />;
+  if (m.role === "user" && m.handoffOf) return <HandoffLine by={m.mine ? null : (m.author ?? "زميل")} />;
   if (m.role === "user")
     return (
       <div className="flex animate-rise flex-col items-start gap-1.5">

@@ -30,7 +30,7 @@ import { queueTurn } from "./lib/turns";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type DecisionLog, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { routeTurn, type Route } from "./decisions";
 import { makingRequest } from "./lib/route";
-import { capForHistory, CHARS_PER_TOKEN, cleanSections, historyWindow, parseSummary, renderSummary, sectionsOf, SUMMARY_SCHEMA, summaryPrompt, type SummarySections } from "./lib/chatSummary";
+import { capForHistory, CHARS_PER_TOKEN, cleanSections, outputLine, withCodeOutputs, historyWindow, parseSummary, renderSummary, sectionsOf, SUMMARY_SCHEMA, summaryPrompt, type SummarySections } from "./lib/chatSummary";
 export { makingRequest };
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
@@ -1217,8 +1217,18 @@ export const turnContext = internalQuery({
     );
     // Fold what is older than the window into the summary once there's enough of it.
     const prevSections = sum ? sectionsOf(sum) : null;
-    const compact =
-      lastUser >= 0 && win.foldTo - covered >= SUMMARY_STEP ? { from: covered, to: win.foldTo, at: sum?.at ?? 0, prev: prevSections, edited: !!sum?.editedAt, msgs: withAsker(covered, win.foldTo) } : null;
+    const folding = lastUser >= 0 && win.foldTo - covered >= SUMMARY_STEP;
+    // What the folded messages' actions made or sent, from the records, not from the model.
+    const outputs: string[] = [];
+    if (folding) {
+      const ids = new Set(kept.slice(covered, win.foldTo).map((m) => m.id));
+      for (const p of await ctx.db.query("proposals").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect())
+        if (ids.has(p.messageId) && p.state === "executed" && !p.undoneAt) {
+          const line = outputLine(p);
+          if (line) outputs.push(line);
+        }
+    }
+    const compact = folding ? { from: covered, to: win.foldTo, at: sum?.at ?? 0, prev: prevSections, edited: !!sum?.editedAt, msgs: withAsker(covered, win.foldTo), outputs } : null;
     const summaryText = prevSections ? renderSummary(prevSections) : null;
     return {
       ...base,
@@ -2245,7 +2255,7 @@ export const readForTool = internalQuery({
 });
 
 /** Refreshes a long chat's summary with the messages that left the verbatim window (plans/15). Best effort. */
-async function compactThread(ctx: ActionCtx, threadId: string, job: { from: number; to: number; at: number; prev: SummarySections | null; edited: boolean; msgs: { role: string; text: string }[] }, turnId?: string) {
+async function compactThread(ctx: ActionCtx, threadId: string, job: { from: number; to: number; at: number; prev: SummarySections | null; edited: boolean; msgs: { role: string; text: string }[]; outputs?: string[] }, turnId?: string) {
   try {
     const r = await chat({
       ...(turnId ? { track: { ctx, purpose: "summary" as const, turnId } } : {}),
@@ -2255,7 +2265,9 @@ async function compactThread(ctx: ActionCtx, threadId: string, job: { from: numb
       jsonSchema: SUMMARY_SCHEMA,
       messages: summaryPrompt(job.prev, job.edited, job.msgs),
     });
-    const sections = parseSummary(r.text);
+    const parsed = parseSummary(r.text);
+    // Outputs only grow: the previous ones and the folded actions are kept even if the model drops them.
+    const sections = parsed ? withCodeOutputs(parsed, [...(job.prev?.outputs ?? []), ...(job.outputs ?? [])]) : null;
     if (sections) await ctx.runMutation(internal.chat.saveSummary, { threadId, expect: job.from, expectAt: job.at, covered: job.to, text: renderSummary(sections), sections });
   } catch {}
 }
