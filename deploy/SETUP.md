@@ -34,25 +34,16 @@ Then edit `.env`:
 
 ## 3. Models
 
-You need three: a **main** model (chat, tools, analysis), a **fast** one (titles, routing, the «أساسي» level) and an **embedding** model (file search). Reranking and vision are optional.
+You need three: a **main** model (chat, tools, analysis), a **fast** one (titles, routing, the «أساسي» level) and an **embedding** model (file search). Reranking, vision and a decision model are optional.
 
-**A. Servers already running on this machine.** In `.env`, use `http://host.docker.internal:<port>/v1`. A server that listens only on `127.0.0.1` can't be reached from a container. Start it on the Docker bridge address instead (`--host 172.17.0.1`), or on `0.0.0.0` with a firewall that blocks the port from outside.
+Models are chosen in the app, not here. After step 5, an admin adds each model server under **إدارة المنصة ← مزوّدو النماذج**: Ollama, vLLM, llama.cpp, LM Studio or a hosted API such as OpenRouter. They press «افحص», then pick a model for each role with «جرّب واحفظ». No restart is needed. Where to run the servers (this machine, a GPU machine, or a hosted API) and the flags each one needs are in [../SETUP.md](../SETUP.md).
 
-**B. Let Compose run llama.cpp.** Put the GGUF files in `deploy/models/` and set their file names in `.env` (`MAIN_MODEL_FILE`, …). Point the URLs at the services:
+Two settings stay in `.env`:
 
-```
-LLM_BASE_URL=http://llm-main:8401/v1
-LLM_FAST_BASE_URL=http://llm-fast:8402/v1
-EMBED_BASE_URL=http://embed:8403/v1
-```
+- `EMBED_DIMENSIONS`: the size of the embedding vectors (768 by default). It is fixed once files are indexed, so set it before the first upload.
+- `GPU_SLOTS`: how many answers may run at once.
 
-Then start them with `docker compose --profile models up -d`.
-
-**C. A hosted API.** Set the URL, `LLM_API_KEY` and the model names.
-
-Later, an admin can add or switch servers in the app without a restart, under **إدارة المنصة ← مزوّدو النماذج**. That page lists each server's models and sets the main, fast, vision and embedding models. The embedding model must produce vectors of `EMBED_DIMENSIONS` (the page tests it). Choosing a different one stops file search until **«أعد الفهرسة»** finishes.
-
-> `EMBED_DIMENSIONS` is fixed once files are indexed. Changing the embedding model later means re-indexing every file (one button on the providers page).
+The `LLM_*` and `EMBED_*` lines in `.env.example` are optional defaults, used only until a role is chosen in the app.
 
 ## 4. Build and start
 
