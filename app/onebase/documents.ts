@@ -19,8 +19,9 @@ import { writeAudit } from "./audit";
 import { requireActor } from "./artifacts";
 import { identityOf, loadSet } from "./records";
 import { sha256Hex } from "./recordSources";
-import { loadTemplate, loadVersion } from "./templates";
-import { parseLayout, renderPdf, type RenderInput } from "./pdf";
+import { loadTemplate, loadVersion, reservedValues } from "./templates";
+import { isoDate, parseLayout, renderPdf, type RenderInput } from "./pdf";
+import { DocxError, docxToPdf, fillDocx } from "./lib/docxTemplate";
 
 type Ctx = QueryCtx | MutationCtx;
 const TICKET_TTL_MS = 60_000;
@@ -191,7 +192,112 @@ export const issue = action({
   },
 });
 
-async function renderFrom(ctx: { storage: { get(id: Id<"_storage">): Promise<Blob | null> } }, prep: { layout: string; fieldKeys: string[]; bodyStorageId: Id<"_storage"> | null; data: Record<string, string>; serial: string; verifyCode: string; issuedAt: number; title: string }) {
+const BATCH_MAX = 200;
+
+/**
+ * The current rows of a template's record set, each with the state of its document for the
+ * approved version: none, draft, approved or issued. What «أصدر» works from, and how the page
+ * knows how many rows still have no certificate (e.g. after an import). Members who can read
+ * both the template's space and the set's.
+ */
+export const rowsForTemplate = query({
+  args: { templateId: v.id("templates") },
+  handler: async (ctx, { templateId }) => {
+    const me = await requireActive(ctx);
+    const t = await loadTemplate(ctx, templateId);
+    await assertCan(ctx, me.userId, t.spaceId, "read");
+    if (!t.approvedVersion) return { fields: [], rows: [], counts: { none: 0, draft: 0, approved: 0, issued: 0 } };
+    const tv = await loadVersion(ctx, t._id, t.approvedVersion);
+    const set = await loadSet(ctx, tv.dataBinding.recordSetId);
+    await assertCan(ctx, me.userId, set.spaceId, "read");
+    const records = set.currentVersion
+      ? await ctx.db.query("records").withIndex("by_set_version", (q) => q.eq("recordSetId", set._id).eq("version", set.currentVersion)).collect()
+      : [];
+    const docs = (await ctx.db.query("issuedDocuments").withIndex("by_space", (q) => q.eq("spaceId", t.spaceId)).collect()).filter((d) => d.templateId === t._id && d.templateVersion === tv.version && d.status !== "rejected");
+    // A record keeps its id across nothing: a re-import creates new rows. Match on the subject and the bound data too.
+    const rank = { issued: 3, approved: 2, draft: 1 } as const;
+    const counts = { none: 0, draft: 0, approved: 0, issued: 0 };
+    const rows = records.map((r) => {
+      const data: Record<string, string> = {};
+      for (const f of tv.fieldsSchema) data[f.key] = cellText(r.data[tv.dataBinding.fields[f.key]!]);
+      const mine = docs.filter((d) => d.recordId === r._id || (d.subjectRef === r.subjectRef && JSON.stringify(d.data) === JSON.stringify(data)));
+      const best = mine.sort((a, b) => rank[b.status as keyof typeof rank] - rank[a.status as keyof typeof rank])[0];
+      const status = (best?.status ?? "none") as keyof typeof counts;
+      counts[status]++;
+      return { recordId: r._id, rowNo: r.rowNo, subjectRef: r.subjectRef, data, status, documentId: best?._id ?? null, serial: best?.serial ?? null };
+    });
+    return { fields: tv.fieldsSchema, rows, counts };
+  },
+});
+
+/** Drafts for many records at once (existing documents are returned, not duplicated). Writers of the template's space. */
+export const requestMany = mutation({
+  args: { templateId: v.id("templates"), recordIds: v.array(v.id("records")) },
+  handler: async (ctx, { templateId, recordIds }) => {
+    const me = await requireActive(ctx);
+    if (recordIds.length > BATCH_MAX) throw new OneBaseError(`الحد ${BATCH_MAX} مستنداً في الدفعة الواحدة`);
+    const out: { documentId: Id<"issuedDocuments">; status: string; existing: boolean }[] = [];
+    for (const recordId of new Set(recordIds)) {
+      const r = await requestDocument(ctx, me, templateId, recordId, { scope: null, via: "ui-batch" });
+      out.push({ documentId: r.documentId, status: r.status, existing: r.existing });
+    }
+    return { documents: out, created: out.filter((d) => !d.existing).length };
+  },
+});
+
+/**
+ * Approval and issue in one act, for one document or a batch: a manager of the space approves
+ * (recorded, audited, per document) and each is issued at once. Already-issued documents are
+ * returned as they are; a document that can't be issued is reported and the rest go on.
+ */
+export const approveAndIssue = action({
+  args: { documentIds: v.array(v.id("issuedDocuments")) },
+  handler: async (ctx, { documentIds }): Promise<{ issued: { documentId: string; serial: string; verifyCode: string }[]; failed: { documentId: string; error: string }[] }> => {
+    const userId = await requireUserId(ctx);
+    if (documentIds.length > BATCH_MAX) throw new OneBaseError(`الحد ${BATCH_MAX} مستنداً في الدفعة الواحدة`);
+    // Every document must be in a space the caller manages, checked before anything is approved.
+    await ctx.runQuery(internal.documents.checkManagesAll, { userId, documentIds });
+    const issued: { documentId: string; serial: string; verifyCode: string }[] = [];
+    const failed: { documentId: string; error: string }[] = [];
+    for (const documentId of new Set(documentIds)) {
+      try {
+        await ctx.runMutation(internal.documents.approveAsManager, { userId, documentId });
+        const prep: any = await ctx.runMutation(internal.documents.beginIssue, { userId, documentId });
+        let result: { serial: string; verifyCode: string };
+        if (prep.done) result = prep.done;
+        else {
+          const bytes = await renderFrom(ctx, prep);
+          const storageId = await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+          const res: any = await ctx.runMutation(internal.documents.finishIssue, { userId, documentId, storageId, sha256: sha256Hex(bytes), size: bytes.byteLength });
+          if (res.duplicate) await ctx.storage.delete(storageId);
+          result = res.result;
+        }
+        issued.push({ documentId, serial: result.serial, verifyCode: result.verifyCode });
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        failed.push({ documentId, error: m.replace(/^.*Uncaught (OneBaseError: )?/, "").replace(/^\[.*?\]\s*/, "").split("\n")[0]! });
+      }
+    }
+    return { issued, failed };
+  },
+});
+
+async function renderFrom(
+  ctx: { storage: { get(id: Id<"_storage">): Promise<Blob | null> } },
+  prep: { layout: string; fieldKeys: string[]; docxStorageId?: Id<"_storage"> | null; fieldLabels?: Record<string, string>; bodyStorageId: Id<"_storage"> | null; data: Record<string, string>; serial: string; verifyCode: string; issuedAt: number; title: string },
+) {
+  if (prep.docxStorageId) {
+    // Word template (plans/17 §3): variables filled by code, LibreOffice makes the PDF.
+    const blob = await ctx.storage.get(prep.docxStorageId);
+    if (!blob) throw new OneBaseError("ملف القالب مفقود");
+    const values = reservedValues(prep.serial, prep.verifyCode, isoDate(prep.issuedAt));
+    for (const [key, label] of Object.entries(prep.fieldLabels ?? {})) values[label] = prep.data[key] ?? "";
+    try {
+      return await docxToPdf(await fillDocx(new Uint8Array(await blob.arrayBuffer()), values));
+    } catch (e) {
+      throw new OneBaseError(e instanceof DocxError ? e.message : "تعذّر إنشاء ملف PDF من قالب وورد");
+    }
+  }
   let background: Uint8Array | null = null;
   if (prep.bodyStorageId) {
     const blob = await ctx.storage.get(prep.bodyStorageId);
@@ -211,6 +317,8 @@ export const reproduce = action({
   handler: async (ctx, { documentId }): Promise<{ sha256: string; stored: string; identical: boolean }> => {
     const userId = await requireUserId(ctx);
     const prep: any = await ctx.runQuery(internal.documents.renderInputFor, { userId, documentId });
+    // LibreOffice doesn't write the same bytes twice: a Word certificate is verified by its stored file and sha256.
+    if (prep.docxStorageId) throw new OneBaseError("إعادة التوليد حرفياً متاحة لقوالب التخطيط فقط. شهادات قوالب وورد يُتحقق منها بملفها المحفوظ وبصمته");
     const bytes = await renderFrom(ctx, prep);
     const sha256 = sha256Hex(bytes);
     return { sha256, stored: prep.sha256, identical: sha256 === prep.sha256 };
@@ -271,6 +379,75 @@ export const requestForUser = internalMutation({
   },
 });
 
+/**
+ * fill_template's template: its id, or its exact name (the model sees names, not ids) among the
+ * approved templates of spaces in the turn's scope the user can write in. No match, or more than
+ * one, is an error naming the templates there are.
+ */
+async function resolveTemplate(ctx: Ctx, userId: Id<"users">, scopeSpaceIds: string[], ref: string) {
+  const id = ctx.db.normalizeId("templates", ref);
+  if (id) return (await ctx.db.get(id)) ?? (await loadTemplate(ctx, ref));
+  const norm = (x: string) => x.trim().replace(/\s+/g, " ").replace(/[«»"]/g, "");
+  const usable = [];
+  for (const spaceId of scopeSpaceIds) {
+    const sid = ctx.db.normalizeId("spaces", spaceId);
+    if (!sid) continue;
+    try {
+      await assertCan(ctx, userId, sid, "write");
+    } catch {
+      continue;
+    }
+    for (const t of await ctx.db.query("templates").withIndex("by_space", (q) => q.eq("spaceId", sid)).collect()) if (t.approvedVersion) usable.push(t);
+  }
+  const hits = usable.filter((t) => norm(t.name) === norm(ref));
+  if (hits.length === 1) return hits[0]!;
+  const names = usable.map((t) => `«${t.name}»`).join("، ") || "لا توجد قوالب معتمدة في نطاق المحادثة";
+  throw new OneBaseError(hits.length > 1 ? `أكثر من قالب بهذا الاسم. القوالب المعتمدة: ${names}` : `لا يوجد قالب معتمد بهذا الاسم. القوالب المعتمدة: ${names}`);
+}
+
+/** fill_template for several records (up to 50): one draft each, existing ones returned. */
+export const requestManyForUser = internalMutation({
+  args: { userId: v.id("users"), scopeSpaceIds: v.array(v.string()), templateId: v.string(), recordIds: v.array(v.string()), threadId: v.optional(v.string()) },
+  handler: async (ctx, { userId, scopeSpaceIds, templateId, recordIds, threadId }) => {
+    const actor = await requireActor(ctx, userId);
+    if (recordIds.length > 50) throw new OneBaseError("الحد 50 سجلاً في المرة الواحدة");
+    const t = await resolveTemplate(ctx, userId, scopeSpaceIds, templateId);
+    const out: { documentId: Id<"issuedDocuments">; status: string; existing: boolean; serial: string | null }[] = [];
+    for (const recordId of new Set(recordIds)) {
+      const r = await requestDocument(ctx, actor, t._id, recordId, { scope: new Set(scopeSpaceIds), threadId, via: "agent" });
+      out.push({ documentId: r.documentId, status: r.status, existing: r.existing, serial: r.serial });
+    }
+    return out;
+  },
+});
+
+/**
+ * What fill_template's card shows: the template, whose records (the first field of each, e.g. the
+ * name), and how many already have a document from it (those are returned, not duplicated).
+ */
+export const fillSummary = internalQuery({
+  args: { userId: v.id("users"), scopeSpaceIds: v.array(v.string()), templateId: v.string(), recordIds: v.array(v.string()) },
+  handler: async (ctx, { userId, scopeSpaceIds, templateId, recordIds }) => {
+    await requireActor(ctx, userId);
+    const t = await resolveTemplate(ctx, userId, scopeSpaceIds, templateId);
+    await assertCan(ctx, userId, t.spaceId, "write");
+    if (!scopeSpaceIds.includes(t.spaceId)) throw new Denied();
+    const ids = [...new Set(recordIds)];
+    if (!t.approvedVersion) return { templateId: t._id, template: t.name, count: ids.length, people: [] as string[], existing: 0 };
+    const tv = await loadVersion(ctx, t._id, t.approvedVersion);
+    const first = tv.fieldsSchema[0] ? tv.dataBinding.fields[tv.fieldsSchema[0].key] : undefined;
+    const people: string[] = [];
+    for (const id of ids.slice(0, 5)) {
+      const rid = ctx.db.normalizeId("records", id);
+      const rec = rid ? await ctx.db.get(rid) : null;
+      if (rec && rec.recordSetId === tv.dataBinding.recordSetId && first) people.push(cellText(rec.data[first]));
+    }
+    const docs = await ctx.db.query("issuedDocuments").withIndex("by_space", (q) => q.eq("spaceId", t.spaceId)).collect();
+    const existing = new Set(docs.filter((d) => d.templateId === t._id && d.status !== "rejected" && ids.includes(d.recordId)).map((d) => d.recordId)).size;
+    return { templateId: t._id, template: t.name, count: ids.length, people, existing };
+  },
+});
+
 async function prepFor(ctx: Ctx, d: Doc<"issuedDocuments">) {
   const t = await ctx.db.get(d.templateId);
   if (!t) throw new Denied();
@@ -278,6 +455,9 @@ async function prepFor(ctx: Ctx, d: Doc<"issuedDocuments">) {
   return {
     layout: tv.layout,
     fieldKeys: tv.fieldsSchema.map((f) => f.key),
+    // A Word template: the file, and each field's variable name (its label) for filling.
+    docxStorageId: tv.docxStorageId ?? null,
+    fieldLabels: Object.fromEntries(tv.fieldsSchema.map((f) => [f.key, f.label])),
     bodyStorageId: tv.bodyStorageId ?? null,
     data: d.data,
     serial: d.serial!,
@@ -286,6 +466,32 @@ async function prepFor(ctx: Ctx, d: Doc<"issuedDocuments">) {
     title: `${t.name} ${d.serial}`,
   };
 }
+
+export const checkManagesAll = internalQuery({
+  args: { userId: v.id("users"), documentIds: v.array(v.id("issuedDocuments")) },
+  handler: async (ctx, { userId, documentIds }) => {
+    await requireActor(ctx, userId);
+    for (const id of documentIds) {
+      const d = await loadDoc(ctx, id);
+      await assertCan(ctx, userId, d.spaceId, "manage");
+    }
+    return null;
+  },
+});
+
+/** Approves a draft as part of approveAndIssue. Managers only; an approved or issued document passes through unchanged. */
+export const approveAsManager = internalMutation({
+  args: { userId: v.id("users"), documentId: v.id("issuedDocuments") },
+  handler: async (ctx, { userId, documentId }) => {
+    await requireActor(ctx, userId);
+    const d = await loadDoc(ctx, documentId);
+    await assertCan(ctx, userId, d.spaceId, "manage");
+    if (d.status === "approved" || d.status === "issued") return;
+    if (d.status !== "draft") throw new OneBaseError("المستند مرفوض");
+    await ctx.db.patch(d._id, { status: "approved", approvedBy: userId, approvedAt: Date.now() });
+    await writeAudit(ctx, { userId, action: "document.approve", resourceType: "document", resourceId: d._id, spaceId: d.spaceId, detail: { templateVersion: d.templateVersion, with: "issue" } });
+  },
+});
 
 /** Checks the issuer, then fixes serial, verification code and issue time (once). */
 export const beginIssue = internalMutation({

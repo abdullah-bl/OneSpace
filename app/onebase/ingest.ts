@@ -1,6 +1,8 @@
 // File ingestion (plans/03-rag.md §1–2), as a durable workflow:
-//   begin → extract + normalize + chunk (action) → commit chunks to the index → wait for the
-//   embeddings → ready. Every step is journaled, so a restart continues where it stopped.
+//   begin → (scanned PDF pages: plan, then read by the vision model in batches, each page saved as
+//   it is read) → extract + normalize + chunk (action) → commit chunks to the index → wait for the
+//   embeddings → ready. Every step is journaled, so a restart continues where it stopped; the saved
+//   pages (ocrPages) also make a retry or a re-index of the same version skip what was read.
 //
 // The index follows the file system (§2):
 //   - namespace = the file's space (the permission boundary), key = file id
@@ -18,9 +20,18 @@ import { assertCan, Denied, requireActive } from "./access";
 import { aiConfig, embedConfigFromDb, ensureEmbeddingIndex, ocr, primeAi } from "./ai";
 import { shadowText } from "./lib/arabic";
 import { chunkBlocks } from "./lib/chunk";
-import { extract } from "./lib/extract";
+import { extract, ocrPdfPages, scannedPdfPages } from "./lib/extract";
 
 const MAX_CHUNKS = 5000;
+
+/**
+ * Scanned-page OCR: at most OCR_MAX_PAGES pages per file, OCR_BATCH_PAGES per workflow step (a
+ * step must finish within the workflow timeout, 15 min), OCR_CONCURRENCY requests at a time.
+ */
+function ocrSettings() {
+  const n = (name: string, def: number, min: number) => Math.max(min, Math.floor(Number(process.env[name] || def)) || def);
+  return { maxPages: n("OCR_MAX_PAGES", 1000, 1), batch: n("OCR_BATCH_PAGES", 8, 1), concurrency: n("OCR_CONCURRENCY", 4, 1) };
+}
 
 export function textHash(text: string) {
   return new Bun.CryptoHasher("sha1").update(text).digest("hex").slice(0, 20);
@@ -70,6 +81,7 @@ export async function unindexFile(ctx: MutationCtx, file: Doc<"files">) {
   if (row?.workflowId && (row.state === "pending" || row.state === "processing")) await ctx.components.ingest.cancel({ id: row.workflowId });
   if (row?.entryId) await ctx.components.docs.delete({ entryId: row.entryId });
   for (const c of await ctx.db.query("chunks").withIndex("by_file", (q) => q.eq("fileId", file._id)).collect()) await ctx.db.delete(c._id);
+  for (const p of await ctx.db.query("ocrPages").withIndex("by_file_version_page", (q) => q.eq("fileId", file._id)).collect()) await ctx.db.delete(p._id);
   if (row) await ctx.db.delete(row._id);
 }
 
@@ -101,7 +113,15 @@ export const flow = defineWorkflow({
   run: async (step, args: { fileId: Id<"files">; version: number }) => {
     const go = await step.runMutation(internal.ingest.begin, args);
     if (!go) return "stale";
-    // (typed by hand: the workflow and the action live in one module, which TS can't infer through)
+    // (typed by hand: the workflow and the actions live in one module, which TS can't infer through)
+    const ingest = internal.ingest as any;
+    // Scanned PDF pages: read in batches, one journaled step each (the batches come from the
+    // journal too, so a replay lines up even if the settings changed meanwhile).
+    const plan: { batches: number[][] } = (await step.runAction(ingest.planOcr, args)) as any;
+    for (const pages of plan.batches) {
+      const r: { done?: string } = (await step.runAction(ingest.ocrBatch, { ...args, pages })) as any;
+      if (r.done) return r.done;
+    }
     const res: { ok: boolean; error?: string; done?: string } = (await step.runAction((internal.ingest as any).extractFile, args)) as any;
     if (!res.ok) {
       await step.runMutation(internal.ingest.fail, { ...args, error: res.error ?? "فشل الاستخراج" });
@@ -139,8 +159,105 @@ export const begin = internalMutation({
   handler: async (ctx, { fileId, version }) => {
     const file = await current(ctx, fileId, version);
     if (!file) return false;
-    await setState(ctx, file, { state: "processing", step: "extract", version });
+    await setState(ctx, file, { state: "processing", step: "extract", version, ocrDone: undefined, ocrTotal: undefined });
     return true;
+  },
+});
+
+async function fileBytes(ctx: { runQuery: any; storage: { get(id: any): Promise<Blob | null> } }, fileId: Id<"files">, version: number) {
+  const meta: { storageId: string; name: string; mime: string } | null = await ctx.runQuery(internal.ingest.fileForIngest, { fileId, version });
+  if (!meta) return null;
+  const blob = await ctx.storage.get(meta.storageId);
+  return { ...meta, bytes: blob ? new Uint8Array(await blob.arrayBuffer()) : null };
+}
+
+/** Which scanned pages still need the vision model, split into batches. Never fails: problems surface in extractFile. */
+export const planOcr = internalAction({
+  args: fileArgs,
+  handler: async (ctx, { fileId, version }): Promise<{ batches: number[][] }> => {
+    await primeAi(ctx);
+    try {
+      if (!aiConfig().vision.baseUrl) return { batches: [] };
+      const f = await fileBytes(ctx, fileId, version);
+      if (!f?.bytes) return { batches: [] };
+      const { scanned } = await scannedPdfPages(f.bytes, f.name, f.mime);
+      if (!scanned.length) return { batches: [] };
+      const set = ocrSettings();
+      const wanted = scanned.slice(0, set.maxPages);
+      const done: number[] = await ctx.runMutation(internal.ingest.ocrStart, { fileId, version, total: wanted.length });
+      const have = new Set(done);
+      const todo = wanted.filter((p) => !have.has(p));
+      const batches: number[][] = [];
+      for (let i = 0; i < todo.length; i += set.batch) batches.push(todo.slice(i, i + set.batch));
+      return { batches };
+    } catch {
+      return { batches: [] };
+    }
+  },
+});
+
+/** Starts the progress count and drops pages saved for other versions. Returns the pages already read. */
+export const ocrStart = internalMutation({
+  args: { ...fileArgs, total: v.number() },
+  handler: async (ctx, { fileId, version, total }): Promise<number[]> => {
+    const file = await current(ctx, fileId, version);
+    if (!file) return [];
+    const done: number[] = [];
+    for (const p of await ctx.db.query("ocrPages").withIndex("by_file_version_page", (q) => q.eq("fileId", fileId)).collect()) {
+      if (p.version === version) done.push(p.page);
+      else await ctx.db.delete(p._id);
+    }
+    const row = await indexRow(ctx, fileId);
+    if (row) await ctx.db.patch(row._id, { step: "ocr", ocrTotal: total, ocrDone: Math.min(done.length, total), updatedAt: Date.now() });
+    return done;
+  },
+});
+
+/** Reads one batch of scanned pages, saving each as it comes. Pages that fail twice are left out (noted on the file). */
+export const ocrBatch = internalAction({
+  args: { ...fileArgs, pages: v.array(v.number()) },
+  handler: async (ctx, { fileId, version, pages }): Promise<{ done?: string; failed?: number }> => {
+    await primeAi(ctx);
+    try {
+      const f = await fileBytes(ctx, fileId, version);
+      if (!f) return { done: "stale" };
+      if (!f.bytes) return {};
+      const { failed } = await ocrPdfPages(f.bytes, pages, (url) => ocr(url), {
+        concurrency: ocrSettings().concurrency,
+        onPage: async (page, text) => {
+          await ctx.runMutation(internal.ingest.saveOcrPage, { fileId, version, page, text });
+        },
+      });
+      return { failed: failed.length };
+    } catch {
+      return {};
+    }
+  },
+});
+
+export const saveOcrPage = internalMutation({
+  args: { ...fileArgs, page: v.number(), text: v.string() },
+  handler: async (ctx, { fileId, version, page, text }) => {
+    if (!(await current(ctx, fileId, version))) return;
+    const old = await ctx.db
+      .query("ocrPages")
+      .withIndex("by_file_version_page", (q) => q.eq("fileId", fileId).eq("version", version).eq("page", page))
+      .unique();
+    if (old) {
+      await ctx.db.patch(old._id, { text });
+      return;
+    }
+    await ctx.db.insert("ocrPages", { fileId, version, page, text });
+    const row = await indexRow(ctx, fileId);
+    if (row) await ctx.db.patch(row._id, { ocrDone: (row.ocrDone ?? 0) + 1, updatedAt: Date.now() });
+  },
+});
+
+export const ocrTexts = internalQuery({
+  args: fileArgs,
+  handler: async (ctx, { fileId, version }) => {
+    const rows = await ctx.db.query("ocrPages").withIndex("by_file_version_page", (q) => q.eq("fileId", fileId).eq("version", version)).collect();
+    return rows.map((r) => ({ page: r.page, text: r.text }));
   },
 });
 
@@ -162,9 +279,12 @@ export const extractFile = internalAction({
       const blob = await ctx.storage.get(meta.storageId);
       if (!blob) return { ok: false, error: "الملف غير موجود في التخزين" };
       const cfg = aiConfig();
+      const read: { page: number; text: string }[] = await ctx.runQuery(internal.ingest.ocrTexts, { fileId, version });
       const ex = await extract(new Uint8Array(await blob.arrayBuffer()), meta.name, meta.mime, {
         ocr: cfg.vision.baseUrl ? (url) => ocr(url) : null,
-        maxOcrPages: Number(process.env.OCR_MAX_PAGES || 50),
+        maxOcrPages: ocrSettings().maxPages,
+        // A PDF's scanned pages were read by the ocrBatch steps; only images are read here.
+        ocrDone: new Map(read.map((r) => [r.page, r.text])),
       });
       const title = meta.name.replace(/\.[a-z0-9]+$/i, "");
       const chunks = chunkBlocks(title, ex.blocks).slice(0, MAX_CHUNKS);
@@ -299,7 +419,13 @@ export const statuses = query({
       out.push({
         fileId: f._id,
         state,
-        label: state === "processing" && row?.step === "embed" ? "قيد التضمين" : STATE_LABEL[state] ?? state,
+        label:
+          state === "processing" && row?.step === "embed"
+            ? "قيد التضمين"
+            : state === "processing" && row?.step === "ocr" && row.ocrTotal
+              ? `قراءة الصفحات الممسوحة ${row.ocrDone ?? 0}/${row.ocrTotal}`
+              : STATE_LABEL[state] ?? state,
+        ocrProgress: row?.step === "ocr" && row.ocrTotal ? { done: row.ocrDone ?? 0, total: row.ocrTotal } : null,
         error: row?.error ?? null,
         note: row?.note ?? null,
         kind: row?.kind ?? null,

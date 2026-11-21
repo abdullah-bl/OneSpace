@@ -8,12 +8,12 @@
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, readableSpaceIds, requireActive, requireUserId } from "./access";
 import { writeAudit } from "./audit";
 import { requireActor } from "./artifacts";
 import { cellValue, columnDef, subjectKind } from "./outputsSchema";
-import { ImportError, normalizeRef, sha256Hex, SOURCES, validateRows, type ColumnDef, type RawTable } from "./recordSources";
+import { excelSource, ImportError, inferColumns, keysFor, normalizeRef, ownerCandidates, sha256Hex, SOURCES, suggestUnique, validateRows, type ColumnDef, type InferredColumn, type RawTable } from "./recordSources";
 
 type Ctx = QueryCtx | MutationCtx;
 type Cell = string | number | boolean | null;
@@ -92,7 +92,7 @@ export async function queryRecords(ctx: Ctx, userId: Id<"users">, args: QueryArg
 export async function myRecords(ctx: Ctx, userId: Id<"users">) {
   const actor = await requireActor(ctx, userId);
   const ids = identityOf(actor.user);
-  const out: { recordSetId: Id<"recordSets">; setName: string; columns: { key: string; header: string; type: string }[]; rows: { recordId: Id<"records">; data: Record<string, Cell> }[] }[] = [];
+  const out: { recordSetId: Id<"recordSets">; setName: string; spaceName: string; columns: { key: string; header: string; type: string }[]; rows: { recordId: Id<"records">; data: Record<string, Cell> }[] }[] = [];
   const documents: { _id: Id<"issuedDocuments">; templateName: string; serial: string | null; issuedAt: number | null; verifyCode: string | null; sha256: string | null }[] = [];
   for (const [kind, ref] of [["nationalId", ids.nationalId], ["employeeNo", ids.employeeNo]] as const) {
     if (!ref) continue;
@@ -107,6 +107,8 @@ export async function myRecords(ctx: Ctx, userId: Id<"users">) {
       out.push({
         recordSetId: set._id,
         setName: set.name,
+        // The department the records come from: who to ask about them (a subject may not be a member).
+        spaceName: (await ctx.db.get(set.spaceId))?.name ?? "",
         columns: set.columns.map((c) => ({ key: c.key, header: c.header, type: c.type })),
         rows: current.map((r) => ({ recordId: r._id, data: r.data })),
       });
@@ -168,42 +170,51 @@ export const mine = query({
   },
 });
 
+type SetDef = { name: string; columns: ColumnDef[]; subjectColumn: string; subjectKind: "nationalId" | "employeeNo"; uniqueBy?: string[] };
+
+/** Checks a definition and inserts the set (version 0). The caller has checked "manage" on the space. */
+async function insertSet(ctx: MutationCtx, userId: Id<"users">, workspaceId: Id<"workspaces">, spaceId: Id<"spaces">, def: SetDef) {
+  const space = await ctx.db.get(spaceId);
+  if (!space || space.kind !== "shared") throw new OneBaseError("السجلات تكون في مساحة مشتركة");
+  const clean = def.name.trim();
+  if (!clean) throw new OneBaseError("اكتب اسماً لمجموعة السجلات");
+  const { columns, subjectColumn } = def;
+  if (columns.length === 0 || columns.length > 100) throw new OneBaseError("عرّف عموداً واحداً على الأقل");
+  const keys = new Set<string>();
+  const headers = new Set<string>();
+  for (const c of columns) {
+    if (!KEY_RE.test(c.key)) throw new OneBaseError(`مفتاح العمود "${c.key}" غير صالح (حروف لاتينية وأرقام و _)`);
+    if (!c.header.trim()) throw new OneBaseError("لكل عمود عنوان كما في ملف Excel");
+    if (keys.has(c.key) || headers.has(c.header.trim())) throw new OneBaseError(`عمود مكرر: ${c.header}`);
+    keys.add(c.key);
+    headers.add(c.header.trim());
+  }
+  if (!keys.has(subjectColumn)) throw new OneBaseError("اختر عمود رقم الهوية أو الرقم الوظيفي");
+  const unique = def.uniqueBy?.length ? def.uniqueBy : [subjectColumn];
+  for (const k of unique) if (!keys.has(k)) throw new OneBaseError(`عمود منع التكرار غير معروف: ${k}`);
+  const id = await ctx.db.insert("recordSets", {
+    workspaceId,
+    spaceId,
+    name: clean,
+    columns: columns.map((c) => ({ ...c, header: c.header.trim(), required: c.required || c.key === subjectColumn })),
+    subjectColumn,
+    subjectKind: def.subjectKind,
+    uniqueBy: unique,
+    currentVersion: 0,
+    createdBy: userId,
+    createdAt: Date.now(),
+  });
+  await writeAudit(ctx, { userId, action: "records.set_create", resourceType: "recordSet", resourceId: id, spaceId, detail: { name: clean, columns: columns.length } });
+  return id;
+}
+
 /** Defines a record set (its columns) in a shared space. Space managers only. */
 export const createSet = mutation({
   args: { spaceId: v.id("spaces"), name: v.string(), columns: v.array(columnDef), subjectColumn: v.string(), subjectKind, uniqueBy: v.optional(v.array(v.string())) },
-  handler: async (ctx, { spaceId, name, columns, subjectColumn, subjectKind, uniqueBy }) => {
+  handler: async (ctx, { spaceId, ...def }) => {
     const me = await requireActive(ctx);
-    const { space } = await assertCan(ctx, me.userId, spaceId, "manage");
-    if (space.kind !== "shared") throw new OneBaseError("السجلات تكون في مساحة مشتركة");
-    const clean = name.trim();
-    if (!clean) throw new OneBaseError("اكتب اسماً لمجموعة السجلات");
-    if (columns.length === 0 || columns.length > 100) throw new OneBaseError("عرّف عموداً واحداً على الأقل");
-    const keys = new Set<string>();
-    const headers = new Set<string>();
-    for (const c of columns) {
-      if (!KEY_RE.test(c.key)) throw new OneBaseError(`مفتاح العمود "${c.key}" غير صالح (حروف لاتينية وأرقام و _)`);
-      if (!c.header.trim()) throw new OneBaseError("لكل عمود عنوان كما في ملف Excel");
-      if (keys.has(c.key) || headers.has(c.header.trim())) throw new OneBaseError(`عمود مكرر: ${c.header}`);
-      keys.add(c.key);
-      headers.add(c.header.trim());
-    }
-    if (!keys.has(subjectColumn)) throw new OneBaseError("اختر عمود رقم الهوية أو الرقم الوظيفي");
-    const unique = uniqueBy?.length ? uniqueBy : [subjectColumn];
-    for (const k of unique) if (!keys.has(k)) throw new OneBaseError(`عمود منع التكرار غير معروف: ${k}`);
-    const id = await ctx.db.insert("recordSets", {
-      workspaceId: me.workspace._id,
-      spaceId,
-      name: clean,
-      columns: columns.map((c) => ({ ...c, header: c.header.trim(), required: c.required || c.key === subjectColumn })),
-      subjectColumn,
-      subjectKind,
-      uniqueBy: unique,
-      currentVersion: 0,
-      createdBy: me.userId,
-      createdAt: Date.now(),
-    });
-    await writeAudit(ctx, { userId: me.userId, action: "records.set_create", resourceType: "recordSet", resourceId: id, spaceId, detail: { name: clean, columns: columns.length } });
-    return id;
+    await assertCan(ctx, me.userId, spaceId, "manage");
+    return await insertSet(ctx, me.userId, me.workspace._id, spaceId, def);
   },
 });
 
@@ -266,6 +277,118 @@ export const commitImport = action({
   },
 });
 
+type Analysis = {
+  ok: boolean;
+  errors: string[];
+  name: string;
+  rowCount: number;
+  columns: InferredColumn[];
+  owner: { header: string; kind: "nationalId" | "employeeNo"; matched: number; distinct: number } | null;
+  uniqueBy: string[];
+};
+
+/**
+ * Starting from a file: reads it and guesses a record set (columns and types, the owner column,
+ * how many of its ids match accounts, uniqueness). Writes nothing; the manager chooses on the
+ * page, then createFromFile. Managers of a shared space only. Only counts of matching accounts
+ * are returned, never who they are.
+ */
+export const analyzeFile = action({
+  args: { spaceId: v.id("spaces"), fileName: v.string(), dataBase64: v.string() },
+  handler: async (ctx, { spaceId, fileName, dataBase64 }): Promise<Analysis> => {
+    const userId = await requireUserId(ctx);
+    return await analyzeBytes(ctx, userId, spaceId, decode(dataBase64), fileName);
+  },
+});
+
+/** The analysis behind analyzeFile and the assistant's propose_record_set. Checks "manage" on the space. */
+export async function analyzeBytes(ctx: ActionCtx, userId: Id<"users">, spaceId: Id<"spaces">, bytes: Uint8Array, fileName: string): Promise<Analysis> {
+  await ctx.runQuery(internal.records.sharedSpaceForManager, { userId, spaceId });
+  const name = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 100);
+  let raw: RawTable;
+  try {
+    raw = await excelSource.read({ bytes });
+    if (raw.headers.length === 0) throw new ImportError(["الصف الأول في الملف فارغ: يجب أن يحوي عناوين الأعمدة"]);
+    if (raw.rows.length === 0) throw new ImportError(["الملف لا يحوي أي صف بيانات"]);
+  } catch (e) {
+    if (e instanceof ImportError) return { ok: false, errors: e.errors, name, rowCount: 0, columns: [], owner: null, uniqueBy: [] };
+    throw e;
+  }
+  const columns = inferColumns(raw);
+  let owner: Analysis["owner"] = null;
+  for (const header of ownerCandidates(columns).slice(0, 3)) {
+    const refs = [...new Set(raw.rows.map((r) => normalizeRef(r.cells[header])).filter(Boolean))].slice(0, 2000);
+    const m: { nationalId: number; employeeNo: number } = await ctx.runQuery(internal.records.identityMatches, { userId, refs });
+    const kind = m.employeeNo > m.nationalId || (m.nationalId === 0 && /وظيفي|employee/i.test(header)) ? "employeeNo" : "nationalId";
+    const cand = { header, kind, matched: m[kind], distinct: refs.length } as const;
+    if (!owner || cand.matched > owner.matched) owner = cand;
+  }
+  const chosen = columns.map((c) => c.header);
+  return { ok: true, errors: [], name, rowCount: raw.rows.length, columns, owner, uniqueBy: owner ? suggestUnique(raw, chosen, owner.header) : [] };
+}
+
+const chosenColumn = v.object({ header: v.string(), type: v.union(v.literal("text"), v.literal("number"), v.literal("date"), v.literal("boolean")), required: v.boolean() });
+
+/**
+ * Creates a record set from the columns the manager chose in a file, and imports that file as
+ * version 1, in one transaction. Keys are generated. If any row fails, nothing is created and
+ * every error comes back (ok: false), not thrown, so the page can list them.
+ */
+export const createFromFile = action({
+  args: {
+    spaceId: v.id("spaces"),
+    name: v.string(),
+    fileName: v.string(),
+    dataBase64: v.string(),
+    columns: v.array(chosenColumn),
+    ownerHeader: v.string(),
+    ownerKind: subjectKind,
+    uniqueBy: v.array(v.string()),
+  },
+  handler: async (ctx, { dataBase64, ...args }): Promise<CreateResult> => {
+    const userId = await requireUserId(ctx);
+    return await createFromBytes(ctx, userId, args, decode(dataBase64));
+  },
+});
+
+type CreateResult = { ok: true; recordSetId: Id<"recordSets">; version: number; rowCount: number } | { ok: false; errors: string[] };
+type CreateArgs = { spaceId: Id<"spaces">; name: string; fileName: string; columns: { header: string; type: "text" | "number" | "date" | "boolean"; required: boolean }[]; ownerHeader: string; ownerKind: "nationalId" | "employeeNo"; uniqueBy: string[] };
+
+/** The creation behind createFromFile and the assistant's propose_record_set. Checks "manage" on the space. */
+export async function createFromBytes(ctx: ActionCtx, userId: Id<"users">, args: CreateArgs, bytes: Uint8Array): Promise<CreateResult> {
+  await ctx.runQuery(internal.records.sharedSpaceForManager, { userId, spaceId: args.spaceId });
+  const headers = args.columns.map((c) => c.header.trim());
+  if (new Set(headers).size !== headers.length) throw new OneBaseError("عمود مكرر في الاختيار");
+  if (!headers.includes(args.ownerHeader.trim())) return { ok: false, errors: ["اعتمد عمود صاحب السجل (رقم الهوية أو الرقم الوظيفي)"] };
+  const keys = keysFor(headers);
+  const columns: ColumnDef[] = args.columns.map((c) => ({ key: keys.get(c.header.trim())!, header: c.header.trim(), type: c.type, required: c.required }));
+  const subjectColumn = keys.get(args.ownerHeader.trim())!;
+  const uniqueBy = [...new Set(args.uniqueBy.map((h) => keys.get(h.trim())).filter((k): k is string => Boolean(k)))];
+  if (!uniqueBy.includes(subjectColumn)) uniqueBy.unshift(subjectColumn);
+  const def = { columns, subjectColumn, uniqueBy };
+  let rows;
+  try {
+    rows = validateRows(def, await excelSource.read({ bytes }));
+  } catch (e) {
+    if (e instanceof ImportError) return { ok: false, errors: e.errors };
+    throw e;
+  }
+  const storageId = await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  try {
+    const r = await ctx.runMutation(internal.records.createWithImport, {
+      userId,
+      spaceId: args.spaceId,
+      def: { name: args.name, columns, subjectColumn, subjectKind: args.ownerKind, uniqueBy },
+      source: { kind: "excel", name: args.fileName.slice(0, 255), sha256: sha256Hex(bytes), storageId },
+      rows,
+    });
+    return { ok: true, ...r };
+  } catch (e) {
+    await ctx.storage.delete(storageId);
+    throw e;
+  }
+}
+
 // ---------- internal ----------
 
 export const setForManager = internalQuery({
@@ -290,16 +413,23 @@ export const insertImport = internalMutation({
     await requireActor(ctx, userId);
     const set = await loadSet(ctx, recordSetId);
     await assertCan(ctx, userId, set.spaceId, "manage");
-    // Validate once more inside the transaction (defense in depth: the action may be stale).
-    const again = validateRows(set, { headers: set.columns.map((c) => c.header), rows: rows.map((r) => ({ rowNo: r.rowNo, cells: Object.fromEntries(set.columns.map((c) => [c.header, r.data[c.key]])) })) });
-    const version = set.currentVersion + 1;
-    for (const r of again) await ctx.db.insert("records", { recordSetId: set._id, spaceId: set.spaceId, version, rowNo: r.rowNo, subjectRef: r.subjectRef, data: r.data });
-    await ctx.db.insert("recordImports", { recordSetId: set._id, spaceId: set.spaceId, version, source, rowCount: again.length, importedBy: userId, importedAt: Date.now() });
-    await ctx.db.patch(set._id, { currentVersion: version });
-    await writeAudit(ctx, { userId, action: "records.import", resourceType: "recordSet", resourceId: set._id, spaceId: set.spaceId, detail: { name: set.name, version, rows: again.length, source: source.kind, fileName: source.name } });
-    return { version, rowCount: again.length };
+    return await writeImport(ctx, userId, set, source, rows);
   },
 });
+
+type ImportSource = { kind: string; name: string; sha256: string; storageId?: Id<"_storage"> };
+type ImportRow = { rowNo: number; subjectRef: string; data: Record<string, Cell> };
+
+/** Writes every row as the set's next version. Validates once more inside the transaction (the action may be stale). */
+async function writeImport(ctx: MutationCtx, userId: Id<"users">, set: Doc<"recordSets">, source: ImportSource, rows: ImportRow[]) {
+  const again = validateRows(set, { headers: set.columns.map((c) => c.header), rows: rows.map((r) => ({ rowNo: r.rowNo, cells: Object.fromEntries(set.columns.map((c) => [c.header, r.data[c.key]])) })) });
+  const version = set.currentVersion + 1;
+  for (const r of again) await ctx.db.insert("records", { recordSetId: set._id, spaceId: set.spaceId, version, rowNo: r.rowNo, subjectRef: r.subjectRef, data: r.data });
+  await ctx.db.insert("recordImports", { recordSetId: set._id, spaceId: set.spaceId, version, source, rowCount: again.length, importedBy: userId, importedAt: Date.now() });
+  await ctx.db.patch(set._id, { currentVersion: version });
+  await writeAudit(ctx, { userId, action: "records.import", resourceType: "recordSet", resourceId: set._id, spaceId: set.spaceId, detail: { name: set.name, version, rows: again.length, source: source.kind, fileName: source.name } });
+  return { version, rowCount: again.length };
+}
 
 /** query_records: members of the records' space only; sensitive spaces are audited. */
 export const queryForUser = internalMutation({
@@ -318,4 +448,72 @@ export const queryForUser = internalMutation({
 export const mineForUser = internalQuery({
   args: { userId: v.id("users") },
   handler: (ctx, { userId }) => myRecords(ctx, userId),
+});
+
+export const sharedSpaceForManager = internalQuery({
+  args: { userId: v.id("users"), spaceId: v.id("spaces") },
+  handler: async (ctx, { userId, spaceId }) => {
+    await requireActor(ctx, userId);
+    const { space } = await assertCan(ctx, userId, spaceId, "manage");
+    if (space.kind !== "shared") throw new OneBaseError("السجلات تكون في مساحة مشتركة");
+    return null;
+  },
+});
+
+/** How many of these ids belong to accounts of the caller's workspace, per kind. Counts only. */
+export const identityMatches = internalQuery({
+  args: { userId: v.id("users"), refs: v.array(v.string()) },
+  handler: async (ctx, { userId, refs }) => {
+    const actor = await requireActor(ctx, userId);
+    const out = { nationalId: 0, employeeNo: 0 };
+    for (const ref of refs.slice(0, 2000)) {
+      for (const kind of ["nationalId", "employeeNo"] as const) {
+        const users = await ctx.db.query("users").withIndex(kind === "nationalId" ? "by_nationalId" : "by_employeeNo", (q: any) => q.eq(kind, ref)).collect();
+        for (const u of users) if ((await ctx.components.workspace.role({ teamId: actor.workspace.teamId, userId: u._id })) !== null) { out[kind]++; break; }
+      }
+    }
+    return out;
+  },
+});
+
+/** The set and its first version in one transaction: a file that fails leaves no empty set behind. */
+export const createWithImport = internalMutation({
+  args: {
+    userId: v.id("users"),
+    spaceId: v.id("spaces"),
+    def: v.object({ name: v.string(), columns: v.array(columnDef), subjectColumn: v.string(), subjectKind, uniqueBy: v.array(v.string()) }),
+    source: v.object({ kind: v.string(), name: v.string(), sha256: v.string(), storageId: v.optional(v.id("_storage")) }),
+    rows: v.array(v.object({ rowNo: v.number(), subjectRef: v.string(), data: v.record(v.string(), cellValue) })),
+  },
+  handler: async (ctx, { userId, spaceId, def, source, rows }) => {
+    const actor = await requireActor(ctx, userId);
+    await assertCan(ctx, userId, spaceId, "manage");
+    const id = await insertSet(ctx, userId, actor.workspace._id, spaceId, def);
+    const set = (await ctx.db.get(id))!;
+    const r = await writeImport(ctx, userId, set, source, rows);
+    return { recordSetId: id, ...r };
+  },
+});
+
+/**
+ * propose_record_set: an Excel file the user can read, inside the turn's scope, and the shared
+ * space the set would go to (the given one, else the file's), with its name. The space's
+ * "manage" check happens in analyzeBytes / createFromBytes.
+ */
+export const fileForRecordSet = internalQuery({
+  args: { userId: v.id("users"), fileId: v.string(), spaceId: v.optional(v.string()), scopeSpaceIds: v.array(v.string()), scopeFileIds: v.optional(v.array(v.string())) },
+  handler: async (ctx, { userId, fileId, spaceId, scopeSpaceIds, scopeFileIds }) => {
+    await requireActor(ctx, userId);
+    const id = ctx.db.normalizeId("files", fileId);
+    const file = id ? await ctx.db.get(id) : null;
+    const missing = "الملف غير موجود أو لا تملك صلاحية الوصول إليه.";
+    if (!file || file.status !== "active" || !scopeSpaceIds.includes(file.spaceId) || (scopeFileIds && !scopeFileIds.includes(file._id))) return { error: missing };
+    if (!(await readableSpaceIds(ctx, userId)).includes(file.spaceId)) return { error: missing };
+    if (!/\.xlsx$/i.test(file.name) && !file.mime.includes("spreadsheetml")) return { error: "السجلات تُنشأ من ملف Excel بصيغة ‎.xlsx" };
+    const target = spaceId ? ctx.db.normalizeId("spaces", spaceId) : file.spaceId;
+    const space = target ? await ctx.db.get(target) : null;
+    if (!space) return { error: "المساحة غير موجودة." };
+    if (space.kind !== "shared") return { error: "السجلات تكون في مساحة مشتركة يديرها المستخدم. اذكر المساحة (spaceId) التي يُنشأ فيها السجل." };
+    return { storageId: file.storageId, fileName: file.name, spaceId: space._id, spaceName: space.name };
+  },
 });

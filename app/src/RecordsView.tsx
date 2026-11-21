@@ -1,5 +1,6 @@
-// Structured records of a space: the manager defines a record set and imports Excel files
-// (validated, previewed, then all-or-nothing as a new dated version); members browse the rows.
+// Structured records of a space: the manager starts a record set from an Excel file (plans/17:
+// the file's columns are read, the manager chooses), later files are validated, previewed, then
+// imported all-or-nothing as a new dated version; members browse the rows.
 
 import { useState } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
@@ -20,7 +21,7 @@ export function RecordsTab({ space }: { space: SpaceInfo }) {
   const current = sets?.find((s) => s._id === selected) ?? sets?.[0];
   return (
     <div className="space-y-4">
-      {space.canManage && space.kind === "shared" && <NewSetForm spaceId={space._id} />}
+      {space.canManage && space.kind === "shared" && <NewSetFromFile spaceId={space._id} />}
       {sets?.length === 0 && <p className="text-sm text-faint">لا توجد سجلات في هذه المساحة.</p>}
       {sets && sets.length > 0 && (
         <div className="flex flex-wrap gap-2">
@@ -36,76 +37,245 @@ export function RecordsTab({ space }: { space: SpaceInfo }) {
   );
 }
 
-function NewSetForm({ spaceId }: { spaceId: string }) {
-  const createSet = useMutation(api.records.createSet);
-  const [open, setOpen] = useState(false);
+type Kind = keyof typeof TYPES;
+type Analysis = {
+  ok: boolean;
+  errors: string[];
+  name: string;
+  rowCount: number;
+  columns: { header: string; type: Kind; required: boolean; idLike: boolean; samples: string[] }[];
+  owner: { header: string; kind: "nationalId" | "employeeNo"; matched: number; distinct: number } | null;
+  uniqueBy: string[];
+};
+type Choice = { header: string; use: boolean; type: Kind; required: boolean };
+
+/**
+ * A record set starts from the manager's own Excel file (plans/17): the file's columns are shown
+ * with guessed types; the manager unticks what they don't want, confirms the owner column and
+ * what must not repeat, and one click creates the set and imports the file. Nothing to type.
+ */
+function NewSetFromFile({ spaceId }: { spaceId: string }) {
+  const analyze = useAction(api.records.analyzeFile);
+  const create = useAction(api.records.createFromFile);
+  const [file, setFile] = useState<{ name: string; data: string } | null>(null);
+  const [a, setA] = useState<Analysis | null>(null);
   const [name, setName] = useState("");
-  const [cols, setCols] = useState([{ key: "nid", header: "رقم الهوية", type: "text" as keyof typeof TYPES, required: true }]);
-  const [subjectColumn, setSubject] = useState("nid");
-  const [subjectKind, setKind] = useState<"nationalId" | "employeeNo">("nationalId");
-  const [uniqueBy, setUnique] = useState<string[]>(["nid"]);
-  const [error, setError] = useState("");
-  if (!open)
-    return (
-      <button className="btn-ghost" onClick={() => setOpen(true)}>
-        + مجموعة سجلات جديدة
-      </button>
-    );
+  const [cols, setCols] = useState<Choice[]>([]);
+  const [owner, setOwner] = useState("");
+  const [kind, setKind] = useState<"nationalId" | "employeeNo">("nationalId");
+  const [unique, setUnique] = useState<string[]>([]);
+  const [editUnique, setEditUnique] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [errors, setErrors] = useState<string[]>([]);
+  const [done, setDone] = useState("");
+  const [inputKey, setInputKey] = useState(0);
+
+  const reset = () => {
+    setFile(null);
+    setA(null);
+    setErrors([]);
+    setEditUnique(false);
+    setInputKey((k) => k + 1);
+  };
+  const used = cols.filter((c) => c.use);
+  const label = (headers: string[]) => headers.join(" + ");
+
   return (
-    <form
-      className="card space-y-3 p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setError("");
-        createSet({ spaceId: spaceId as any, name, columns: cols, subjectColumn, subjectKind, uniqueBy })
-          .then(() => setOpen(false))
-          .catch((err) => setError(errorText(err)));
-      }}
-    >
-      <input className="input w-full" placeholder="اسم المجموعة (مثلاً: دورات الموظفين)" value={name} onChange={(e) => setName(e.target.value)} required />
-      <p className="text-xs text-muted">الأعمدة كما تظهر في الصف الأول من ملف Excel. المفتاح بحروف لاتينية ويُستخدم في ربط القوالب.</p>
-      {cols.map((c, i) => (
-        <div key={i} className="flex flex-wrap items-center gap-2 text-sm">
-          <input className="input w-40" placeholder="عنوان العمود في Excel" value={c.header} onChange={(e) => setCols(cols.map((x, j) => (j === i ? { ...x, header: e.target.value } : x)))} required />
-          <input className="input w-28" dir="ltr" placeholder="key" value={c.key} onChange={(e) => setCols(cols.map((x, j) => (j === i ? { ...x, key: e.target.value } : x)))} required />
-          <select className="input" value={c.type} onChange={(e) => setCols(cols.map((x, j) => (j === i ? { ...x, type: e.target.value as any } : x)))}>
-            {Object.entries(TYPES).map(([k, l]) => (
-              <option key={k} value={k}>
-                {l}
-              </option>
-            ))}
-          </select>
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={c.required} onChange={(e) => setCols(cols.map((x, j) => (j === i ? { ...x, required: e.target.checked } : x)))} /> إلزامي
-          </label>
-          <label className="flex items-center gap-1">
-            <input type="radio" name="subject" checked={subjectColumn === c.key} onChange={() => setSubject(c.key)} /> رقم صاحب السجل
-          </label>
-          <label className="flex items-center gap-1">
-            <input type="checkbox" checked={uniqueBy.includes(c.key)} onChange={(e) => setUnique(e.target.checked ? [...uniqueBy, c.key] : uniqueBy.filter((k) => k !== c.key))} /> يمنع التكرار
-          </label>
-          {cols.length > 1 && (
-            <button type="button" className="btn-ghost" onClick={() => setCols(cols.filter((_, j) => j !== i))}>
-              إزالة
-            </button>
-          )}
-        </div>
-      ))}
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" className="btn-ghost" onClick={() => setCols([...cols, { key: "", header: "", type: "text", required: false }])}>
-          + عمود
-        </button>
-        <select className="input" value={subjectKind} onChange={(e) => setKind(e.target.value as any)}>
-          <option value="nationalId">عمود صاحب السجل = رقم الهوية</option>
-          <option value="employeeNo">عمود صاحب السجل = الرقم الوظيفي</option>
-        </select>
-        <button className="btn-primary">إنشاء</button>
-        <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
-          إلغاء
-        </button>
+    <div className="card space-y-3 p-3">
+      <div>
+        <div className="text-sm font-bold">سجل جديد من ملف Excel</div>
+        <p className="text-xs text-muted">ارفع الملف كما هو. نقرأ أعمدته، وتختار ما تعتمده منها.</p>
       </div>
-      {error && <p className="text-sm text-negative">{error}</p>}
-    </form>
+      <input
+        key={inputKey}
+        type="file"
+        aria-label="ملف Excel"
+        accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        onChange={async (e) => {
+          const f = e.target.files?.[0];
+          setA(null);
+          setErrors([]);
+          setDone("");
+          if (!f) return;
+          setBusy(true);
+          try {
+            const data = await fileBase64(f);
+            const r = (await analyze({ spaceId: spaceId as any, fileName: f.name, dataBase64: data })) as Analysis;
+            setFile({ name: f.name, data });
+            setA(r);
+            if (!r.ok) return setErrors(r.errors);
+            setName(r.name);
+            setCols(r.columns.map((c) => ({ header: c.header, use: true, type: c.type, required: c.required })));
+            setOwner(r.owner?.header ?? "");
+            setKind(r.owner?.kind ?? "nationalId");
+            setUnique(r.uniqueBy);
+          } catch (err) {
+            setErrors([errorText(err)]);
+          } finally {
+            setBusy(false);
+          }
+        }}
+      />
+      {busy && <p className="text-sm text-muted">جارٍ القراءة…</p>}
+      {done && <p className="rounded-lg bg-positive-soft p-2 text-sm text-positive">{done}</p>}
+      {a?.ok && file && (
+        <form
+          className="space-y-3"
+          onSubmit={async (e) => {
+            e.preventDefault();
+            setErrors([]);
+            setBusy(true);
+            try {
+              const r = await create({
+                spaceId: spaceId as any,
+                name,
+                fileName: file.name,
+                dataBase64: file.data,
+                columns: used.map(({ header, type, required }) => ({ header, type, required })),
+                ownerHeader: owner,
+                ownerKind: kind,
+                uniqueBy: unique.filter((h) => used.some((c) => c.header === h)),
+              });
+              if (!r.ok) return setErrors(r.errors);
+              reset();
+              setDone(`أُنشئ «${name}» واستُورد ${r.rowCount} صف.`);
+            } catch (err) {
+              setErrors([errorText(err)]);
+            } finally {
+              setBusy(false);
+            }
+          }}
+        >
+          <label className="block text-sm">
+            <span className="label">اسم السجل</span>
+            <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} required />
+          </label>
+
+          <div className="text-xs text-muted">{a.rowCount} صف. اختر الأعمدة التي تعتمدها:</div>
+          <div className="overflow-auto rounded border border-line">
+            <table className="w-full text-sm">
+              <thead className="bg-sunken">
+                <tr>
+                  <th className="th">اعتمد</th>
+                  <th className="th">العمود</th>
+                  <th className="th">أمثلة</th>
+                  <th className="th">النوع</th>
+                  <th className="th">إلزامي</th>
+                </tr>
+              </thead>
+              <tbody>
+                {cols.map((c, i) => {
+                  const info = a.columns[i]!;
+                  const set = (patch: Partial<Choice>) => setCols(cols.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                  return (
+                    <tr key={c.header} className={`border-t border-rule ${c.use ? "" : "opacity-50"}`}>
+                      <td className="td">
+                        <input type="checkbox" aria-label={`اعتمد ${c.header}`} checked={c.use} disabled={c.header === owner} onChange={(e) => set({ use: e.target.checked })} />
+                      </td>
+                      <td className="td font-medium">{c.header}</td>
+                      <td className="td text-xs text-muted">{info.samples.join("، ")}</td>
+                      <td className="td">
+                        <select className="input h-8" aria-label={`نوع ${c.header}`} value={c.type} disabled={!c.use || c.header === owner} onChange={(e) => set({ type: e.target.value as Kind })}>
+                          {Object.entries(TYPES).map(([k, l]) => (
+                            <option key={k} value={k}>
+                              {l}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="td">
+                        <input type="checkbox" aria-label={`${c.header} إلزامي`} checked={c.required || c.header === owner} disabled={!c.use || c.header === owner} onChange={(e) => set({ required: e.target.checked })} />
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="space-y-1 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="label m-0">صاحب السجل</span>
+              <select
+                className="input h-8"
+                aria-label="عمود صاحب السجل"
+                value={owner}
+                onChange={(e) => {
+                  setOwner(e.target.value);
+                  setCols(cols.map((c) => (c.header === e.target.value ? { ...c, use: true } : c)));
+                  setUnique([e.target.value, ...unique.filter((h) => h !== owner && h !== e.target.value)]);
+                }}
+                required
+              >
+                <option value="">اختر العمود…</option>
+                {a.columns.map((c) => (
+                  <option key={c.header} value={c.header}>
+                    {c.header}
+                  </option>
+                ))}
+              </select>
+              <select className="input h-8" aria-label="نوع الرقم" value={kind} onChange={(e) => setKind(e.target.value as typeof kind)}>
+                <option value="nationalId">رقم الهوية</option>
+                <option value="employeeNo">الرقم الوظيفي</option>
+              </select>
+            </div>
+            {a.owner && a.owner.header === owner && (
+              <p className="text-xs text-muted num">
+                يطابق {a.owner.matched} من {a.owner.distinct} موظفاً لهم حسابات. يرى كل منهم سطوره في «بياناتي».
+              </p>
+            )}
+            {!a.owner && <p className="text-xs text-warning">لم نجد عموداً فيه أرقام هوية أو أرقام وظيفية. اختر العمود الذي يحدد صاحب كل سطر.</p>}
+          </div>
+
+          {owner && (
+            <div className="space-y-1 text-sm">
+              <div className="flex flex-wrap items-center gap-2">
+                <span>
+                  لا يتكرر: <b>{label(unique.filter((h) => used.some((c) => c.header === h)))}</b>
+                </span>
+                <button type="button" className="btn-ghost h-7 text-xs" onClick={() => setEditUnique(!editUnique)}>
+                  {editUnique ? "تم" : "تغيير"}
+                </button>
+              </div>
+              {editUnique && (
+                <div className="flex flex-wrap gap-3 text-xs">
+                  {used.map((c) => (
+                    <label key={c.header} className="flex items-center gap-1">
+                      <input
+                        type="checkbox"
+                        checked={unique.includes(c.header) || c.header === owner}
+                        disabled={c.header === owner}
+                        onChange={(e) => setUnique(e.target.checked ? [...unique, c.header] : unique.filter((h) => h !== c.header))}
+                      />
+                      {c.header}
+                    </label>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex gap-2">
+            <button className="btn-primary" disabled={busy || !owner || !name.trim()}>
+              أنشئ واستورد
+            </button>
+            <button type="button" className="btn-ghost" onClick={reset}>
+              إلغاء
+            </button>
+          </div>
+        </form>
+      )}
+      {errors.length > 0 && (
+        <div className="rounded-lg bg-negative-soft p-2 text-sm text-negative">
+          <div className="font-bold">{a?.ok ? "لم يُنشأ شيء:" : "تعذّرت قراءة الملف:"}</div>
+          <ul className="list-disc ps-5">
+            {errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
   );
 }
 

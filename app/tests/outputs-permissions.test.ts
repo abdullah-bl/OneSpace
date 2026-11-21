@@ -24,6 +24,23 @@ afterAll(async () => {
 });
 
 const tok = (a: ActorKey) => f.tokens[a];
+
+/** A Word template in each shared space (made once by mgr), and a Word file to read. */
+let wordFile: string;
+const wordTemplates: Partial<Record<SpaceKey, string>> = {};
+const WORD_COLS = { name: "name" };
+async function wordFileB64() {
+  if (!wordFile) {
+    const { sampleDocx } = await import("../onebase/lib/docxTemplate");
+    wordFile = Buffer.from(await sampleDocx("شهادة", ["الاسم"])).toString("base64");
+  }
+  return wordFile;
+}
+async function wordTemplate(sp: SpaceKey) {
+  wordTemplates[sp] ??= must(await s.call("action", "templates:saveWord", { spaceId: f.spaces[sp], recordSetId: o.sets[sp], name: "وورد", dataBase64: await wordFileB64(), mapping: {} }, tok("mgr"))).templateId;
+  return wordTemplates[sp]!;
+}
+void WORD_COLS;
 const SHARED: SpaceKey[] = ["S_plain", "S_every", "S_sens"];
 const fail = (error: string): Result => ({ ok: false, error, status: 0 });
 
@@ -91,6 +108,7 @@ const OPS: Op[] = [
       return g.status === 200 && g.text.startsWith("%PDF") ? { ok: true, value: "pdf" } : fail(`GET ${g.status}`);
     },
   },
+  { name: "documents:rowsForTemplate", need: "read", spaces: SHARED, run: (a, sp) => s.call("query", "documents:rowsForTemplate", { templateId: o.templates[sp] }, tok(a)) },
   { name: "documents:reproduce", need: "read", spaces: SHARED, run: (a, sp) => s.call("action", "documents:reproduce", { documentId: o.docs[sp] }, tok(a)) },
 
   // write
@@ -173,6 +191,12 @@ const OPS: Op[] = [
     run: async (a, sp) => s.call("mutation", "documents:request", { templateId: o.templates[sp], recordId: await o.recordOf(sp, IDS.mem, "إدارة المشاريع") }, tok(a)),
   },
   {
+    name: "documents:requestMany",
+    need: "write",
+    spaces: SHARED,
+    run: async (a, sp) => s.call("mutation", "documents:requestMany", { templateId: o.templates[sp], recordIds: [await o.recordOf(sp, IDS.mem, "إدارة المشاريع")] }, tok(a)),
+  },
+  {
     name: "fill_template (tool)",
     need: "write",
     spaces: SHARED,
@@ -194,8 +218,35 @@ const OPS: Op[] = [
     spaces: SPACES,
     run: (a, sp) => s.call("mutation", "records:createSet", { spaceId: f.spaces[sp], name: "x", columns: COLUMNS, subjectColumn: "nid", subjectKind: "nationalId" }, tok(a)),
   },
+  { name: "records:analyzeFile", need: "manage", spaces: SPACES, run: (a, sp) => s.call("action", "records:analyzeFile", { spaceId: f.spaces[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
+  {
+    name: "records:createFromFile",
+    need: "manage",
+    spaces: SPACES,
+    run: (a, sp) =>
+      s.call(
+        "action",
+        "records:createFromFile",
+        { spaceId: f.spaces[sp], name: "x", fileName: "a.xlsx", dataBase64: xlsx, columns: [{ header: "رقم الهوية", type: "text", required: true }, { header: "الدورة", type: "text", required: true }], ownerHeader: "رقم الهوية", ownerKind: "nationalId", uniqueBy: ["رقم الهوية", "الدورة"] },
+        tok(a),
+      ),
+  },
   { name: "records:previewImport", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "records:previewImport", { recordSetId: o.sets[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
   { name: "records:commitImport", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "records:commitImport", { recordSetId: o.sets[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
+  {
+    name: "templates:preview",
+    need: "manage",
+    spaces: SHARED,
+    run: (a, sp) => s.call("action", "templates:preview", { spaceId: f.spaces[sp], layout: layoutFor("x"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets[sp], fields: { name: "name", course: "course", date: "date" } } }, tok(a)),
+  },
+  ...(["templates:analyzeWord", "templates:previewWord", "templates:saveWord"] as const).map((name) => ({
+    name,
+    need: "manage" as Need,
+    spaces: SHARED,
+    run: async (a: ActorKey, sp: SpaceKey) => s.call("action", name, { spaceId: f.spaces[sp], recordSetId: o.sets[sp], dataBase64: await wordFileB64(), ...(name === "templates:saveWord" ? { name: "w" } : {}) }, tok(a)),
+  })),
+  { name: "templates:sampleWord", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "templates:sampleWord", { spaceId: f.spaces[sp], recordSetId: o.sets[sp], name: "x" }, tok(a)) },
+  { name: "templates:downloadWord", need: "read", spaces: SHARED, run: async (a, sp) => s.call("action", "templates:downloadWord", { templateId: await wordTemplate(sp) }, tok(a)) },
   {
     name: "templates:saveVersion",
     need: "manage",
@@ -209,6 +260,8 @@ const OPS: Op[] = [
       ),
   },
   { name: "templates:approveVersion", need: "manage", spaces: SHARED, run: (a, sp) => s.call("mutation", "templates:approveVersion", { templateId: o.templates[sp], version: 1 }, tok(a)) },
+  // On an issued document: passes through for a manager, refused for anyone else before anything changes.
+  { name: "documents:approveAndIssue", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "documents:approveAndIssue", { documentIds: [o.docs[sp]] }, tok(a)) },
   { name: "documents:approve", need: "manage", spaces: SHARED, run: async (a, sp) => s.call("mutation", "documents:approve", { documentId: await docFor(sp, IDS.mem, "Excel المتقدم", "draft") }, tok(a)) },
   { name: "documents:reject", need: "manage", spaces: SHARED, run: async (a, sp) => s.call("mutation", "documents:reject", { documentId: await docFor(sp, IDS.ghost, "التفاوض", "draft") }, tok(a)) },
   { name: "artifacts:transfers", need: "manage", spaces: SPACES, run: (a, sp) => s.call("query", "artifacts:transfers", { spaceId: f.spaces[sp] }, tok(a)) },

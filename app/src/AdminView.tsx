@@ -3,7 +3,7 @@
 // space's existence and managers here, never its files unless they're a member.
 
 import { useEffect, useState, type ReactNode } from "react";
-import { useMutation, useQuery } from "onebase/react";
+import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, STATUS_LABELS } from "./lib";
 import { Icon } from "./icons";
 import { ask, EmptyState, Menu, PageHeader, type MenuItem } from "./ui";
@@ -35,6 +35,7 @@ export function UsersAdmin() {
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "active" | "disabled">("all");
   const [editing, setEditing] = useState<string | null>(null);
+  const [staffFile, setStaffFile] = useState(false);
   const counts = { all: users?.length ?? 0, pending: 0, active: 0, disabled: 0 };
   for (const u of users ?? []) counts[u.status as "pending" | "active" | "disabled"]++;
   const needle = q.trim().toLowerCase();
@@ -45,7 +46,15 @@ export function UsersAdmin() {
 
   return (
     <div>
-      <PageHeader title="الموظفون" subtitle="من ينشئ حساباً يبقى «بانتظار التفعيل» ولا يرى شيئاً حتى تفعّله. تأكد من هوية صاحب البريد قبل التفعيل." />
+      <PageHeader
+        title="الموظفون"
+        subtitle="من ينشئ حساباً يبقى «بانتظار التفعيل» ولا يرى شيئاً حتى تفعّله. تأكد من هوية صاحب البريد قبل التفعيل."
+        actions={
+          <button className="btn-secondary" onClick={() => setStaffFile(true)}>
+            <Icon name="table" /> الأرقام من ملف
+          </button>
+        }
+      />
       {error && <p className="alert-negative mb-4">{error}</p>}
       {counts.pending > 0 && filter !== "pending" && (
         <button className="mb-4 flex w-full items-center gap-3 rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-start text-sm" onClick={() => setFilter("pending")}>
@@ -141,6 +150,7 @@ export function UsersAdmin() {
         </ul>
       )}
       {editUser && <EditUserDialog key={editUser._id} user={editUser} onClose={() => setEditing(null)} />}
+      {staffFile && <StaffFileDialog onClose={() => setStaffFile(false)} />}
     </div>
   );
 }
@@ -201,6 +211,188 @@ function EditUserDialog({ user, onClose }: { user: AdminUser; onClose: () => voi
   );
 }
 
+type StaffMapping = { email: string; nationalId: string | null; employeeNo: string | null };
+type StaffRow = { rowNo: number; email: string; nationalId: string | null; employeeNo: string | null; status: "set" | "same" | "notFound" | "conflict" | "invalid"; reason: string | null; name: string | null; current: { nationalId: string | null; employeeNo: string | null } | null };
+type StaffAnalysis = { ok: boolean; errors: string[]; headers: string[]; mapping: StaffMapping; rows: StaffRow[]; counts: Record<StaffRow["status"], number> };
+
+const STAFF_STATUS: Record<StaffRow["status"], { label: string; tone: string }> = {
+  set: { label: "سيُحفظ", tone: "text-positive" },
+  same: { label: "مسجّل مسبقاً", tone: "text-muted" },
+  notFound: { label: "لا حساب", tone: "text-warning" },
+  conflict: { label: "تعارض", tone: "text-negative" },
+  invalid: { label: "غير صالح", tone: "text-negative" },
+};
+
+async function fileBase64(file: File) {
+  const buf = new Uint8Array(await file.arrayBuffer());
+  let s = "";
+  for (let i = 0; i < buf.length; i += 0x8000) s += String.fromCharCode(...buf.subarray(i, i + 0x8000));
+  return btoa(s);
+}
+
+/**
+ * National ids / employee numbers from a staff file (plans/17 §2): upload, check which column is
+ * which, see row by row what will be saved and what can't be, then save. Rows are matched to
+ * accounts by email; an empty cell never clears a number.
+ */
+function StaffFileDialog({ onClose }: { onClose: () => void }) {
+  const analyze = useAction(api.staffFile.analyze);
+  const apply = useAction(api.staffFile.apply);
+  const [file, setFile] = useState<{ name: string; data: string } | null>(null);
+  const [a, setA] = useState<StaffAnalysis | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState("");
+
+  const run = async (data: string, mapping?: StaffMapping) => {
+    setBusy(true);
+    setError("");
+    try {
+      setA((await analyze({ dataBase64: data, ...(mapping ? { mapping } : {}) })) as StaffAnalysis);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const remap = (patch: Partial<StaffMapping>) => file && a && void run(file.data, { ...a.mapping, ...patch });
+  const pick = (label: string, value: string | null, onChange: (v: string | null) => void, optional: boolean) => (
+    <label className="block text-sm">
+      <span className="label">{label}</span>
+      <select className="input w-full" value={value ?? ""} onChange={(e) => onChange(e.target.value || null)}>
+        <option value="">{optional ? "— لا يوجد —" : "اختر…"}</option>
+        {a?.headers.map((h) => (
+          <option key={h} value={h}>
+            {h}
+          </option>
+        ))}
+      </select>
+    </label>
+  );
+
+  return (
+    <Sheet
+      wide
+      title="الأرقام من ملف"
+      subtitle="ملف Excel فيه بريد كل موظف ورقم هويته أو رقمه الوظيفي. نطابق بالبريد ونعرض ما سيتغير قبل الحفظ."
+      error={error}
+      busy={busy}
+      submitLabel={done ? "إغلاق" : a?.ok ? `احفظ ${a.counts.set}` : "احفظ"}
+      onClose={onClose}
+      onSubmit={async () => {
+        if (done) return onClose();
+        if (!file || !a?.ok || a.counts.set === 0) return;
+        setBusy(true);
+        setError("");
+        try {
+          const r = await apply({ dataBase64: file.data, mapping: a.mapping, fileName: file.name });
+          setDone(`حُفظت أرقام ${r.set} موظف${r.unchanged ? `، و${r.unchanged} مسجّلة مسبقاً` : ""}${r.skipped ? `، وتُرك ${r.skipped} صف` : ""}.`);
+        } catch (err) {
+          setError(errorText(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <div className="mt-4 space-y-3">
+        {done ? (
+          <p className="rounded-lg bg-positive-soft p-3 text-sm text-positive">{done}</p>
+        ) : (
+          <input
+            type="file"
+            aria-label="ملف الموظفين"
+            accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            onChange={async (e) => {
+              const f = e.target.files?.[0];
+              setA(null);
+              if (!f) return;
+              const data = await fileBase64(f);
+              setFile({ name: f.name, data });
+              await run(data);
+            }}
+          />
+        )}
+        {!done && a && a.headers.length > 0 && (
+          <div className="grid gap-3 sm:grid-cols-3">
+            {pick("البريد", a.mapping.email, (v) => remap({ email: v ?? "" }), false)}
+            {pick("رقم الهوية", a.mapping.nationalId, (v) => remap({ nationalId: v }), true)}
+            {pick("الرقم الوظيفي", a.mapping.employeeNo, (v) => remap({ employeeNo: v }), true)}
+          </div>
+        )}
+        {!done && a && !a.ok && (
+          <ul className="alert-negative list-disc ps-5">
+            {a.errors.map((e, i) => (
+              <li key={i}>{e}</li>
+            ))}
+          </ul>
+        )}
+        {!done && a?.ok && (
+          <>
+            <p className="text-sm num">
+              {(Object.keys(STAFF_STATUS) as StaffRow["status"][])
+                .filter((k) => a.counts[k] > 0)
+                .map((k) => (
+                  <span key={k} className={`me-3 ${STAFF_STATUS[k].tone}`}>
+                    {STAFF_STATUS[k].label}: {a.counts[k]}
+                  </span>
+                ))}
+            </p>
+            <div className="max-h-[40vh] overflow-auto rounded border border-line">
+              <table className="w-full text-xs">
+                <thead className="sticky top-0 bg-sunken">
+                  <tr>
+                    <th className="th">الصف</th>
+                    <th className="th">الموظف</th>
+                    <th className="th">رقم الهوية</th>
+                    <th className="th">الرقم الوظيفي</th>
+                    <th className="th">النتيجة</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {a.rows.map((r) => {
+                    const cell = (f: "nationalId" | "employeeNo") => {
+                      const now = r.current?.[f] ?? null;
+                      if (!r[f]) return <span className="text-faint">{now ?? ""}</span>;
+                      if (now && now !== r[f])
+                        return (
+                          <span>
+                            <s className="text-faint">{now}</s> {r[f]}
+                          </span>
+                        );
+                      return r[f];
+                    };
+                    return (
+                      <tr key={r.rowNo} className="border-t border-rule">
+                        <td className="td num">{r.rowNo}</td>
+                        <td className="td">
+                          {r.name && <div>{r.name}</div>}
+                          <div className="text-faint" dir="ltr">
+                            {r.email}
+                          </div>
+                        </td>
+                        <td className="td num" dir="ltr">
+                          {cell("nationalId")}
+                        </td>
+                        <td className="td num" dir="ltr">
+                          {cell("employeeNo")}
+                        </td>
+                        <td className={`td ${STAFF_STATUS[r.status].tone}`}>
+                          {STAFF_STATUS[r.status].label}
+                          {r.reason && <div className="text-faint">{r.reason}</div>}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </Sheet>
+  );
+}
+
 /** Modal form: centred card on desktop, bottom sheet on phones. Escape or a backdrop click closes it. */
 function Sheet({
   title,
@@ -208,6 +400,7 @@ function Sheet({
   error,
   busy,
   submitLabel = "حفظ",
+  wide = false,
   onSubmit,
   onClose,
   children,
@@ -217,6 +410,7 @@ function Sheet({
   error?: string;
   busy?: boolean;
   submitLabel?: string;
+  wide?: boolean;
   onSubmit: () => void | Promise<void>;
   onClose: () => void;
   children: ReactNode;
@@ -232,7 +426,7 @@ function Sheet({
         role="dialog"
         aria-modal="true"
         aria-labelledby="sheet-title"
-        className="card max-h-[90dvh] w-full animate-rise overflow-y-auto rounded-b-none p-5 shadow-xl sm:max-w-md sm:rounded-b-lg"
+        className={`card max-h-[90dvh] w-full animate-rise overflow-y-auto rounded-b-none p-5 shadow-xl ${wide ? "sm:max-w-3xl" : "sm:max-w-md"} sm:rounded-b-lg`}
         onSubmit={(e) => {
           e.preventDefault();
           void onSubmit();

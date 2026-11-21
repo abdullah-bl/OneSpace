@@ -202,3 +202,74 @@ export function validateRows(def: RecordSetDef, raw: RawTable): ValidRow[] {
 export function sha256Hex(bytes: Uint8Array | string): string {
   return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 }
+
+// ---------- starting from a file: guess the definition, the user chooses ----------
+
+export type InferredColumn = { header: string; type: ColumnType; required: boolean; idLike: boolean; distinct: number; samples: string[] };
+
+const isEmpty = (v: unknown) => v === null || v === undefined || (typeof v === "string" && v.trim() === "");
+const ID_RE = /^\d{5,15}$/;
+
+/**
+ * Guesses a column definition from the file's own values: the type every non-empty cell fits
+ * (id-like digits stay text), required when no cell is empty. Nothing here is trusted: the
+ * user sees and changes it, and validateRows checks the file against whatever they choose.
+ */
+export function inferColumns(raw: RawTable): InferredColumn[] {
+  return raw.headers.map((header) => {
+    const values = raw.rows.map((r) => r.cells[header]).filter((v) => !isEmpty(v));
+    const refs = values.map((v) => normalizeRef(v));
+    const idLike = values.length > 0 && refs.every((r) => ID_RE.test(r));
+    let type: ColumnType = "text";
+    if (values.length > 0 && !idLike) {
+      if (values.every((v) => toDate(v) !== null)) type = "date";
+      else if (values.every((v) => toNumber(v) !== null)) type = "number";
+      else if (values.every((v) => typeof v !== "number" && toBool(v) !== null)) type = "boolean";
+    }
+    const distinct = new Set(values.map((v) => (idLike ? normalizeRef(v) : toText(v)))).size;
+    const samples = [...new Set(values.map((v) => (idLike ? normalizeRef(v) : toText(v))))].slice(0, 3).map((s) => s.slice(0, 60));
+    return { header, type, required: values.length === raw.rows.length && raw.rows.length > 0, idLike, distinct, samples };
+  });
+}
+
+/** Columns that may name the record's owner: id-like digits, header hints first. Repeats are fine (one person, many courses). */
+export function ownerCandidates(columns: InferredColumn[]): string[] {
+  const hint = (h: string) => (/هوية|سجل مدني|إقامة|national|id/i.test(h) ? 2 : /وظيفي|موظف|employee|staff/i.test(h) ? 1 : 0);
+  return columns
+    .filter((c) => c.idLike)
+    .sort((a, b) => hint(b.header) - hint(a.header) || b.distinct - a.distinct)
+    .map((c) => c.header);
+}
+
+function cellKey(v: unknown, owner: boolean) {
+  if (isEmpty(v)) return null;
+  return owner ? normalizeRef(v) : toText(v);
+}
+
+function uniqueUnder(raw: RawTable, headers: string[], owner: string) {
+  const seen = new Set<string>();
+  for (const r of raw.rows) {
+    const k = JSON.stringify(headers.map((h) => cellKey(r.cells[h], h === owner)));
+    if (seen.has(k)) return false;
+    seen.add(k);
+  }
+  return true;
+}
+
+/**
+ * The fewest chosen columns (owner first) under which no two rows repeat: the owner alone, the
+ * owner + one column, + two columns, else every chosen column. A file with true duplicate rows
+ * still fails validation, which is the point.
+ */
+export function suggestUnique(raw: RawTable, chosen: string[], owner: string): string[] {
+  const others = chosen.filter((h) => h !== owner);
+  if (uniqueUnder(raw, [owner], owner)) return [owner];
+  for (const a of others) if (uniqueUnder(raw, [owner, a], owner)) return [owner, a];
+  for (let i = 0; i < others.length; i++) for (let j = i + 1; j < others.length; j++) if (uniqueUnder(raw, [owner, others[i]!, others[j]!], owner)) return [owner, others[i]!, others[j]!];
+  return [owner, ...others];
+}
+
+/** Keys for columns defined from a file: never typed, never shown. */
+export function keysFor(headers: string[]): Map<string, string> {
+  return new Map(headers.map((h, i) => [h, `c${i + 1}`]));
+}

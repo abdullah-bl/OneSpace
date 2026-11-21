@@ -1121,6 +1121,29 @@ function proposalSummary(p: Proposal): string[] {
     else if (a.form) out.push("نموذج تُحفظ ردوده في قائمة");
     return out;
   }
+  if (p.tool === "propose_record_set") {
+    const sm = a.summary;
+    if (!sm) return out;
+    if (sm.errors?.length) return [...out, ...sm.errors.map((e: string) => `تعذّر: ${e}`)];
+    if (a.name) out.push(`السجل: ${a.name}`);
+    if (sm.space) out.push(`في المساحة: ${sm.space}`);
+    out.push(`الصفوف: ${sm.rows}`);
+    const TYPE: Record<string, string> = { text: "نص", number: "رقم", date: "تاريخ", boolean: "نعم/لا" };
+    out.push(`الأعمدة: ${sm.columns.map((c: any) => `${c.header} (${TYPE[c.type] ?? c.type})`).join("، ")}`);
+    out.push(sm.owner ? `صاحب السطر: ${sm.owner.header} — يطابق ${sm.owner.matched} من ${sm.owner.distinct} موظفاً لهم حسابات` : "لا يوجد عمود لأرقام الهوية أو الأرقام الوظيفية");
+    if (sm.uniqueBy?.length) out.push(`لا يتكرر: ${sm.uniqueBy.join(" + ")}`);
+    return out;
+  }
+  if (p.tool === "fill_template" && a.summary) {
+    const sm = a.summary;
+    if (sm.error) return [`تعذّر: ${sm.error}`];
+    out.push(`القالب: ${sm.template}`);
+    out.push(`المسودات: ${sm.count}`);
+    if (sm.existing) out.push(`لها مستند من هذا القالب: ${sm.existing} (لن تتكرر)`);
+    if (sm.people?.length) out.push(`لمن: ${sm.people.join("، ")}${sm.count > sm.people.length ? ` و${sm.count - sm.people.length} غيرهم` : ""}`);
+    out.push("تذهب لمدير المساحة ليعتمدها ويصدرها.");
+    return out;
+  }
   if (p.tool === "write_app") {
     const files = a.files && typeof a.files === "object" ? Object.keys(a.files) : [];
     if (files.length) out.push(`الملفات: ${files.join("، ")}`);
@@ -1191,7 +1214,8 @@ const ACTION_VIEW: Record<string, { icon: IconName; title: (a: any) => ReactNode
   create_list: { icon: "table", title: (a) => `قائمة جديدة${a.title ? `: ${a.title}` : ""}`, confirm: "أنشئ القائمة", shown: ["title"] },
   update_list: { icon: "table", title: () => "تحديث القائمة", confirm: "حدّث القائمة" },
   export_document: { icon: "download", title: () => "تصدير مستند", confirm: "صدّر" },
-  fill_template: { icon: "file", title: () => "تعبئة قالب", confirm: "عبّئ القالب" },
+  fill_template: { icon: "file", title: (a) => (a.summary?.count > 1 ? `مسودات مستندات: ${a.summary.count}` : "تعبئة قالب"), confirm: "أنشئ المسودات" },
+  propose_record_set: { icon: "table", title: (a) => `سجل جديد من ملف${a.name ? `: ${a.name}` : ""}`, effect: () => "يُنشأ السجل بكل أعمدة الملف ويُستورد الملف نسخةً أولى. يُعدَّل لاحقاً من تبويب «السجلات».", confirm: "أنشئ السجل" },
   run_analysis: { icon: "code", title: () => "تشغيل تحليل", effect: () => "يعمل الكود في بيئة معزولة على الملفات المذكورة فقط.", confirm: "شغّل" },
   publish_output: { icon: "globe", title: (a) => `نشر صفحة${a.title ? `: ${a.title}` : ""}`, confirm: "انشر", shown: ["title"] },
 };

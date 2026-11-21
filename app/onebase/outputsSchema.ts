@@ -123,6 +123,10 @@ export const outputsTables = {
     layout: v.string(), // JSON, see pdf.ts (TemplateLayout)
     bodyStorageId: v.optional(v.id("_storage")), // fixed background PDF (a private copy of the bytes)
     bodySha256: v.optional(v.string()),
+    // A Word template (plans/17 §3): the .docx with {{variables}}; layout is then "". Each field's
+    // label is the variable as written in the file, and its key is generated.
+    docxStorageId: v.optional(v.id("_storage")),
+    docxSha256: v.optional(v.string()),
     fieldsSchema: v.array(v.object({ key: v.string(), label: v.string() })),
     dataBinding: v.object({ recordSetId: v.id("recordSets"), fields: v.record(v.string(), v.string()) }),
     sha256: v.string(), // fingerprint of the whole definition

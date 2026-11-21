@@ -1,7 +1,8 @@
 // Text extraction per file type (plans/03-rag.md §1). Uses the poppler CLI tools (pdftotext,
 // pdftoppm, pdfinfo) and unzip, which are installed on the server, so there is no npm dependency:
 //   - text PDF: pdftotext per page, page numbers kept, repeated headers/footers removed
-//   - scanned PDF / image: page → PNG → vision model (OCR), file marked "OCR"
+//   - scanned PDF / image: page → PNG → vision model (OCR), file marked "OCR"; ingest.ts reads a
+//     PDF's scanned pages in batches first (scannedPdfPages + ocrPdfPages) and passes them in
 //   - Word .docx: headings (styles) and tables kept; page numbers from Word's rendered page breaks
 //   - Excel .xlsx / CSV: described (sheets, columns, row count), not chunked as text
 //   - .doc/.xls/.odt/.rtf: converted with LibreOffice first
@@ -37,8 +38,8 @@ export function kindOf(name: string, mime: string): Kind | "convert" {
   return "unsupported";
 }
 
-async function run(cmd: string[], timeoutMs = 120_000): Promise<{ code: number; out: Uint8Array; err: string }> {
-  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe" });
+async function run(cmd: string[], timeoutMs = 120_000, env?: Record<string, string>): Promise<{ code: number; out: Uint8Array; err: string }> {
+  const proc = Bun.spawn(cmd, { stdout: "pipe", stderr: "pipe", ...(env ? { env: { ...process.env, ...env } } : {}) });
   const timer = setTimeout(() => proc.kill(), timeoutMs);
   const [out, err] = await Promise.all([new Response(proc.stdout).arrayBuffer(), new Response(proc.stderr).text()]);
   const code = await proc.exited;
@@ -81,38 +82,66 @@ function repeatedEdgeLines(pages: string[]): Set<string> {
 
 const PAGE_NO = /^(-?\s*[0-9]+\s*-?|صفحة\s*[0-9]+(\s*من\s*[0-9]+)?|page\s*[0-9]+(\s*of\s*[0-9]+)?)$/i;
 
-async function extractPdf(path: string, ocr: OcrFn | null, maxOcrPages: number): Promise<Extracted> {
+/** The text layer of every page (pdftotext), and the page count. */
+async function pdfTexts(path: string): Promise<{ pages: number; texts: string[] }> {
   const info = utf8((await run(["pdfinfo", path])).out);
   const pages = Number(/Pages:\s+(\d+)/.exec(info)?.[1] ?? 0);
   const res = await run(["pdftotext", "-enc", "UTF-8", path, "-"]);
   if (res.code !== 0) throw new Error(`تعذّر قراءة ملف PDF: ${res.err.slice(0, 200)}`);
-  const texts = utf8(res.out).split("\f").slice(0, Math.max(pages, 1));
+  return { pages, texts: utf8(res.out).split("\f").slice(0, Math.max(pages, 1)) };
+}
+
+/** A page with (almost) no text layer: a scanned page, read by the vision model. */
+const isScanned = (text: string) => normalizeDisplay(text).replace(/\s/g, "").length < 20;
+
+/** One PDF page as a PNG data: URL (150 dpi), or null if poppler can't render it. */
+async function renderPage(path: string, page: number): Promise<string | null> {
+  const dir = mkdtempSync(join(tmpdir(), "onespace-ocr-"));
+  try {
+    const r = await run(["pdftoppm", "-r", "150", "-png", "-f", String(page), "-l", String(page), path, join(dir, "p")]);
+    const png = readdirSync(dir).find((f) => f.endsWith(".png"));
+    if (r.code !== 0 || !png) return null;
+    return `data:image/png;base64,${Buffer.from(readFileSync(join(dir, png))).toString("base64")}`;
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/**
+ * @param done pages already read by the batched OCR steps (ingest.ts). When given, scanned pages
+ *   come from it and nothing is sent to the vision model here; pages missing from it are noted.
+ */
+async function extractPdf(path: string, ocr: OcrFn | null, maxOcrPages: number, done?: Map<number, string>): Promise<Extracted> {
+  const { pages, texts } = await pdfTexts(path);
   const repeated = repeatedEdgeLines(texts);
   const blocks: Block[] = [];
   const ocrPages: number[] = [];
+  let scanned = 0;
   let note: string | undefined;
   for (let i = 0; i < texts.length; i++) {
     const page = i + 1;
     let text = texts[i] ?? "";
-    if (normalizeDisplay(text).replace(/\s/g, "").length < 20) {
+    if (isScanned(text)) {
       // No text layer: a scanned page.
-      if (!ocr) {
-        note = "صفحات ممسوحة ضوئياً ولا يوجد نموذج رؤية مضبوط";
-        continue;
-      }
-      if (ocrPages.length >= maxOcrPages) {
-        note = `قُرئت أول ${maxOcrPages} صفحة ممسوحة فقط`;
-        continue;
-      }
-      const dir = mkdtempSync(join(tmpdir(), "onespace-ocr-"));
-      try {
-        const r = await run(["pdftoppm", "-r", "150", "-png", "-f", String(page), "-l", String(page), path, join(dir, "p")]);
-        const png = readdirSync(dir).find((f) => f.endsWith(".png"));
-        if (r.code !== 0 || !png) continue;
-        text = await ocr(`data:image/png;base64,${Buffer.from(readFileSync(join(dir, png))).toString("base64")}`, page);
+      scanned++;
+      if (done) {
+        const read = done.get(page);
+        if (read === undefined) continue;
+        text = read;
         ocrPages.push(page);
-      } finally {
-        rmSync(dir, { recursive: true, force: true });
+      } else {
+        if (!ocr) {
+          note = "صفحات ممسوحة ضوئياً ولا يوجد نموذج رؤية مضبوط";
+          continue;
+        }
+        if (ocrPages.length >= maxOcrPages) {
+          note = `قُرئت أول ${maxOcrPages} صفحة ممسوحة فقط`;
+          continue;
+        }
+        const url = await renderPage(path, page);
+        if (!url) continue;
+        text = await ocr(url, page);
+        ocrPages.push(page);
       }
     } else {
       const key = (l: string) => normalizeDisplay(l).replace(/[0-9]+/g, "#");
@@ -123,7 +152,67 @@ async function extractPdf(path: string, ocr: OcrFn | null, maxOcrPages: number):
     }
     blocks.push(...textToBlocks(normalizeDisplay(text), page));
   }
+  if (done && scanned > ocrPages.length) {
+    const missing = scanned - ocrPages.length;
+    note = !ocr ? "صفحات ممسوحة ضوئياً ولا يوجد نموذج رؤية مضبوط" : scanned > maxOcrPages ? `قُرئت أول ${maxOcrPages} صفحة ممسوحة فقط` : `تعذّرت قراءة ${missing} صفحة ممسوحة`;
+  }
   return { kind: "pdf", blocks, pages: pages || texts.length, ocrPages, note };
+}
+
+async function withFile<T>(bytes: Uint8Array, ext: string, fn: (path: string) => Promise<T>): Promise<T> {
+  const dir = mkdtempSync(join(tmpdir(), "onespace-pdf-"));
+  try {
+    const path = join(dir, `in.${ext}`);
+    writeFileSync(path, bytes);
+    return await fn(path);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+/** The scanned pages of a PDF (no text layer), in order. Not a PDF → none. */
+export async function scannedPdfPages(bytes: Uint8Array, name: string, mime: string): Promise<{ pages: number; scanned: number[] }> {
+  if (kindOf(name, mime) !== "pdf") return { pages: 0, scanned: [] };
+  return await withFile(bytes, "pdf", async (path) => {
+    const { pages, texts } = await pdfTexts(path);
+    return { pages: pages || texts.length, scanned: texts.flatMap((t, i) => (isScanned(t) ? [i + 1] : [])) };
+  });
+}
+
+/**
+ * Reads the given pages of a PDF with the vision model, `concurrency` at a time. Each page is
+ * tried twice; `onPage` gets every page as soon as it is read (so a crash keeps what was done).
+ * Returns the pages that could not be read.
+ */
+export async function ocrPdfPages(
+  bytes: Uint8Array,
+  pages: number[],
+  ocr: OcrFn,
+  opts: { concurrency: number; onPage: (page: number, text: string) => Promise<void> },
+): Promise<{ failed: number[] }> {
+  return await withFile(bytes, "pdf", async (path) => {
+    const failed: number[] = [];
+    let next = 0;
+    const worker = async () => {
+      while (next < pages.length) {
+        const page = pages[next++]!;
+        let text: string | null = null;
+        for (let attempt = 0; attempt < 2 && text === null; attempt++) {
+          try {
+            const url = await renderPage(path, page);
+            if (!url) break;
+            text = await ocr(url, page);
+          } catch {
+            text = null;
+          }
+        }
+        if (text === null) failed.push(page);
+        else await opts.onPage(page, text);
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(opts.concurrency, pages.length)) }, worker));
+    return { failed: failed.sort((a, b) => a - b) };
+  });
 }
 
 // ---------------------------------------------------------------- Word
@@ -229,7 +318,12 @@ function extractCsv(text: string, name: string): Extracted {
 
 // ---------------------------------------------------------------- entry point
 
-export async function extract(bytes: Uint8Array, name: string, mime: string, opts: { ocr: OcrFn | null; maxOcrPages?: number }): Promise<Extracted> {
+export async function extract(
+  bytes: Uint8Array,
+  name: string,
+  mime: string,
+  opts: { ocr: OcrFn | null; maxOcrPages?: number; /** scanned PDF pages already read (batched OCR) */ ocrDone?: Map<number, string> },
+): Promise<Extracted> {
   let kind = kindOf(name, mime);
   const dir = mkdtempSync(join(tmpdir(), "onespace-extract-"));
   try {
@@ -238,7 +332,8 @@ export async function extract(bytes: Uint8Array, name: string, mime: string, opt
     writeFileSync(path, bytes);
     if (kind === "convert") {
       const to = ["xls", "ods"].includes(ext) ? "xlsx" : "docx";
-      const r = await run(["soffice", "--headless", `-env:UserInstallation=file://${dir}/lo`, "--convert-to", to, "--outdir", dir, path], 180_000);
+      // SAL_DISABLE_CUPS: without it LibreOffice waits ~25 s on the printer service when importing .odt, .rtf and .ods.
+      const r = await run(["soffice", "--headless", "--norestore", `-env:UserInstallation=file://${dir}/lo`, "--convert-to", to, "--outdir", dir, path], 180_000, { SAL_DISABLE_CUPS: "1" });
       const out = join(dir, `in.${to}`);
       if (r.code !== 0) throw new Error("تعذّر تحويل الملف بـLibreOffice");
       path = out;
@@ -247,7 +342,7 @@ export async function extract(bytes: Uint8Array, name: string, mime: string, opt
     }
     switch (kind) {
       case "pdf":
-        return await extractPdf(path, opts.ocr, opts.maxOcrPages ?? 50);
+        return await extractPdf(path, opts.ocr, opts.maxOcrPages ?? 50, opts.ocrDone);
       case "docx":
         return await extractDocx(path);
       case "sheet":

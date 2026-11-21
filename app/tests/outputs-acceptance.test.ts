@@ -102,6 +102,101 @@ describe("✓ an Excel file with missing columns or duplicate rows is rejected w
   });
 });
 
+describe("plans/17: a record set starts from the file, and the manager only chooses", () => {
+  const analyze = async (data: string, token = T("mgr")) => s.call("action", "records:analyzeFile", { spaceId: f.spaces.S_plain, fileName: "دورات_الموظفين.xlsx", dataBase64: data }, token);
+
+  test("analyzeFile guesses types, the owner column (with how many ids are accounts) and uniqueness; writes nothing", async () => {
+    const before = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    const a = must(await analyze(await xlsxBase64(COURSE_HEADERS, COURSE_ROWS)));
+    expect(a.ok).toBe(true);
+    expect(a.name).toBe("دورات الموظفين");
+    expect(a.rowCount).toBe(4);
+    expect(a.columns.map((c: any) => [c.header, c.type, c.required, c.idLike])).toEqual([
+      ["رقم الهوية", "text", true, true],
+      ["الاسم", "text", true, false],
+      ["الدورة", "text", true, false],
+      ["تاريخ الإتمام", "date", true, false],
+      ["الساعات", "number", true, false],
+    ]);
+    // mem and out have this national id on their accounts; ghost has none.
+    expect(a.owner).toEqual({ header: "رقم الهوية", kind: "nationalId", matched: 2, distinct: 3 });
+    expect(a.uniqueBy).toEqual(["رقم الهوية", "الدورة"]);
+    expect(must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length).toBe(before);
+  });
+
+  test("an empty or unreadable file comes back as errors, not a guess", async () => {
+    expect(must(await analyze(await xlsxBase64(COURSE_HEADERS, [])))).toMatchObject({ ok: false, errors: ["الملف لا يحوي أي صف بيانات"] });
+    expect(must(await analyze(Buffer.from("hello").toString("base64"))).ok).toBe(false);
+  });
+
+  test("createFromFile: only the chosen columns, generated keys, version 1, and the owner sees their rows", async () => {
+    const data = await xlsxBase64(COURSE_HEADERS, COURSE_ROWS);
+    const r = must(
+      await s.call(
+        "action",
+        "records:createFromFile",
+        {
+          spaceId: f.spaces.S_plain,
+          name: "من ملف",
+          fileName: "c.xlsx",
+          dataBase64: data,
+          columns: [
+            { header: "رقم الهوية", type: "text", required: true },
+            { header: "الدورة", type: "text", required: true },
+            { header: "تاريخ الإتمام", type: "date", required: true },
+          ],
+          ownerHeader: "رقم الهوية",
+          ownerKind: "nationalId",
+          uniqueBy: ["الدورة"],
+        },
+        T("mgr"),
+      ),
+    );
+    expect(r).toMatchObject({ ok: true, version: 1, rowCount: 4 });
+    const set = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).find((x: any) => x._id === r.recordSetId);
+    expect(set.columns.map((c: any) => [c.key, c.header])).toEqual([["c1", "رقم الهوية"], ["c2", "الدورة"], ["c3", "تاريخ الإتمام"]]);
+    expect(set.subjectColumn).toBe("c1");
+    expect(set.uniqueBy).toEqual(["c1", "c2"]);
+    const mine = must(await s.call("query", "records:mine", {}, T("mem")));
+    const rows = mine.sets.find((x: any) => x.recordSetId === r.recordSetId).rows.map((x: any) => x.data);
+    expect(rows).toEqual([
+      { c1: IDS.mem, c2: "إدارة المشاريع", c3: "2026-01-15" },
+      { c1: IDS.mem, c2: "Excel المتقدم", c3: "2026-03-02" },
+    ]);
+  });
+
+  test("a file that fails the chosen definition creates nothing and lists every error", async () => {
+    const before = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    const data = await xlsxBase64(COURSE_HEADERS, COURSE_ROWS);
+    const r = must(
+      await s.call(
+        "action",
+        "records:createFromFile",
+        {
+          spaceId: f.spaces.S_plain,
+          name: "مكرر",
+          fileName: "c.xlsx",
+          dataBase64: data,
+          columns: [{ header: "رقم الهوية", type: "text", required: true }, { header: "الاسم", type: "number", required: true }],
+          ownerHeader: "رقم الهوية",
+          ownerKind: "nationalId",
+          uniqueBy: [],
+        },
+        T("mgr"),
+      ),
+    );
+    expect(r.ok).toBe(false);
+    expect(r.errors.some((e: string) => e.includes("مكرر"))).toBe(true);
+    expect(r.errors.some((e: string) => e.includes('"الاسم" ليست رقم'))).toBe(true);
+    expect(must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length).toBe(before);
+  });
+
+  test("a member who doesn't manage the space can't analyze or create", async () => {
+    const data = await xlsxBase64(COURSE_HEADERS, COURSE_ROWS);
+    expect((await analyze(data, T("mem"))).ok).toBe(false);
+  });
+});
+
 describe("✓ an employee asking for their courses gets only their own records, even if they claim another identity in the chat", () => {
   test("my_records takes no identity argument at all", () => {
     expect(tools.my_records!.parameters).toEqual({ type: "object", additionalProperties: false, properties: {} });
@@ -112,8 +207,10 @@ describe("✓ an employee asking for their courses gets only their own records, 
     const parsed = JSON.parse(r.content);
     const rows = parsed.records.flatMap((x: any) => x.rows);
     expect(parsed.records.length).toBeGreaterThanOrEqual(3); // one per record set that has mem in it
-    expect(rows.every((row: any) => row.nid === IDS.mem)).toBe(true);
-    expect(new Set(rows.map((row: any) => row.course))).toEqual(new Set(["Excel المتقدم", "إدارة المشاريع"]));
+    // Rows by column header, whatever the keys (sets created from a file have generated keys, plans/17).
+    expect(rows.every((row: any) => row["رقم الهوية"] === IDS.mem)).toBe(true);
+    expect(new Set(rows.map((row: any) => row["الدورة"]))).toEqual(new Set(["Excel المتقدم", "إدارة المشاريع"]));
+    expect(parsed.records.every((x: any) => typeof x.from === "string" && x.from.length > 0)).toBe(true);
     expect(r.content).not.toContain(IDS.out);
     expect(r.content).not.toContain("GH77");
     expect(parsed.documents.length).toBe(3); // the certificates issued to mem
@@ -266,11 +363,12 @@ describe("✓ issuing the same certificate twice gives files with the same finge
 });
 
 describe("✓ no path lets the model write text into an official document", () => {
-  test("fill_template accepts two ids and nothing else", () => {
+  test("fill_template accepts ids and nothing else (one record, or a list of records)", () => {
     const p = tools.fill_template!.parameters as any;
     expect(p.additionalProperties).toBe(false);
-    expect(Object.keys(p.properties).sort()).toEqual(["recordId", "templateId"]);
-    expect(p.required.sort()).toEqual(["recordId", "templateId"]);
+    expect(Object.keys(p.properties).sort()).toEqual(["recordId", "recordIds", "templateId"]);
+    expect(p.properties.recordIds).toMatchObject({ type: "array", items: { type: "string" }, maxItems: 50 });
+    expect(p.required).toEqual(["templateId"]);
   });
 
   test("extra arguments are ignored: the fields come from the record, by code", async () => {
@@ -565,3 +663,253 @@ describe("verification and the subject's own documents", () => {
     expect(all).not.toContain("/api/storage/");
   });
 });
+
+// Last: it issues more certificates for mem, which earlier tests count.
+describe("plans/17 §4: issue in batches, approval and issue in one act", () => {
+  /** A new approved template on S_plain's courses: no document exists for it yet. */
+  async function freshTemplate(name: string) {
+    const saved = must(
+      await s.call(
+        "action",
+        "templates:saveVersion",
+        { spaceId: f.spaces.S_plain, name, layout: layoutFor("شهادة"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets.S_plain, fields: { name: "name", course: "course", date: "date" } } },
+        T("mgr"),
+      ),
+    );
+    must(await s.call("mutation", "templates:approveVersion", { templateId: saved.templateId, version: saved.version }, T("mgr")));
+    return saved;
+  }
+
+  test("rows without a document, drafts for all by a member, one approve-and-issue by the manager", async () => {
+    const saved = await freshTemplate("شهادة الدفعة");
+    const before = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mem")));
+    expect(before.counts).toEqual({ none: 4, draft: 0, approved: 0, issued: 0 });
+    expect(before.rows[0].data).toEqual({ name: "موظف mem", course: "إدارة المشاريع", date: "2026-01-15" });
+    const ids = before.rows.map((r: any) => r.recordId);
+
+    const made = must(await s.call("mutation", "documents:requestMany", { templateId: saved.templateId, recordIds: ids }, T("mem")));
+    expect(made.created).toBe(4);
+    expect(must(await s.call("mutation", "documents:requestMany", { templateId: saved.templateId, recordIds: ids }, T("mem"))).created).toBe(0);
+    const docIds = made.documents.map((d: any) => d.documentId);
+
+    // A member can't approve, and nothing is approved by the attempt.
+    expect((await s.call("action", "documents:approveAndIssue", { documentIds: docIds }, T("mem"))).ok).toBe(false);
+    expect(must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mem"))).counts.draft).toBe(4);
+
+    const res = must(await s.call("action", "documents:approveAndIssue", { documentIds: docIds }, T("mgr")));
+    expect(res.failed).toEqual([]);
+    expect(new Set(res.issued.map((x: any) => x.serial)).size).toBe(4);
+    const after = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mem")));
+    expect(after.counts).toEqual({ none: 0, draft: 0, approved: 0, issued: 4 });
+    const list = must(await s.call("query", "documents:list", { spaceId: f.spaces.S_plain }, T("mgr"))).filter((d: any) => docIds.includes(d._id));
+    expect(list.every((d: any) => d.status === "issued" && d.approvedByName === "موظف mgr")).toBe(true);
+    // Issuing again returns the same documents, not new ones.
+    const again = must(await s.call("action", "documents:approveAndIssue", { documentIds: docIds }, T("mgr")));
+    expect(again.issued.map((x: any) => x.serial).sort()).toEqual(res.issued.map((x: any) => x.serial).sort());
+  });
+
+  test("a rejected document is reported, the rest of the batch is issued", async () => {
+    const t = (await freshTemplate("شهادة الرفض")).templateId;
+    const rows = must(await s.call("query", "documents:rowsForTemplate", { templateId: t }, T("mgr"))).rows.filter((r: any) => r.status === "none");
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const made = must(await s.call("mutation", "documents:requestMany", { templateId: t, recordIds: rows.slice(0, 2).map((r: any) => r.recordId) }, T("mem")));
+    const [a, b] = made.documents.map((d: any) => d.documentId);
+    must(await s.call("mutation", "documents:reject", { documentId: a }, T("mgr")));
+    const res = must(await s.call("action", "documents:approveAndIssue", { documentIds: [a, b] }, T("mgr")));
+    expect(res.issued.map((x: any) => x.documentId)).toEqual([b]);
+    expect(res.failed).toEqual([{ documentId: a, error: "المستند مرفوض" }]);
+  });
+});
+
+describe("plans/17 §3: designing a certificate without JSON", () => {
+  const binding = () => ({ recordSetId: o.sets.S_plain!, fields: { name: "name", course: "course", date: "date" } });
+  // A 40×20 px PNG: a design uploaded as an image.
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAACXBIWXMAAAsSAAALEgHS3X78AAAAJ0lEQVRIx2N8eqaBYSAAE8MAgVGLRy0etXjU4lGLRy0etXjUYvoDAHr2Aln1FmjtAAAAAElFTkSuQmCC", "base64");
+
+  test("ready layouts: classic is the layout templates always started from; centered and blank; sized to a background", async () => {
+    const parse = async (args: object) => JSON.parse(must(await s.call("query", "templates:suggestLayout", { title: "شهادة", fields: FIELDS, ...args }, T("mgr"))));
+    const classic = await parse({});
+    expect(classic.elements[0]).toEqual({ type: "rect", x: 24, y: 24, w: 794, h: 547, width: 2 });
+    expect(classic.elements.find((e: any) => e.type === "field")).toEqual({ type: "field", field: "name", x: 560, y: 400, size: 18, align: "right", bold: true, maxWidth: 420 });
+    const centered = await parse({ style: "centered" });
+    expect(centered.elements.filter((e: any) => e.type === "field").every((e: any) => e.align === "center" && e.x === 421)).toBe(true);
+    const blank = await parse({ style: "blank", page: { width: 595, height: 842 } });
+    expect(blank.page).toEqual({ width: 595, height: 842 });
+    expect(blank.elements.map((e: any) => e.type)).toEqual(["issuedDate", "serial", "verifyCode"]);
+  });
+
+  test("preview renders the certificate as it will print, with the first real row, and writes nothing", async () => {
+    const docsBefore = must(await s.call("query", "documents:list", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    const r = must(await s.call("action", "templates:preview", { spaceId: f.spaces.S_plain, layout: layoutFor("شهادة"), fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(r.error).toBeNull();
+    expect(r.image).toMatch(/^data:image\/png;base64,/);
+    expect(r.page).toEqual({ width: 842, height: 595 });
+    expect(r.sample).toEqual({ name: "موظف mem", course: "إدارة المشاريع", date: "2026-01-15" });
+    expect(must(await s.call("query", "documents:list", { spaceId: f.spaces.S_plain }, T("mgr"))).length).toBe(docsBefore);
+    const bad = must(await s.call("action", "templates:preview", { spaceId: f.spaces.S_plain, layout: "{", fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(bad).toMatchObject({ image: null, error: "تخطيط القالب ليس JSON صالحاً" });
+  });
+
+  test("an image design becomes the background; a new version keeps it; previews use it", async () => {
+    const storageId = await s.upload(T("mgr")!, new Uint8Array(PNG), "image/png");
+    const fileId = must(await s.call("mutation", "files:create", { storageId, name: "تصميم.png", spaceId: f.spaces.S_plain }, T("mgr")));
+    const layout = must(await s.call("query", "templates:suggestLayout", { title: "x", fields: FIELDS, style: "blank", page: { width: 842, height: 421 } }, T("mgr")));
+    const v1 = must(await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, name: "بخلفية صورة", layout, fieldsSchema: FIELDS, dataBinding: binding(), backgroundFileId: fileId }, T("mgr")));
+    const v2 = must(await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, templateId: v1.templateId, name: "بخلفية صورة", layout, fieldsSchema: FIELDS, dataBinding: binding(), keepBackground: true }, T("mgr")));
+    expect(v2.version).toBe(2);
+    const vs = must(await s.call("query", "templates:versions", { templateId: v1.templateId }, T("mgr"))).versions;
+    expect(vs.map((x: any) => x.hasBackground)).toEqual([true, true]);
+    expect(vs[0].bodySha256).toBe(vs[1].bodySha256);
+    const p = must(await s.call("action", "templates:preview", { spaceId: f.spaces.S_plain, templateId: v1.templateId, keepBackground: true, layout, fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(p.page).toEqual({ width: 842, height: 421 }); // the image's proportions, 842 pt wide
+    // Without keepBackground a new version has none.
+    const v3 = must(await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, templateId: v1.templateId, name: "بخلفية صورة", layout, fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(must(await s.call("query", "templates:versions", { templateId: v1.templateId }, T("mgr"))).versions.find((x: any) => x.version === v3.version).hasBackground).toBe(false);
+  });
+
+  test("a background that is neither PDF nor image is refused", async () => {
+    const r = await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, name: "x", layout: layoutFor("x"), fieldsSchema: FIELDS, dataBinding: binding(), backgroundFileId: f.files.S_plain }, T("mgr"));
+    expect(errOf(r)).toContain("الخلفية تكون PDF أو صورة PNG أو JPG");
+  });
+});
+
+describe("plans/17 §3 (Word): the certificate is a Word file with {{variables}}", () => {
+  let docx: string;
+  beforeAll(async () => {
+    const { sampleDocx } = await import("../onebase/lib/docxTemplate");
+    // «التاريخ» matches no column; «full_namne» is a typo.
+    docx = Buffer.from(await sampleDocx("شهادة وورد", ["الاسم", "الدورة", "التاريخ", "full_namne"])).toString("base64");
+  });
+  const base = () => ({ spaceId: f.spaces.S_plain, recordSetId: o.sets.S_plain });
+
+  test("variables are matched to columns by name; unmatched ones are listed; reserved ones are recognised", async () => {
+    const a = must(await s.call("action", "templates:analyzeWord", { ...base(), dataBase64: docx }, T("mgr")));
+    expect(a.variables).toEqual([
+      { name: "الاسم", reserved: null, column: "name" },
+      { name: "الدورة", reserved: null, column: "course" },
+      { name: "التاريخ", reserved: null, column: null },
+      { name: "full_namne", reserved: null, column: null },
+      { name: "الرقم_التسلسلي", reserved: "serial", column: null },
+      { name: "رمز_التحقق", reserved: "verifyCode", column: null },
+      { name: "تاريخ_الإصدار", reserved: "issuedDate", column: null },
+    ]);
+    expect(a.unmatched).toEqual(["التاريخ", "full_namne"]);
+  });
+
+  test("saving with an unmatched variable is refused, naming it; preview renders the first row", async () => {
+    const r = await s.call("action", "templates:saveWord", { ...base(), dataBase64: docx, name: "وورد" }, T("mgr"));
+    expect(errOf(r)).toContain("{{التاريخ}}");
+    const mapping = { التاريخ: "date", full_namne: "name" };
+    const p = must(await s.call("action", "templates:previewWord", { ...base(), dataBase64: docx, mapping }, T("mgr")));
+    expect(p.error).toBeNull();
+    expect(p.image).toMatch(/^data:image\/png;base64,/);
+  }, 60_000);
+
+  test("save, approve, issue: the PDF is the Word file filled from the record; verification works; reproduce is for layouts only", async () => {
+    const mapping = { التاريخ: "date", full_namne: "name" };
+    const saved = must(await s.call("action", "templates:saveWord", { ...base(), dataBase64: docx, name: "شهادة وورد", mapping }, T("mgr")));
+    const v = must(await s.call("query", "templates:versions", { templateId: saved.templateId }, T("mgr"))).versions[0];
+    expect(v.format).toBe("docx");
+    expect(v.fieldsSchema.map((x: any) => x.label)).toEqual(["الاسم", "الدورة", "التاريخ", "full_namne"]);
+    must(await s.call("mutation", "templates:approveVersion", { templateId: saved.templateId, version: saved.version }, T("mgr")));
+    const rows = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mgr"))).rows;
+    const out = rows.find((r: any) => r.subjectRef === IDS.out);
+    const made = must(await s.call("mutation", "documents:requestMany", { templateId: saved.templateId, recordIds: [out.recordId] }, T("mgr")));
+    const res = must(await s.call("action", "documents:approveAndIssue", { documentIds: [made.documents[0].documentId] }, T("mgr")));
+    expect(res.failed).toEqual([]);
+    const pdf = await downloadDoc(T("mgr")!, made.documents[0].documentId);
+    expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe("%PDF-");
+    const facts = must(await s.call("query", "documents:verify", { code: res.issued[0].verifyCode }, T("out")));
+    expect(facts).toMatchObject({ valid: true, serial: res.issued[0].serial, sha256: sha(pdf) });
+    expect(errOf(await s.call("action", "documents:reproduce", { documentId: made.documents[0].documentId }, T("mgr")))).toContain("لقوالب التخطيط فقط");
+    // The text of the PDF: the record's values in the places of the variables.
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const dir = mkdtempSync("/tmp/onespace-test-");
+    writeFileSync(`${dir}/c.pdf`, pdf);
+    // pdftotext wraps runs in bidi marks (U+202A–U+202E, U+200E/F): drop them to compare text.
+    const text = (await new Response(Bun.spawn(["pdftotext", `${dir}/c.pdf`, "-"]).stdout).text()).replace(/[\u200E\u200F\u202A-\u202E]/g, "");
+    expect(text).toContain("موظف out");
+    expect(text).toContain("السلامة المهنية");
+    expect(text).toContain(res.issued[0].serial);
+    expect(text).not.toContain("{{");
+  }, 90_000);
+
+  test("a new version can keep the current file; the file can be downloaded back; the sample file has the set's columns", async () => {
+    const mapping = { التاريخ: "date", full_namne: "name" };
+    const v1 = must(await s.call("action", "templates:saveWord", { ...base(), dataBase64: docx, name: "يبقى الملف", mapping }, T("mgr")));
+    const v2 = must(await s.call("action", "templates:saveWord", { ...base(), templateId: v1.templateId, name: "يبقى الملف", mapping }, T("mgr")));
+    expect(v2.version).toBe(2);
+    const vs = must(await s.call("query", "templates:versions", { templateId: v1.templateId }, T("mgr"))).versions;
+    expect(vs[0].docxSha256).toBe(vs[1].docxSha256);
+    const back = must(await s.call("action", "templates:downloadWord", { templateId: v1.templateId }, T("mem")));
+    expect(sha(Buffer.from(back.base64, "base64"))).toBe(vs[0].docxSha256);
+    const { variablesOf } = await import("../onebase/lib/docxTemplate");
+    const sample = must(await s.call("action", "templates:sampleWord", { ...base(), name: "نموذج" }, T("mgr")));
+    expect(await variablesOf(Buffer.from(sample.base64, "base64"))).toEqual(["الاسم", "الدورة", "تاريخ الإتمام", "الساعات", "الرقم_التسلسلي", "رمز_التحقق", "تاريخ_الإصدار"]);
+  });
+});
+
+describe("plans/17 §5: what the assistant does with records and certificates", () => {
+  test("fill_template for several records: one draft each, existing ones not duplicated; the card names the template and the people", async () => {
+    const saved = must(
+      await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, name: "شهادة المساعد", layout: layoutFor("شهادة"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets.S_plain, fields: { name: "name", course: "course", date: "date" } } }, T("mgr")),
+    );
+    must(await s.call("mutation", "templates:approveVersion", { templateId: saved.templateId, version: saved.version }, T("mgr")));
+    const ids = [await o.recordOf("S_plain", IDS.mem, "إدارة المشاريع"), await o.recordOf("S_plain", IDS.out, "السلامة المهنية")];
+    const card = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mem, name: "fill_template", args: { templateId: saved.templateId, recordIds: ids, name: "INJECTED" } }));
+    expect(card.summary).toEqual({ template: "شهادة المساعد", count: 2, people: ["موظف mem", "موظف out"], existing: 0 });
+    expect(card.templateId).toBe(saved.templateId);
+    expect(card.name).toBeUndefined(); // only ids and the server's summary reach «نفّذ»
+    const r = must(await tool(s, f.ids.mem!, "fill_template", card));
+    expect(r.content).toContain("أُنشئت 2 مسودة");
+    const again = must(await tool(s, f.ids.mem!, "fill_template", { templateId: saved.templateId, recordIds: ids }));
+    expect(again.content).toContain("لم تُنشأ مسودات جديدة");
+    const rows = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mgr")));
+    expect(rows.counts.draft).toBe(2);
+    // The model sees names, not ids: the exact name works, and the card says what already exists.
+    const byName = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mem, name: "fill_template", args: { templateId: "«شهادة المساعد»", recordIds: ids } }));
+    expect(byName.templateId).toBe(saved.templateId);
+    expect(byName.summary.existing).toBe(2);
+    const unknown = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mem, name: "fill_template", args: { templateId: "شهادة غير موجودة", recordIds: ids } }));
+    expect(unknown.summary.error).toContain("لا يوجد قالب معتمد بهذا الاسم. القوالب المعتمدة:");
+    expect(unknown.summary.error).toContain("«شهادة المساعد»");
+    // Someone who can't write in the template's space gets nothing.
+    expect((await tool(s, f.ids.out!, "fill_template", { templateId: saved.templateId, recordIds: ids })).ok).toBe(false);
+  });
+
+  test("propose_record_set: the card shows the server's analysis of the file; «نفّذ» creates the set; a non-manager can't", async () => {
+    const data = Buffer.from(await xlsxBase64(COURSE_HEADERS, COURSE_ROWS), "base64");
+    const storageId = await s.upload(T("mgr")!, new Uint8Array(data), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const fileId = must(await s.call("mutation", "files:create", { storageId, name: "دورات_الربع_الأول.xlsx", spaceId: f.spaces.S_plain }, T("mgr")));
+    const card = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mgr, name: "propose_record_set", args: { fileId } }));
+    expect(card.name).toBe("دورات الربع الأول");
+    expect(card.summary).toMatchObject({ space: "لجنة-المشتريات-QX71", rows: 4, owner: { header: "رقم الهوية", kind: "nationalId", matched: 2, distinct: 3 }, uniqueBy: ["رقم الهوية", "الدورة"], errors: [] });
+    expect(card.summary.columns.map((c: any) => c.type)).toEqual(["text", "text", "text", "date", "number"]);
+    const before = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    // mem reads the space but doesn't manage it.
+    expect((await tool(s, f.ids.mem!, "propose_record_set", { fileId })).ok).toBe(false);
+    const r = must(await tool(s, f.ids.mgr!, "propose_record_set", { ...card, summary: { columns: [{ header: "INJECTED" }] } }));
+    expect(r.failed).toBeUndefined();
+    expect(r.content).toContain("أُنشئ السجل «دورات الربع الأول»");
+    const sets = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr")));
+    expect(sets.length).toBe(before + 1);
+    const made = sets.find((x: any) => x.name === "دورات الربع الأول");
+    expect(made.columns.map((c: any) => c.header)).toEqual(COURSE_HEADERS); // from the file, not from the card's arguments
+    expect(made.currentVersion).toBe(1);
+  });
+
+  test("propose_record_set: a file outside the turn's scope, or not Excel, is refused with a reason", async () => {
+    const card = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mgr, name: "propose_record_set", args: { fileId: f.files.S_plain } }));
+    expect(card.summary.errors).toEqual(["السجلات تُنشأ من ملف Excel بصيغة ‎.xlsx"]);
+    const out = must(await tool(s, f.ids.mgr!, "propose_record_set", { fileId: f.files.S_plain }, [f.spaces.S_every]));
+    expect(out).toMatchObject({ failed: true, content: "الملف غير موجود أو لا تملك صلاحية الوصول إليه." });
+  });
+
+  test("my_records tells where to download issued certificates and whom to ask for the rest", async () => {
+    const r = must(await tool(s, f.ids.mem!, "my_records", {}));
+    const parsed = JSON.parse(r.content);
+    expect(parsed.note).toContain("#/me");
+    expect(parsed.records.map((x: any) => x.from)).toContain("لجنة-المشتريات-QX71");
+  });
+});
+
