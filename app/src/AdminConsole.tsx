@@ -347,7 +347,7 @@ function Overview({ go }: { go: (p: string) => void }) {
       {o.citeDoubts.byAgent.length > 0 && (
         <section>
           <h2 className="section-title mb-1">إجابات باستشهاد مشكوك فيه</h2>
-          <p className="mb-3 text-xs text-muted">فحص نموذج القرار هل يذكر المقطع المستشهد به ما قالته الإجابة. كثرتها لوكيل علامة على تعليماته أو على ملفات مساحته.</p>
+          <p className="mb-3 text-xs text-muted">فحص نموذج القرار هل يذكر المصدر المستشهد به ما قالته الإجابة. كثرتها لوكيل علامة على تعليماته أو على ملفات مساحته.</p>
           <ul className="card divide-y divide-rule">
             {o.citeDoubts.byAgent.map((a) => (
               <li key={a.agentId} className="flex items-center gap-3 px-4 py-3 text-sm">

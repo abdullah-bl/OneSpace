@@ -36,7 +36,7 @@ function citeChip(n: number, check?: "unrelated" | "contradicts") {
 }
 
 /** plans/12: a citation the check doubted gets a mark on its chip (the text stays as written). */
-export const CITE_CHECK: Record<"unrelated" | "contradicts", string> = { unrelated: "المقطع لا يذكر هذا بوضوح", contradicts: "المقطع يقول خلاف هذا" };
+export const CITE_CHECK: Record<"unrelated" | "contradicts", string> = { unrelated: "المصدر لا يذكر هذا بوضوح", contradicts: "المصدر يقول خلاف هذا" };
 
 export function renderAnswer(text: string, cites: Set<number>, checks?: Map<number, "unrelated" | "contradicts">): string {
   const html = md.parse(text) as string;

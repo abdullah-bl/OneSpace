@@ -12,7 +12,7 @@ import { internal } from "./_generated/api";
 import type { Doc, Id } from "./_generated/dataModel";
 import { action, internalAction, internalMutation, internalQuery, query } from "./_generated/server";
 import { actorFor, assertCan, Denied, readableSpaceIds, requireActive, requireUserId } from "./access";
-import { insertArtifact, normalizeContent, place, type Source } from "./artifacts";
+import { homeSpaceOf, insertArtifact, normalizeContent, place, type Source } from "./artifacts";
 import { writeAudit } from "./audit";
 import { inputsPreamble } from "./skills";
 import { artifactKind } from "./outputsSchema";
@@ -90,7 +90,7 @@ export const begin = internalMutation({
     // sensitive one → that space only, unless the user manages it (then any writable target,
     // still classified sensitive); write access on the target, and in the turn's scope.
     const sources: Source[] = files.map(({ file, space }) => ({ type: "file", id: file._id, spaceId: space._id }));
-    const { space: target } = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true });
+    const { space: target } = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true, home: await homeSpaceOf(ctx, actor.userId, a.threadId) });
     const code = a.skill ? inputsPreamble(files.map(({ file }) => file.name)) + a.code : a.code;
     if (code.length > MAX_CODE_CHARS) throw new OneBaseError("الكود طويل جداً");
     const codeHash = sha256(code);

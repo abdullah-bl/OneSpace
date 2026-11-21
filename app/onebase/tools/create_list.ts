@@ -61,7 +61,7 @@ export const create_list: AppTool<Args> = {
       });
     } catch (e) {
       const error = toolErrorText(e, "لا تملك إنشاء قائمة هنا");
-      return { content: `لم تُنشأ القائمة: ${error}`, display: `لم تُنشأ القائمة: ${error}` };
+      return { failed: true, content: `لم تُنشأ القائمة: ${error}`, display: `لم تُنشأ القائمة: ${error}` };
     }
     const msg = `أُنشئت القائمة «${a.title}» في ${r.spaceName === "مساحتي" ? "مساحتي" : `«${r.spaceName}»`} (${r.rows} صف).`;
     return {

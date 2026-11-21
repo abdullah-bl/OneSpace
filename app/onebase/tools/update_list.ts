@@ -43,7 +43,7 @@ export const update_list: AppTool<Args> = {
       });
     } catch (e) {
       const error = toolErrorText(e, "القائمة غير موجودة أو لا تملك تعديلها");
-      return { content: `لم تُحدَّث القائمة: ${error}`, display: `لم تُحدَّث القائمة: ${error}` };
+      return { failed: true, content: `لم تُحدَّث القائمة: ${error}`, display: `لم تُحدَّث القائمة: ${error}` };
     }
     const parts = [r.added.length ? `أُضيف ${r.added.length}` : "", r.changed ? `عُدّل أو حُذف ${r.changed}` : ""].filter(Boolean).join("، ");
     const msg = `حُدّثت «${r.title}»${parts ? `: ${parts}` : ""}.`;

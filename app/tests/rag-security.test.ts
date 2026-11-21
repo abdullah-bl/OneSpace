@@ -28,7 +28,7 @@ beforeAll(async () => {
   for (const sp of SPACES) await waitIngest(s, sp === "P_mem" ? tok("mem")! : tok("mgr")!, f.spaces[sp], f.files[sp]);
   // mem's own thread, with one answered (slow) question so a stream id exists.
   memThread = await newThread(s, tok("mem")!);
-  must(await s.call("mutation", "chat:send", { threadId: memThread, text: "SLOW-TURN ما محتوى CONTENT" }, tok("mem")));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId: memThread, text: "SLOW-TURN ما محتوى CONTENT" }, tok("mem")));
   for (let i = 0; i < 200 && !memStream; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId: memThread }, tok("mem")));
     memStream = r.turn?.streamId;
@@ -116,7 +116,7 @@ describe("permission matrix: workspace-level and thread-owner functions", () => 
     [
       "chat:send",
       async (a) => {
-        const r = await s.call("mutation", "chat:send", { threadId: memThread, text: "سؤال للمصفوفة" }, tok(a));
+        const r = await s.call("mutation", "chat:send", { to: "assistant", threadId: memThread, text: "سؤال للمصفوفة" }, tok(a));
         if (r.ok) await waitIdle(memThread, tok("mem")!);
         return r;
       },
@@ -300,7 +300,7 @@ describe("removal test: a removed member's search stops returning that space imm
     expect(after.citations.some((c: any) => c.fileId === fileId)).toBe(false);
     // UX redesign: the default (general) agent no longer abstains; what matters is that nothing
     // from the space is retrieved or cited any more.
-    expect(after.toolRuns.find((r: any) => r.name === "search_documents")?.summary ?? "0 مقطعاً").toBe("0 مقطعاً");
+    expect(after.toolRuns.find((r: any) => r.name === "search_documents")?.summary ?? "نتائج: 0").toBe("نتائج: 0");
     expect(after.text).not.toContain("120 ألف");
     // The old answer stays in tmp's own history (it is theirs), but the space-scoped thread is gone too.
     const scoped = await s.call("mutation", "chat:createThread", { scope: { kind: "space", id: f.spaces.S_plain } }, tok("tmp"));

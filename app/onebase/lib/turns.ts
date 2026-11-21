@@ -27,6 +27,10 @@ export async function queueTurn(
     skillId?: Id<"skills">;
     /** Thinking level from the composer: auto (decided per question), fast, deep. */
     effort?: "auto" | "fast" | "deep";
+    /** plans/16: a colleague's team message handed to the assistant. */
+    handoffOf?: string;
+    /** A retry: the question it answers again (saveUser false). */
+    userMessageId?: string;
   },
 ): Promise<Id<"turns">> {
   if (!t.skipLimit) {
@@ -39,7 +43,7 @@ export async function queueTurn(
     if (level.dailyQuestions > 0 && (await usedToday(ctx, t.userId)) >= level.dailyQuestions)
       throw new OneBaseError(`بلغت حدّ اليوم في مستوى «${level.name}» (${level.dailyQuestions} سؤالاً). يتجدد الحد غداً، أو اطلب من مدير مساحة العمل رفعه.`);
   }
-  const userMessageId = t.saveUser !== false ? await ctx.components.chat.saveMessage({ threadId: t.threadId, role: "user", text: t.text }) : undefined;
+  const userMessageId = t.saveUser !== false ? await ctx.components.chat.saveMessage({ threadId: t.threadId, role: "user", text: t.text }) : t.userMessageId;
   const turnId = await ctx.db.insert("turns", {
     threadId: t.threadId,
     userId: t.userId,
@@ -53,6 +57,7 @@ export async function queueTurn(
     skillId: t.skillId,
     effort: t.effort,
     userMessageId,
+    ...(t.handoffOf ? { handoffOf: t.handoffOf } : {}),
   });
   await ctx.components.gpu.enqueueAction({ fn: internal.chat.runTurn, args: { turnId }, onComplete: internal.chat.turnDone, context: { turnId } });
   return turnId;

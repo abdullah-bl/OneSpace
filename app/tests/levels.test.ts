@@ -1,6 +1,7 @@
 // Per-employee levels and sub-agents (plans/08 §A, §D). Fake model. Each test sets up the levels it
 // needs and leaves "no levels" behind, so the order of tests doesn't matter.
 
+import { MEMORY_TOOLS, PERSONAL_TOOLS } from "../onebase/tools";
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import { Server, must } from "./harness";
 import { ACTORS, buildFixture, type ActorKey, type Fixture } from "./fixture";
@@ -42,7 +43,7 @@ async function memOn(over: Partial<typeof LEVEL>) {
 
 async function answerWith(text: string, effort?: string) {
   const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-  must(await s.call("mutation", "chat:send", { threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text, ...(effort ? { effort } : {}) }, tok("mem")));
   for (let i = 0; i < 600; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
     if (!r.turn && r.messages.at(-1)?.role === "assistant") return r.messages.at(-1);
@@ -81,7 +82,7 @@ describe("levels", () => {
     must(await s.call("mutation", "levels:save", { ...LEVEL, levelId: must(await s.call("query", "levels:list", {}, tok("admin"))).levels[0]._id, name: "محدود", dailyQuestions: used + 1 }, tok("admin")));
     await answerWith("سؤال LIMQ-1");
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    const r = await s.call("mutation", "chat:send", { threadId: t, text: "سؤال LIMQ-2" }, tok("mem"));
+    const r = await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "سؤال LIMQ-2" }, tok("mem"));
     expect(r.ok).toBe(false);
     expect(JSON.stringify(r)).toContain("محدود");
     expect(chatRequestsWith(ai, "LIMQ-2").length).toBe(0);
@@ -106,7 +107,7 @@ describe("levels", () => {
     await answerWith("ابحث LVLQ-3");
     const names = (answerReq("LVLQ-3").body.tools ?? []).map((t: any) => t.function.name);
     // Memory tools follow the level's memory switch, not its tool list (plans/09).
-    expect(names.every((n: string) => n === "search_documents" || n === "remember" || n === "recall" || n === "create_skill" || n === "use_skill" || n === "create_list" || n === "update_list" || n === "read_list" || n === "publish_output" || n === "write_app" || n === "read_app" || n === "test_app")).toBe(true);
+    expect(names.every((n: string) => n === "search_documents" || MEMORY_TOOLS.includes(n) || PERSONAL_TOOLS.includes(n))).toBe(true);
     expect(names).toContain("search_documents");
   }, 30_000);
 });
@@ -161,7 +162,7 @@ describe("answers never show internal ids", () => {
 describe("attached files are chips, not text", () => {
   test("the model is told which files are attached, and the question shows them", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "لخّص هذا الملف ATTQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "لخّص هذا الملف ATTQ-1", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     let r: any;
     for (let i = 0; i < 400; i++) {
       r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));

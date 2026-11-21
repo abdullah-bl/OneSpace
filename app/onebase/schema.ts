@@ -430,7 +430,16 @@ export default defineSchema({
     scheduleId: v.optional(v.string()), // the results thread of a scheduled task (schedules.ts)
     // Long chats: the fast model's running summary of the messages older than the verbatim window
     // (covered = how many of the thread's user/assistant messages it covers, from the start).
-    summary: v.optional(v.object({ text: v.string(), covered: v.number(), at: v.number() })),
+    // plans/15: the chat's summary of what left the verbatim window; sections since then, editedAt when the user reviewed it.
+    summary: v.optional(
+      v.object({
+        text: v.string(),
+        covered: v.number(),
+        at: v.number(),
+        sections: v.optional(v.object({ topics: v.string(), facts: v.array(v.string()), decisions: v.array(v.string()), open: v.array(v.string()), outputs: v.array(v.string()) })),
+        editedAt: v.optional(v.number()),
+      }),
+    ),
     createdAt: v.number(),
     lastAt: v.number(),
   })
@@ -471,6 +480,23 @@ export default defineSchema({
     routed: v.optional(v.boolean()), // answered by an agent the router chose
     skillName: v.optional(v.string()), // the asker's "/name" skill applied to this answer
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))),
+    // plans/16: a message to colleagues in a shared chat (@person), not to the assistant: each
+    // person named, and what they did with it (handed it to the assistant, took it, finished it).
+    team: v.optional(
+      v.object({
+        to: v.array(
+          v.object({
+            userId: v.id("users"),
+            state: v.union(v.literal("pending"), v.literal("assistant"), v.literal("self"), v.literal("done")),
+            at: v.optional(v.number()),
+            turnId: v.optional(v.id("turns")),
+          }),
+        ),
+      }),
+    ),
+    handoffOf: v.optional(v.string()), // plans/16: this question hands a colleague's team message to the assistant
+    viaAssistant: v.optional(v.boolean()), // plans/16: a team message the assistant sent for its caller (notify_colleague)
+    withdrawnAt: v.optional(v.number()), // «تراجع» on that message: hidden from the chat and from the model
   })
     .index("by_message", ["messageId"])
     .index("by_thread", ["threadId"])
@@ -524,6 +550,7 @@ export default defineSchema({
     skillId: v.optional(v.id("skills")), // "/name": the asker's own skill applied to this question
     effort: v.optional(v.union(v.literal("auto"), v.literal("fast"), v.literal("deep"))), // thinking level picked in the composer (none = auto)
     userMessageId: v.optional(v.string()), // the question's own message: its attached files show on it
+    handoffOf: v.optional(v.string()), // plans/16: the team message this turn works on (its author is told when it's done)
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
     // Decision-model calls for this turn (plans/12): kind, time, the output or why code decided.
     decisions: v.optional(v.array(v.object({ kind: v.string(), ms: v.number(), ok: v.boolean(), why: v.optional(v.string()), out: v.optional(v.any()) }))),
@@ -620,7 +647,7 @@ export default defineSchema({
     apiKey: v.optional(v.string()),
     enabled: v.boolean(),
     models: v.array(v.string()), // from the last successful check
-    modelInfo: v.optional(v.array(v.object({ id: v.string(), kinds: v.array(v.string()) }))), // what each model can do, as far as the server says (lib/modelServers.ts)
+    modelInfo: v.optional(v.array(v.object({ id: v.string(), kinds: v.array(v.string()), context: v.optional(v.number()) }))), // what each model can do, as far as the server says (lib/modelServers.ts)
     flavor: v.optional(v.string()), // the kind of server: openrouter, ollama, lmstudio, llamacpp, vllm, openai
     lastCheck: v.optional(v.object({ ok: v.boolean(), at: v.number(), error: v.optional(v.string()) })),
     createdBy: v.id("users"),

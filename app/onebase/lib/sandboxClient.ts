@@ -33,7 +33,7 @@ export function sandboxConfig() {
 
 export async function callSandbox(req: { code: string; files: { name: string; b64: string }[]; limits: Partial<SandboxLimits> }): Promise<SandboxResult> {
   const cfg = sandboxConfig();
-  if (!cfg) throw new SandboxUnavailable("الساندبوكس غير مهيأ (SANDBOX_URL و SANDBOX_SECRET)");
+  if (!cfg) throw new SandboxUnavailable("بيئة التحليل غير مفعّلة على الخادم بعد؛ أبلغ مدير المنصة.");
   const timeout = (req.limits.timeoutMs ?? 60_000) + 90_000;
   let res: Response;
   try {
@@ -44,9 +44,9 @@ export async function callSandbox(req: { code: string; files: { name: string; b6
       signal: AbortSignal.timeout(timeout),
     });
   } catch (e) {
-    throw new SandboxUnavailable("تعذّر الاتصال بالساندبوكس");
+    throw new SandboxUnavailable("تعذّر الوصول إلى بيئة التحليل الآن؛ أعد المحاولة بعد قليل، وإن تكرر فأبلغ مدير المنصة.");
   }
   const body: any = await res.json().catch(() => null);
-  if (!res.ok || !body) throw new SandboxUnavailable(`الساندبوكس رفض الطلب (${res.status}${body?.error ? `: ${body.error}` : ""})`);
+  if (!res.ok || !body) throw new SandboxUnavailable(`رفضت بيئة التحليل الطلب (${res.status}${body?.error ? `: ${body.error}` : ""})`);
   return body as SandboxResult;
 }

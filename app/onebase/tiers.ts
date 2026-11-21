@@ -11,7 +11,7 @@ import { v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan } from "./access";
-import { place, resolveSources, type SourceRef } from "./artifacts";
+import { homeSpaceOf, place, resolveSources, type SourceRef } from "./artifacts";
 import { placeForTier } from "./lists";
 
 export type Tier = 1 | 2 | 3;
@@ -57,6 +57,10 @@ export const resolve = internalQuery({
           const { space } = await assertCan(ctx, userId, String(a.spaceId ?? ""), "read");
           return space.sensitive ? 3 : 2;
         }
+        case "notify_colleague":
+          // plans/16: a message in the shared chat its members already read; chat.ts asks first
+          // unless the request names someone to tell.
+          return 1;
         case "publish_output":
           // Public: anyone with the link, no sign-in — marked as such on the card.
           return a.audience === "public" ? 3 : 2;
@@ -90,7 +94,7 @@ export const resolve = internalQuery({
         // falls through: a new output from Markdown is placed like create_artifact (no explicit space)
         case "create_artifact": {
           const { sources, sensitiveOrigins } = await resolveSources(ctx, actor, refs(a.sources), scope);
-          const placed = await place(ctx, actor, sources, sensitiveOrigins, tool === "create_artifact" ? a.spaceId : undefined, scope);
+          const placed = await place(ctx, actor, sources, sensitiveOrigins, tool === "create_artifact" ? a.spaceId : undefined, scope, { home: await homeSpaceOf(ctx, userId, threadId) });
           return tierFor(userId, placed.space, placed.classification === "sensitive");
         }
         case "run_analysis": {
@@ -107,7 +111,7 @@ export const resolve = internalQuery({
             if (space.sensitive) sensitive = true;
             sources.push({ type: "file" as const, id: file._id, spaceId: space._id });
           }
-          const placed = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true });
+          const placed = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true, home: await homeSpaceOf(ctx, userId, threadId) });
           return tierFor(userId, placed.space, sensitive);
         }
         default:

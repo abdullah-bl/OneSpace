@@ -198,7 +198,7 @@ describe("answers", () => {
 
   test("the answer streams while it is written, with the step shown as a label", async () => {
     const t = await newThread(s, tok("mem"));
-    must(await s.call("mutation", "chat:send", { threadId: t, text: "SLOW-TURN العمل عن بعد TEXTKEY-1001" }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "SLOW-TURN العمل عن بعد TEXTKEY-1001" }, tok("mem")));
     const labels = new Set<string>();
     let streamed = "";
     for (let i = 0; i < 300; i++) {
@@ -247,7 +247,7 @@ describe("GPU queue", () => {
   test("with 2 slots, a third simultaneous question waits (shown as queued) and then runs", async () => {
     const users = ["mem", "rdr", "out"];
     const threads = await Promise.all(users.map((u) => newThread(s, tok(u))));
-    await Promise.all(users.map((u, i) => s.call("mutation", "chat:send", { threadId: threads[i], text: "SLOW-TURN TEXTKEY-1001" }, tok(u))));
+    await Promise.all(users.map((u, i) => s.call("mutation", "chat:send", { to: "assistant", threadId: threads[i], text: "SLOW-TURN TEXTKEY-1001" }, tok(u))));
     let sawQueued = false;
     let done = 0;
     for (let i = 0; i < 400 && done < 3; i++) {
@@ -286,7 +286,7 @@ describe("rate limit and embedding-model guard (own server)", () => {
     const t = await newThread(s2, token);
     await ask(s2, token, t, "سؤال أول");
     await ask(s2, token, t, "سؤال ثان");
-    const r = await s2.call("mutation", "chat:send", { threadId: t, text: "سؤال ثالث" }, token);
+    const r = await s2.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "سؤال ثالث" }, token);
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error).toContain("حاول بعد");
   });
@@ -304,7 +304,7 @@ describe("rate limit and embedding-model guard (own server)", () => {
     expect(st.state).toBe("failed");
     expect(st.error).toContain("إعادة الفهرسة");
     const t = await newThread(s3, token);
-    must(await s3.call("mutation", "chat:send", { threadId: t, text: "GUARDKEY" }, token));
+    must(await s3.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "GUARDKEY" }, token));
     let err = "";
     for (let i = 0; i < 200 && !err; i++) {
       const r = must(await s3.call("query", "chat:messages", { threadId: t }, token));

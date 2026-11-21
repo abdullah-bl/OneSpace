@@ -28,7 +28,7 @@ export const searchDocumentsTool: AppTool<{ query: string; spaces?: string[] }> 
     const r = await searchDocuments(t.ctx, { userId: t.userId, spaceIds, fileIds: t.scopeFileIds, query });
     const citations: Citation[] = r.hits.map((h) => ({ fileId: h.fileId, fileName: h.fileName, page: h.page, section: h.section, quote: h.text, ...(h.steering ? { steering: true } : {}) }));
     return {
-      content: citations.length ? `وُجد ${citations.length} مقطعاً مرتبطاً، نصوصها أدناه مرقّمة كمصادر.` : "لم يُعثر على مقاطع مرتبطة في المستندات المتاحة.",
+      content: citations.length ? `وُجدت ${citations.length} نتائج في الملفات، نصوصها أدناه مرقّمة كمصادر.` : "لم يُعثر على شيء مرتبط في الملفات المتاحة.",
       citations,
       spaceIds: [...new Set(r.hits.map((h) => h.spaceId))],
     };

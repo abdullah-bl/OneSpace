@@ -24,7 +24,8 @@ export async function newThread(s: Server, token: string, scope: any = { kind: "
 /** Sends a question and waits until the turn is done; returns the assistant message. */
 export async function ask(s: Server, token: string, threadId: string, text: string, timeoutMs = 20_000): Promise<Answer> {
   const before = must(await s.call("query", "chat:messages", { threadId }, token)).messages.length;
-  must(await s.call("mutation", "chat:send", { threadId, text }, token));
+  // plans/16: in a shared chat the assistant answers only when called; these helpers always ask it.
+  must(await s.call("mutation", "chat:send", { threadId, text, to: "assistant" }, token));
   const end = Date.now() + timeoutMs;
   while (Date.now() < end) {
     const r = must(await s.call("query", "chat:messages", { threadId }, token));

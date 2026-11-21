@@ -25,7 +25,7 @@ afterAll(async () => {
 
 async function ask(token: string, text: string, spaceId?: string, skillId?: string) {
   const t = must(await s.call("mutation", "chat:createThread", spaceId ? { spaceId } : {}, token));
-  must(await s.call("mutation", "chat:send", { threadId: t, text, ...(skillId ? { skillId } : {}) }, token));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text, ...(skillId ? { skillId } : {}) }, token));
   for (let i = 0; i < 800; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId: t }, token));
     if (!r.turn && r.messages.at(-1)?.role === "assistant") return { threadId: t, messages: r.messages as any[] };
@@ -121,10 +121,10 @@ describe("in the chat", () => {
     expect(sentFor("SQ-1").join()).toContain("خطوات العمل SLASH-1");
     // In a chat outside the space it answers like a missing skill.
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "/slash-1 SQ-2", skillId: id }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "/slash-1 SQ-2", skillId: id }, tok("mem"))).ok).toBe(false);
     // An outsider can't use it in their own chat either.
     const t2 = must(await s.call("mutation", "chat:createThread", {}, tok("out")));
-    expect((await s.call("mutation", "chat:send", { threadId: t2, text: "/slash-1", skillId: id }, tok("out"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t2, text: "/slash-1", skillId: id }, tok("out"))).ok).toBe(false);
   });
 
   test("create_skill for the space: a card first; a member's then waits for a manager", async () => {

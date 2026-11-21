@@ -10,7 +10,7 @@
 export type Flavor = "openrouter" | "ollama" | "lmstudio" | "llamacpp" | "vllm" | "openai";
 /** chat: writes text. vision: also reads images. decide: a decision model (llama.cpp /v1/systemone), no text. */
 export type ModelKind = "chat" | "vision" | "decide" | "embed" | "rerank" | "audio" | "media";
-export type ModelInfo = { id: string; kinds: ModelKind[] };
+export type ModelInfo = { id: string; kinds: ModelKind[]; context?: number };
 export type ServerRole = "main" | "fast" | "vision" | "decide" | "embed";
 
 export const FLAVOR_LABEL: Record<Flavor, string> = {
@@ -73,7 +73,9 @@ export function readModels(data: any): ModelInfo[] {
       kinds.add("chat");
       if (input.includes("image") || c.includes("vision") || m?.type === "vlm") kinds.add("vision");
     }
-    out.set(id, { id, kinds: [...kinds] });
+    // The context the server runs it with (llama.cpp meta.n_ctx), else what the model offers.
+    const context = Number(m?.meta?.n_ctx ?? m?.context_length ?? m?.max_model_len ?? 0);
+    out.set(id, { id, kinds: [...kinds], ...(context > 0 ? { context } : {}) });
   }
   return [...out.values()].slice(0, 300);
 }

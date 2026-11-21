@@ -295,7 +295,7 @@ export const recordCheck = internalMutation({
     providerId: v.id("aiProviders"),
     ok: v.boolean(),
     models: v.array(v.string()),
-    modelInfo: v.optional(v.array(v.object({ id: v.string(), kinds: v.array(v.string()) }))),
+    modelInfo: v.optional(v.array(v.object({ id: v.string(), kinds: v.array(v.string()), context: v.optional(v.number()) }))),
     flavor: v.optional(v.string()),
     error: v.optional(v.string()),
   },

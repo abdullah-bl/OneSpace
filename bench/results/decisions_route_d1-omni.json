@@ -1,18 +1,18 @@
 {
  "model": "danbev/d1-Omni-2B-GGUF:BF16",
- "cases": 74,
- "answered": 74,
+ "cases": 82,
+ "answered": 82,
  "fallbacks": 0,
  "needsFiles": {
-  "regex": 50,
-  "decision": 87.8,
+  "regex": 48.8,
+  "decision": 84.1,
   "missedFiles": {
    "regex": 11,
    "decision": 0
   },
   "needlessSearch": {
-   "regex": 26,
-   "decision": 9
+   "regex": 31,
+   "decision": 13
   }
  },
  "byGroup": {
@@ -29,7 +29,7 @@
   "make-general": {
    "n": 14,
    "regex": 50,
-   "decision": 78.6
+   "decision": 92.9
   },
   "ask-general": {
    "n": 10,
@@ -49,12 +49,17 @@
   "follow-general": {
    "n": 2,
    "regex": 0,
-   "decision": 50
+   "decision": 100
   },
   "topic-switch": {
    "n": 4,
    "regex": 100,
    "decision": 75
+  },
+  "own-items": {
+   "n": 8,
+   "regex": 37.5,
+   "decision": 12.5
   }
  },
  "effortLight": {
@@ -78,25 +83,13 @@
   "keptKeys": 0
  },
  "latencyMs": {
-  "n": 74,
-  "p50": 61,
-  "p90": 64,
-  "max": 67,
-  "mean": 61
+  "n": 82,
+  "p50": 63,
+  "p90": 70,
+  "max": 77,
+  "mean": 63
  },
  "errors": [
-  {
-   "id": "make-09",
-   "q": "أعد صياغة هذه الفقرة بأسلوب رسمي: نبي نخلص الشغل بسرعة عشان العميل زعلان",
-   "gold": false,
-   "got": true
-  },
-  {
-   "id": "make-10",
-   "q": "لو تكرمت اكتب سيرة ذاتية مختصرة لمهندس برمجيات خبرته ٥ سنوات",
-   "gold": false,
-   "got": true
-  },
   {
    "id": "make-12",
    "q": "حط لي قالب لمحضر اجتماع",
@@ -128,14 +121,50 @@
    "got": true
   },
   {
-   "id": "follow-07",
-   "q": "خله أقصر وأرسمي",
+   "id": "switch-03",
+   "q": "اكتب لي قصيدة قصيرة عن الصباح",
    "gold": false,
    "got": true
   },
   {
-   "id": "switch-03",
-   "q": "اكتب لي قصيدة قصيرة عن الصباح",
+   "id": "own-01",
+   "q": "سوي لي قائمة بدير مشاريعي فيها",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-02",
+   "q": "كم عندي مهام وقوائم ؟",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-03",
+   "q": "طيب مهام ؟",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-04",
+   "q": "رتب مهامي حسب الأولوية",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-05",
+   "q": "أضف للقائمة مشروع تطوير البوابة والمسؤول خالد",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-06",
+   "q": "وش المهام المستعجلة عندي هالأسبوع؟",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-07",
+   "q": "سو لي جدول متابعة للمشتريات اللي أتابعها",
    "gold": false,
    "got": true
   }

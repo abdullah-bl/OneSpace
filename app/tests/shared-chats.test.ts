@@ -72,7 +72,7 @@ describe("shared space chats", () => {
     // The reader reads, but can't ask, retry or stop.
     const view = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
     expect(view).toMatchObject({ shared: true, canWrite: false, isOwner: false, canManage: false });
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "سؤال" }, tok("rdr"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "سؤال" }, tok("rdr"))).ok).toBe(false);
     expect((await s.call("mutation", "chat:retry", { threadId: t }, tok("rdr"))).ok).toBe(false);
     expect((await s.call("mutation", "chat:stop", { threadId: t }, tok("rdr"))).ok).toBe(false);
     // Owner-only settings stay with the owner.
@@ -81,9 +81,9 @@ describe("shared space chats", () => {
   }, 40_000);
 
   test("nothing from outside the space: no @mentions of other spaces, no personal memory", async () => {
-    const bad = await s.call("mutation", "chat:send", { threadId: t, text: "قارن", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem"));
+    const bad = await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "قارن", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem"));
     expect(bad.ok).toBe(false);
-    expect((await s.call("mutation", "chat:send", { threadId: t, text: "قارن", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "قارن", mentions: [{ kind: "space", id: f.spaces.S_every }] }, tok("mem"))).ok).toBe(false);
     must(await s.call("mutation", "memory:add", { text: "يفضّل الإجابات المختصرة SHMEM-9", kind: "preference" }, tok("mem")));
     await ask(s, tok("mem")!, t, "سؤال في المشتركة SHQ-3");
     for (const r of chatRequestsWith(ai, "SHQ-3")) {
@@ -104,7 +104,7 @@ describe("shared space chats", () => {
     expect(await listed("mgr", f.spaces.S_plain, p)).toMatchObject({ shared: true });
     // A private chat that pointed at a personal file can't be shared: the members would see its name.
     const q = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
-    must(await s.call("mutation", "chat:send", { threadId: q, text: "SHQ-5", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: q, text: "SHQ-5", mentions: [{ kind: "file", id: f.files.P_mem }] }, tok("mem")));
     expect((await s.call("mutation", "chat:setShared", { threadId: q, shared: true }, tok("mem"))).ok).toBe(false);
     // Free-form and personal-space chats can't be shared.
     const free = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
@@ -174,7 +174,212 @@ describe("shared space chats", () => {
     expect(must(await s.call("query", "chat:messages", { threadId: c }, tok("tmp"))).shared).toBe(true);
     must(await s.call("mutation", "spaces:removeMember", { spaceId: f.spaces.S_sens, userId: f.ids.tmp }, tok("mgr")));
     expect((await s.call("query", "chat:messages", { threadId: c }, tok("tmp"))).ok).toBe(false);
-    expect((await s.call("mutation", "chat:send", { threadId: c, text: "x" }, tok("tmp"))).ok).toBe(false);
+    expect((await s.call("mutation", "chat:send", { to: "assistant", threadId: c, text: "x" }, tok("tmp"))).ok).toBe(false);
     expect((await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).ok).toBe(true);
   }, 30_000);
+});
+
+// ---------------------------------------------------------------- plans/16: messages to colleagues
+
+describe("messages to colleagues and handing them to the assistant", () => {
+  const chatReqs = (mark: string) => ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages ?? []).includes(mark));
+  const bell = async (a: string) => must(await s.call("query", "notifications:list", {}, tok(a))) as any[];
+  const teamOf = async (a: string, t: string, mark: string) => must(await s.call("query", "chat:messages", { threadId: t }, tok(a))).messages.find((m: any) => m.text.includes(mark));
+  let t: string;
+  let msgId: string;
+
+  test("@person in a shared chat goes to them: no answer from the assistant, they're notified, everyone sees who it's for", async () => {
+    t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    const r = must(await s.call("mutation", "chat:send", { threadId: t, text: "خلّص مقارنة العروض TEAMQ-1", people: [f.ids.mgr, f.ids.rdr, f.ids.out] }, tok("mem")));
+    expect(r).toBeNull();
+    await Bun.sleep(300);
+    expect(chatReqs("TEAMQ-1").length).toBe(0);
+    const m = await teamOf("rdr", t, "TEAMQ-1");
+    msgId = m.id;
+    expect(m.author).toBe("موظف mem");
+    // Only people who can read the chat are recipients (out can't).
+    expect(m.team.to.map((x: any) => [x.name, x.state])).toEqual([["موظف mgr", "pending"], ["موظف rdr", "pending"]]);
+    expect((await teamOf("mgr", t, "TEAMQ-1")).team.to.find((x: any) => x.mine).name).toBe("موظف mgr");
+    expect((await bell("mgr")).some((n: any) => n.kind === "chat.mention" && n.threadId === t)).toBe(true);
+    // The writer can still ask the assistant too, in the same message.
+    const turn = must(await s.call("mutation", "chat:send", { threadId: t, text: "ولخّص لنا العروض TEAMQ-2", people: [f.ids.mgr], to: "assistant" }, tok("mem")));
+    expect(turn).toBeTruthy();
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    expect(chatReqs("TEAMQ-2").length).toBeGreaterThan(0);
+    await ask(s, tok("mem")!, t, "سؤال بعدها TEAMQ-3");
+    // The assistant sees the message between colleagues marked as such, not as a question.
+    expect(JSON.stringify(chatReqs("TEAMQ-3").at(-1)!.body.messages)).toContain("رسالة بين الزملاء وليست سؤالاً لك");
+  }, 60_000);
+
+  test("only a person it names acts on it; handing it to the assistant needs to be able to ask in the chat", async () => {
+    for (const a of ["mem", "out", "admin", "anon"]) expect((await s.call("mutation", "chat:handoff", { messageId: msgId, action: "self" }, tok(a))).ok).toBe(false);
+    // rdr is named but only reads the space: can take it or close it, not hand it to the assistant.
+    expect((await s.call("mutation", "chat:handoff", { messageId: msgId, action: "assistant" }, tok("rdr"))).ok).toBe(false);
+    must(await s.call("mutation", "chat:handoff", { messageId: msgId, action: "self" }, tok("rdr")));
+    expect((await teamOf("mem", t, "TEAMQ-1")).team.to.find((x: any) => x.name === "موظف rdr").state).toBe("self");
+    expect((await bell("mem")).some((n: any) => n.kind === "chat.handoff" && n.title.includes("موظف rdr تولّى طلبك"))).toBe(true);
+    expect((await s.call("mutation", "chat:handoff", { messageId: "nope", action: "self" }, tok("mgr"))).ok).toBe(false);
+  });
+
+  test("handed to the assistant: it works as that person, the answer is in the chat for everyone, and the author is told", async () => {
+    must(await s.call("mutation", "chat:handoff", { messageId: msgId, action: "assistant" }, tok("mgr")));
+    for (let i = 0; i < 400; i++) {
+      const v = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
+      if (!v.turn && v.messages.at(-1)?.role === "assistant" && v.messages.some((m: any) => m.handoffOf === msgId)) break;
+      await Bun.sleep(25);
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: t }, tok("rdr")));
+    const line = view.messages.find((m: any) => m.handoffOf === msgId);
+    expect(line.author).toBe("موظف mgr");
+    expect(view.messages.at(-1).role).toBe("assistant");
+    // The turn ran as mgr: the model was told the current question is from mgr.
+    const req = chatReqs("طلب موظف mem مني").at(-1)!;
+    expect(JSON.stringify(req.body.messages)).toContain("السؤال الحالي من موظف mgr");
+    expect((await teamOf("mem", t, "TEAMQ-1")).team.to.find((x: any) => x.name === "موظف mgr").state).toBe("assistant");
+    expect((await s.call("mutation", "chat:handoff", { messageId: msgId, action: "assistant" }, tok("mgr"))).ok).toBe(false);
+    const notes = await bell("mem");
+    expect(notes.some((n: any) => n.kind === "chat.handoff" && n.title.includes("سلّم طلبك للمساعد"))).toBe(true);
+    expect(notes.some((n: any) => n.kind === "chat.handoff" && n.title.includes("أنجز المساعد طلبك الذي سلّمه موظف mgr"))).toBe(true);
+    must(await s.call("mutation", "chat:handoff", { messageId: msgId, action: "done" }, tok("mgr")));
+    expect((await teamOf("mem", t, "TEAMQ-1")).team.to.find((x: any) => x.name === "موظف mgr").state).toBe("done");
+  }, 60_000);
+
+  test("outside a shared chat @person changes nothing: the assistant answers as before", async () => {
+    const p = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    expect(must(await s.call("mutation", "chat:send", { threadId: p, text: "سؤال TEAMQ-9", people: [f.ids.mgr] }, tok("mem")))).toBeTruthy();
+  });
+
+  test("an output made in a shared chat lands in the chat's space (a card first), so the members see it", async () => {
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL create_artifact {"title":"مخرج الفريق TEAMOUT-1","kind":"markdown","content":"# جدول"}' }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, c, "سوّ لنا مخرج TEAMOUT-Q");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: c }, tok("mem")));
+    const p = view.messages.flatMap((m: any) => m.proposals ?? []).find((x: any) => x.tool === "create_artifact");
+    // A write the team sees: it waits for «نفّذ», it doesn't run in the asker's personal space.
+    expect(p.state).toBe("pending");
+    expect(p.auto).toBeFalsy();
+    must(await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("mem")));
+    for (const a of ["mgr", "rdr"]) {
+      const seen = must(await s.call("query", "chat:messages", { threadId: c }, tok(a))).messages.flatMap((m: any) => m.proposals ?? []).find((x: any) => x.id === p.id);
+      expect(seen.state).toBe("executed");
+      expect(seen.artifactIds.length).toBe(1);
+    }
+  }, 60_000);
+
+  test("the assistant answers only when called: a plain message is the team's; each answer says whose request it is", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "الاجتماع بكرة TEAMQ-20", to: "team" }, tok("mem")))).toBeNull();
+    await Bun.sleep(200);
+    expect(chatReqs("TEAMQ-20").length).toBe(0);
+    const plain = await teamOf("mgr", c, "TEAMQ-20");
+    expect(plain.team.to).toEqual([]);
+    // Called: it answers as the caller, and the answer names them.
+    must(await s.call("mutation", "chat:send", { threadId: c, text: "لخّص لنا TEAMQ-21", to: "assistant" }, tok("mem")));
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    const ans = must(await s.call("query", "chat:messages", { threadId: c }, tok("mgr"))).messages.at(-1);
+    expect([ans.role, ans.forName, ans.mine]).toEqual(["assistant", "موظف mem", false]);
+  }, 60_000);
+
+  test("only the asker retries their answer; a colleague's later message never becomes the question", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { threadId: c, text: "سؤال mem RETRYQ-1", to: "assistant" }, tok("mem")));
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    // mgr can ask in the chat, but retrying mem's question would run it with mgr's permissions.
+    const denied = await s.call("mutation", "chat:retry", { threadId: c }, tok("mgr"));
+    expect(denied.ok).toBe(false);
+    expect(String((denied as any).error)).toContain("سؤالك أنت فقط");
+    // A team message after the answer; mem's retry still answers mem's own question.
+    must(await s.call("mutation", "chat:send", { threadId: c, text: "ملاحظة للفريق RETRYQ-TEAM", to: "team" }, tok("mgr")));
+    const before = chatReqs("RETRYQ-1").length;
+    must(await s.call("mutation", "chat:retry", { threadId: c }, tok("mem")));
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    const req = chatReqs("RETRYQ-1").at(-1)!;
+    expect(chatReqs("RETRYQ-1").length).toBeGreaterThan(before);
+    const msgs = req.body.messages as any[];
+    expect(JSON.stringify(msgs.at(-1))).toContain("RETRYQ-1");
+    expect(JSON.stringify(msgs)).not.toContain("RETRYQ-TEAM");
+  }, 60_000);
+
+  test("the server decides who a message is for: an old page or a typed «@ai» can't make the assistant answer uncalled", async () => {
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    // No `to` at all (an old page): the team's.
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "block him CALLQ-1" }, tok("mem")))).toBeNull();
+    // Typed in the text: called.
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "@ai لخّص CALLQ-2" }, tok("mem")))).toBeTruthy();
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    expect(must(await s.call("mutation", "chat:send", { threadId: c, text: "@المساعد، كمّل CALLQ-3" }, tok("mem")))).toBeTruthy();
+    for (let i = 0; i < 400 && must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).turn; i++) await Bun.sleep(25);
+    expect(chatReqs("CALLQ-1").filter((r) => JSON.stringify(r.body.messages.at(-1)).includes("CALLQ-1")).length).toBe(0);
+  }, 60_000);
+});
+
+describe("calling the assistant (unit)", () => {
+  test("«@المساعد», «@مساعد», «@ai», «@assistant» call it; an email or a word inside doesn't", async () => {
+    const { callsAssistant } = await import("../onebase/chat");
+    for (const t of ["@ai print", "@المساعد لخّص", "لو سمحت @مساعد", "(@AI)", "@assistant, go", "شف هذا @المساعد"]) expect(callsAssistant(t)).toBe(true);
+    for (const t of ["mail me at x@ai.com", "@airport", "المساعد لخّص", "@المساعدة", "block him"]) expect(callsAssistant(t)).toBe(false);
+  });
+
+  const chatReqs = (mark: string) => ai.requests.filter((r) => r.path === "/v1/chat/completions" && !r.body.response_format && JSON.stringify(r.body.messages ?? []).includes(mark));
+  const bell = async (a: string) => must(await s.call("query", "notifications:list", {}, tok(a))) as any[];
+
+  test("asked to tell a colleague, the assistant sends a team message for its caller; «تراجع» withdraws it", async () => {
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL notify_colleague {"people":["موظف mgr"],"message":"راجع المقارنة NOTIFYMSG-1"}' }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, c, "جهّز المقارنة وخلّ موظف mgr يراجعها NOTIFYQ-1");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: c }, tok("mgr")));
+    const sent = view.messages.find((m: any) => m.text.includes("NOTIFYMSG-1"));
+    expect(sent.team).toMatchObject({ viaAssistant: true });
+    expect(sent.team.to.map((x: any) => [x.name, x.state, x.mine])).toEqual([["موظف mgr", "pending", true]]);
+    expect(sent.author).toBe("موظف mem");
+    expect((await bell("mgr")).some((n: any) => n.kind === "chat.mention" && n.threadId === c && n.body.includes("NOTIFYMSG-1"))).toBe(true);
+    // It ran at once (asked for), with «تراجع» for mem only; undo hides the message for everyone.
+    const p = view.messages.flatMap((m: any) => m.proposals ?? []).find((x: any) => x.tool === "notify_colleague");
+    expect([p.state, p.auto]).toEqual(["executed", true]);
+    expect((await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mgr"))).ok).toBe(false);
+    must(await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mem")));
+    for (const a of ["mem", "mgr", "rdr"]) expect(must(await s.call("query", "chat:messages", { threadId: c }, tok(a))).messages.some((m: any) => m.text.includes("NOTIFYMSG-1"))).toBe(false);
+  }, 60_000);
+
+  test("not asked to tell anyone, it's a card first; an unknown name is a failed step; a private chat doesn't offer it", async () => {
+    must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: 'CALL_TOOL notify_colleague {"people":["موظف mgr"],"message":"NOTIFYMSG-2"}\nCALL_TOOL notify_colleague {"people":["شخص-غير-موجود"],"message":"NOTIFYMSG-3"}' }, tok("mgr")));
+    const c = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("mem")));
+    const priv = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    try {
+      await ask(s, tok("mem")!, c, "لخّص العروض NOTIFYQ-2");
+      await ask(s, tok("mem")!, priv, "لخّص العروض NOTIFYQ-PRIV");
+    } finally {
+      must(await s.call("mutation", "spaces:setInstructions", { spaceId: f.spaces.S_plain, instructions: "" }, tok("mgr")));
+    }
+    const view = must(await s.call("query", "chat:messages", { threadId: c }, tok("mem")));
+    const props = view.messages.flatMap((m: any) => m.proposals ?? []).filter((x: any) => x.tool === "notify_colleague");
+    expect(props.map((x: any) => x.state)).toEqual(["pending", "pending"]);
+    expect(view.messages.some((m: any) => m.text === "NOTIFYMSG-2")).toBe(false);
+    // The unknown name fails when confirmed, and nothing is sent.
+    const bad = props.find((x: any) => JSON.stringify(x.args).includes("شخص-غير-موجود"));
+    const r = must(await s.call("action", "chat:confirmProposal", { proposalId: bad.id }, tok("mem")));
+    expect(r.ok).toBe(false);
+    expect(String(r.result)).toContain("لا أحد باسم");
+    expect(JSON.stringify(must(await s.call("query", "chat:messages", { threadId: c }, tok("mem"))).messages.map((m: any) => m.text))).not.toContain("NOTIFYMSG-3");
+    // A private chat: the tool isn't offered.
+    const req = chatReqs("NOTIFYQ-PRIV").at(-1)!;
+    expect((req.body.tools ?? []).map((t: any) => t.function.name)).not.toContain("notify_colleague");
+    expect((chatReqs("NOTIFYQ-2").at(-1)!.body.tools ?? []).map((t: any) => t.function.name)).toContain("notify_colleague");
+  }, 60_000);
+});
+
+describe("asking the assistant to tell someone (unit)", () => {
+  test("«خلّ محمد…», «أرسلها للمدير», «@محمد» are asks; a plain request isn't", async () => {
+    const { asksToNotify } = await import("../onebase/chat");
+    for (const t of ["جهّز المقارنة وخلّ محمد يراجعها", "أرسلها للمدير", "بلّغ سارة بالموعد", "@المساعد لخّص و@محمد يعتمد"]) expect(asksToNotify(t)).toBe(true);
+    for (const t of ["لخّص العروض", "@المساعد اكتب تقرير", "كم الميزانية؟"]) expect(asksToNotify(t)).toBe(false);
+  });
 });

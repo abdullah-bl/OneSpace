@@ -33,6 +33,11 @@ export type Citation = {
 export type ToolResult = {
   /** Text handed back to the model (may carry ids and details meant for it only). */
   content: string;
+  /**
+   * The action did not happen (a refused or invalid write, already rolled back): the chat reports it
+   * as a failed step, with no «تراجع» card, and the model is told plainly that nothing changed.
+   */
+  failed?: boolean;
   /** What the user sees on the action card after «نفّذ». Without it the card shows the raw output folded. */
   display?: string;
   /** How «تراجع» reverses an action that ran without asking (tier 1, onebase/tiers.ts). */
@@ -42,6 +47,8 @@ export type ToolResult = {
     deleteMemories?: string[];
     deleteSkills?: string[];
     deleteLists?: string[];
+    /** plans/16: team messages the assistant sent (notify_colleague): withdrawn, not deleted. */
+    withdrawMessages?: string[];
     lists?: { listId: string; deleteRows: string[]; restoreRows: { rowId?: string; cells: Record<string, string | number | boolean | null>; order: number }[] };
     restore?: { artifactId: string; version: number };
   };

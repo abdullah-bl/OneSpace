@@ -31,7 +31,7 @@ async function ask(token: string, text: string, spaceId?: string) {
   return await askIn(token, t, text);
 }
 async function askIn(token: string, threadId: string, text: string) {
-  must(await s.call("mutation", "chat:send", { threadId, text }, token));
+  must(await s.call("mutation", "chat:send", { to: "assistant", threadId, text }, token));
   for (let i = 0; i < 800; i++) {
     const r = must(await s.call("query", "chat:messages", { threadId }, token));
     if (!r.turn && r.messages.at(-1)?.role === "assistant") return { threadId, messages: r.messages as any[] };

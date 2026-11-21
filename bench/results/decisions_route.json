@@ -1,17 +1,17 @@
 {
- "model": "lfm3-1.7b-decide",
- "cases": 74,
- "answered": 74,
+ "model": "lfm3-1.7b",
+ "cases": 82,
+ "answered": 82,
  "fallbacks": 0,
  "needsFiles": {
-  "regex": 50,
-  "decision": 87.8,
+  "regex": 48.8,
+  "decision": 86.6,
   "missedFiles": {
    "regex": 11,
-   "decision": 3
+   "decision": 5
   },
   "needlessSearch": {
-   "regex": 26,
+   "regex": 31,
    "decision": 6
   }
  },
@@ -19,7 +19,7 @@
   "ask-files": {
    "n": 16,
    "regex": 100,
-   "decision": 93.8
+   "decision": 87.5
   },
   "make-files": {
    "n": 14,
@@ -29,7 +29,7 @@
   "make-general": {
    "n": 14,
    "regex": 50,
-   "decision": 71.4
+   "decision": 85.7
   },
   "ask-general": {
    "n": 10,
@@ -44,7 +44,7 @@
   "follow-files": {
    "n": 6,
    "regex": 100,
-   "decision": 100
+   "decision": 83.3
   },
   "follow-general": {
    "n": 2,
@@ -55,11 +55,16 @@
    "n": 4,
    "regex": 100,
    "decision": 50
+  },
+  "own-items": {
+   "n": 8,
+   "regex": 37.5,
+   "decision": 75
   }
  },
  "effortLight": {
-  "predicted": 12,
-  "correct": 8,
+  "predicted": 11,
+  "correct": 7,
   "gold": 9,
   "wrongLight": [
    "make-03",
@@ -69,22 +74,29 @@
   ]
  },
  "effortLightApplied": {
-  "applied": 7,
-  "correct": 7,
+  "applied": 6,
+  "correct": 6,
   "wrongLight": []
  },
  "followUpQuery": {
   "n": 6,
+  "written": 6,
   "keptKeys": 6
  },
  "latencyMs": {
-  "n": 74,
-  "p50": 310,
-  "p90": 355,
-  "max": 454,
-  "mean": 308
+  "n": 82,
+  "p50": 354,
+  "p90": 413,
+  "max": 614,
+  "mean": 359
  },
  "errors": [
+  {
+   "id": "ask-03",
+   "q": "كم باقي على موعد تسليم تقرير الربع الثالث؟",
+   "gold": true,
+   "got": false
+  },
   {
    "id": "ask-16",
    "q": "مين رئيس فريق الجودة حالياً؟",
@@ -104,18 +116,6 @@
    "got": true
   },
   {
-   "id": "make-13",
-   "q": "اعطني ١٠ أسئلة مقابلة لوظيفة محاسب",
-   "gold": false,
-   "got": true
-  },
-  {
-   "id": "make-14",
-   "q": "عطني خطة تسويق لمقهى صغير",
-   "gold": false,
-   "got": true
-  },
-  {
    "id": "gen-01",
    "q": "وش الفرق بين ضريبة القيمة المضافة والضريبة الانتقائية؟",
    "gold": false,
@@ -128,6 +128,12 @@
    "got": true
   },
   {
+   "id": "follow-04",
+   "q": "ووش عن الموظفين المتعاقدين؟",
+   "gold": true,
+   "got": false
+  },
+  {
    "id": "switch-02",
    "q": "طيب كم بدل السكن عندنا؟",
    "gold": true,
@@ -138,6 +144,18 @@
    "q": "من يعتمد طلبات السفر في الإدارة؟",
    "gold": true,
    "got": false
+  },
+  {
+   "id": "own-05",
+   "q": "أضف للقائمة مشروع تطوير البوابة والمسؤول خالد",
+   "gold": false,
+   "got": true
+  },
+  {
+   "id": "own-07",
+   "q": "سو لي جدول متابعة للمشتريات اللي أتابعها",
+   "gold": false,
+   "got": true
   }
  ]
 }

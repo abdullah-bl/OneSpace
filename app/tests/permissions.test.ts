@@ -17,6 +17,7 @@ import { PHASE6_COVERED } from "./phase6.coverage";
 import { UX_COVERED } from "./ux.coverage";
 import { DECISIONS_COVERED } from "./decisions.coverage";
 import { SHARED_CHATS_COVERED } from "./shared-chats.coverage";
+import { LONGCHAT_COVERED } from "./longchat.coverage";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -330,6 +331,7 @@ describe("workspace-level functions", () => {
       ...PLATFORM_COVERED, // checked in platform.test.ts
       ...DECISIONS_COVERED, // checked in decisions.test.ts
       ...SHARED_CHATS_COVERED, // checked in shared-chats.test.ts
+      ...LONGCHAT_COVERED, // checked in longchat.test.ts
     ]);
     expect(publicFns.filter((n) => !covered.has(n))).toEqual([]);
     // Nothing public writes or deletes audit rows, and no component function is exposed.
