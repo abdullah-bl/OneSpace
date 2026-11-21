@@ -770,3 +770,79 @@ describe("plans/17 §3: designing a certificate without JSON", () => {
   });
 });
 
+describe("plans/17 §3 (Word): the certificate is a Word file with {{variables}}", () => {
+  let docx: string;
+  beforeAll(async () => {
+    const { sampleDocx } = await import("../onebase/lib/docxTemplate");
+    // «التاريخ» matches no column; «full_namne» is a typo.
+    docx = Buffer.from(await sampleDocx("شهادة وورد", ["الاسم", "الدورة", "التاريخ", "full_namne"])).toString("base64");
+  });
+  const base = () => ({ spaceId: f.spaces.S_plain, recordSetId: o.sets.S_plain });
+
+  test("variables are matched to columns by name; unmatched ones are listed; reserved ones are recognised", async () => {
+    const a = must(await s.call("action", "templates:analyzeWord", { ...base(), dataBase64: docx }, T("mgr")));
+    expect(a.variables).toEqual([
+      { name: "الاسم", reserved: null, column: "name" },
+      { name: "الدورة", reserved: null, column: "course" },
+      { name: "التاريخ", reserved: null, column: null },
+      { name: "full_namne", reserved: null, column: null },
+      { name: "الرقم_التسلسلي", reserved: "serial", column: null },
+      { name: "رمز_التحقق", reserved: "verifyCode", column: null },
+      { name: "تاريخ_الإصدار", reserved: "issuedDate", column: null },
+    ]);
+    expect(a.unmatched).toEqual(["التاريخ", "full_namne"]);
+  });
+
+  test("saving with an unmatched variable is refused, naming it; preview renders the first row", async () => {
+    const r = await s.call("action", "templates:saveWord", { ...base(), dataBase64: docx, name: "وورد" }, T("mgr"));
+    expect(errOf(r)).toContain("{{التاريخ}}");
+    const mapping = { التاريخ: "date", full_namne: "name" };
+    const p = must(await s.call("action", "templates:previewWord", { ...base(), dataBase64: docx, mapping }, T("mgr")));
+    expect(p.error).toBeNull();
+    expect(p.image).toMatch(/^data:image\/png;base64,/);
+  }, 60_000);
+
+  test("save, approve, issue: the PDF is the Word file filled from the record; verification works; reproduce is for layouts only", async () => {
+    const mapping = { التاريخ: "date", full_namne: "name" };
+    const saved = must(await s.call("action", "templates:saveWord", { ...base(), dataBase64: docx, name: "شهادة وورد", mapping }, T("mgr")));
+    const v = must(await s.call("query", "templates:versions", { templateId: saved.templateId }, T("mgr"))).versions[0];
+    expect(v.format).toBe("docx");
+    expect(v.fieldsSchema.map((x: any) => x.label)).toEqual(["الاسم", "الدورة", "التاريخ", "full_namne"]);
+    must(await s.call("mutation", "templates:approveVersion", { templateId: saved.templateId, version: saved.version }, T("mgr")));
+    const rows = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mgr"))).rows;
+    const out = rows.find((r: any) => r.subjectRef === IDS.out);
+    const made = must(await s.call("mutation", "documents:requestMany", { templateId: saved.templateId, recordIds: [out.recordId] }, T("mgr")));
+    const res = must(await s.call("action", "documents:approveAndIssue", { documentIds: [made.documents[0].documentId] }, T("mgr")));
+    expect(res.failed).toEqual([]);
+    const pdf = await downloadDoc(T("mgr")!, made.documents[0].documentId);
+    expect(new TextDecoder().decode(pdf.slice(0, 5))).toBe("%PDF-");
+    const facts = must(await s.call("query", "documents:verify", { code: res.issued[0].verifyCode }, T("out")));
+    expect(facts).toMatchObject({ valid: true, serial: res.issued[0].serial, sha256: sha(pdf) });
+    expect(errOf(await s.call("action", "documents:reproduce", { documentId: made.documents[0].documentId }, T("mgr")))).toContain("لقوالب التخطيط فقط");
+    // The text of the PDF: the record's values in the places of the variables.
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const dir = mkdtempSync("/tmp/onespace-test-");
+    writeFileSync(`${dir}/c.pdf`, pdf);
+    // pdftotext wraps runs in bidi marks (U+202A–U+202E, U+200E/F): drop them to compare text.
+    const text = (await new Response(Bun.spawn(["pdftotext", `${dir}/c.pdf`, "-"]).stdout).text()).replace(/[\u200E\u200F\u202A-\u202E]/g, "");
+    expect(text).toContain("موظف out");
+    expect(text).toContain("السلامة المهنية");
+    expect(text).toContain(res.issued[0].serial);
+    expect(text).not.toContain("{{");
+  }, 90_000);
+
+  test("a new version can keep the current file; the file can be downloaded back; the sample file has the set's columns", async () => {
+    const mapping = { التاريخ: "date", full_namne: "name" };
+    const v1 = must(await s.call("action", "templates:saveWord", { ...base(), dataBase64: docx, name: "يبقى الملف", mapping }, T("mgr")));
+    const v2 = must(await s.call("action", "templates:saveWord", { ...base(), templateId: v1.templateId, name: "يبقى الملف", mapping }, T("mgr")));
+    expect(v2.version).toBe(2);
+    const vs = must(await s.call("query", "templates:versions", { templateId: v1.templateId }, T("mgr"))).versions;
+    expect(vs[0].docxSha256).toBe(vs[1].docxSha256);
+    const back = must(await s.call("action", "templates:downloadWord", { templateId: v1.templateId }, T("mem")));
+    expect(sha(Buffer.from(back.base64, "base64"))).toBe(vs[0].docxSha256);
+    const { variablesOf } = await import("../onebase/lib/docxTemplate");
+    const sample = must(await s.call("action", "templates:sampleWord", { ...base(), name: "نموذج" }, T("mgr")));
+    expect(await variablesOf(Buffer.from(sample.base64, "base64"))).toEqual(["الاسم", "الدورة", "تاريخ الإتمام", "الساعات", "الرقم_التسلسلي", "رمز_التحقق", "تاريخ_الإصدار"]);
+  });
+});
+

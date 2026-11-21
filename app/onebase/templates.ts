@@ -13,6 +13,7 @@ import { writeAudit } from "./audit";
 import { requireActor } from "./artifacts";
 import { defaultLayout, parseLayout, renderPdf } from "./pdf";
 import { pdfPageToPng } from "./lib/rasterize";
+import { DocxError, docxToPdf, fillDocx, missingFonts, RESERVED, sampleDocx, variablesOf } from "./lib/docxTemplate";
 import { sha256Hex } from "./recordSources";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -37,6 +38,8 @@ function shapeVersion(r: Doc<"templateVersions">) {
     layout: r.layout,
     hasBackground: Boolean(r.bodyStorageId),
     bodySha256: r.bodySha256 ?? null,
+    format: (r.docxStorageId ? "docx" : "layout") as "docx" | "layout",
+    docxSha256: r.docxSha256 ?? null,
     fieldsSchema: r.fieldsSchema,
     dataBinding: r.dataBinding,
     sha256: r.sha256,
@@ -55,7 +58,8 @@ export const list = query({
     const out = [];
     for (const t of rows) {
       const approved = t.approvedVersion ? await loadVersion(ctx, t._id, t.approvedVersion) : null;
-      out.push({ _id: t._id, name: t.name, kind: t.kind, currentVersion: t.currentVersion, approvedVersion: t.approvedVersion ?? null, fieldsSchema: approved?.fieldsSchema ?? null, recordSetId: approved?.dataBinding.recordSetId ?? null });
+      const current = await loadVersion(ctx, t._id, t.currentVersion);
+      out.push({ _id: t._id, name: t.name, kind: t.kind, currentVersion: t.currentVersion, approvedVersion: t.approvedVersion ?? null, fieldsSchema: approved?.fieldsSchema ?? null, recordSetId: approved?.dataBinding.recordSetId ?? null, format: (current.docxStorageId ? "docx" : "layout") as "docx" | "layout" });
     }
     return out;
   },
@@ -176,7 +180,7 @@ async function backgroundSource(ctx: Ctx, space: Doc<"spaces">, a: { templateId?
   return { backgroundStorageId: null, backgroundMime: "", kept: null };
 }
 
-async function validateVersion(ctx: Ctx, userId: Id<"users">, a: { spaceId: Id<"spaces">; templateId?: Id<"templates">; name: string; layout: string; fieldsSchema: { key: string; label: string }[]; dataBinding: { recordSetId: Id<"recordSets">; fields: Record<string, string> } }) {
+async function validateVersion(ctx: Ctx, userId: Id<"users">, a: { spaceId: Id<"spaces">; templateId?: Id<"templates">; name: string; layout: string; fieldsSchema: { key: string; label: string }[]; dataBinding: { recordSetId: Id<"recordSets">; fields: Record<string, string> } }, docx = false) {
   await requireActor(ctx, userId);
   const { space } = await assertCan(ctx, userId, a.spaceId, "manage");
   if (space.kind !== "shared") throw new OneBaseError("القوالب تكون في مساحة مشتركة");
@@ -198,10 +202,12 @@ async function validateVersion(ctx: Ctx, userId: Id<"users">, a: { spaceId: Id<"
     if (!col || !set.columns.some((c) => c.key === col)) throw new OneBaseError(`الحقل "${f.label}" غير مربوط بعمود من السجلات`);
   }
   for (const k of Object.keys(a.dataBinding.fields)) if (!keys.has(k)) throw new OneBaseError(`ربط لحقل غير معرّف: ${k}`);
-  try {
-    parseLayout(a.layout, [...keys]);
-  } catch (e) {
-    throw new OneBaseError(e instanceof Error ? e.message : String(e));
+  if (!docx) {
+    try {
+      parseLayout(a.layout, [...keys]);
+    } catch (e) {
+      throw new OneBaseError(e instanceof Error ? e.message : String(e));
+    }
   }
   return space;
 }
@@ -215,9 +221,14 @@ export const checkVersion = internalQuery({
 });
 
 export const insertVersion = internalMutation({
-  args: { userId: v.id("users"), ...versionArgs, body: v.optional(v.object({ storageId: v.id("_storage"), sha256: v.string() })) },
-  handler: async (ctx, { userId, backgroundFileId: _ignored, keepBackground: _kept, body, ...a }) => {
-    const space = await validateVersion(ctx, userId, a);
+  args: {
+    userId: v.id("users"),
+    ...versionArgs,
+    body: v.optional(v.object({ storageId: v.id("_storage"), sha256: v.string() })),
+    docx: v.optional(v.object({ storageId: v.id("_storage"), sha256: v.string() })),
+  },
+  handler: async (ctx, { userId, backgroundFileId: _ignored, keepBackground: _kept, body, docx, ...a }) => {
+    const space = await validateVersion(ctx, userId, a, Boolean(docx));
     const actor = (await requireActor(ctx, userId))!;
     const now = Date.now();
     let templateId = a.templateId;
@@ -229,13 +240,15 @@ export const insertVersion = internalMutation({
     } else {
       templateId = await ctx.db.insert("templates", { workspaceId: actor.workspace._id, spaceId: space._id, name: a.name.trim(), kind: "certificate", currentVersion: 1, createdBy: userId, createdAt: now });
     }
-    const definition = JSON.stringify({ layout: a.layout, fieldsSchema: a.fieldsSchema, dataBinding: a.dataBinding, body: body?.sha256 ?? null });
+    const definition = JSON.stringify({ layout: a.layout, fieldsSchema: a.fieldsSchema, dataBinding: a.dataBinding, body: body?.sha256 ?? null, ...(docx ? { docx: docx.sha256 } : {}) });
     await ctx.db.insert("templateVersions", {
       templateId,
       version,
       layout: a.layout,
       bodyStorageId: body?.storageId,
       bodySha256: body?.sha256,
+      docxStorageId: docx?.storageId,
+      docxSha256: docx?.sha256,
       fieldsSchema: a.fieldsSchema,
       dataBinding: a.dataBinding,
       sha256: sha256Hex(definition),
@@ -321,6 +334,184 @@ export const previewInputs = internalQuery({
       }
     }
     return { ...src, sample };
+  },
+});
+
+// ---------- Word templates (plans/17 §3) ----------
+
+const norm = (s: string) => s.trim().toLowerCase().replace(/[\s_\-]+/g, " ").replace(/[أإآ]/g, "ا").replace(/ة/g, "ه").replace(/ى/g, "ي");
+
+/** The reserved variables' values at issue (and with sample values in a preview). */
+export function reservedValues(serial: string, verifyCode: string, issuedDate: string): Record<string, string> {
+  const by = { serial, verifyCode, issuedDate };
+  return Object.fromEntries(Object.entries(RESERVED).map(([name, kind]) => [name, by[kind]]));
+}
+
+type WordVariable = { name: string; reserved: string | null; column: string | null };
+
+/** Each variable of the file, with the column it matches by name (header or key), or the reserved value it is. */
+function matchVariables(variables: string[], columns: { key: string; header: string }[], mapping?: Record<string, string>): WordVariable[] {
+  return variables.map((name) => {
+    if (RESERVED[name]) return { name, reserved: RESERVED[name]!, column: null };
+    const chosen = mapping?.[name];
+    if (chosen !== undefined) return { name, reserved: null, column: columns.some((c) => c.key === chosen) ? chosen : null };
+    const hit = columns.find((c) => norm(c.header) === norm(name) || norm(c.key) === norm(name));
+    return { name, reserved: null, column: hit?.key ?? null };
+  });
+}
+
+function decodeDocx(b64: string) {
+  if (b64.length > 15 * 1024 * 1024) throw new OneBaseError("ملف وورد أكبر من 10 م.ب");
+  return new Uint8Array(Buffer.from(b64, "base64"));
+}
+
+async function wordBytes(ctx: { storage: { get(id: Id<"_storage">): Promise<Blob | null> } }, inp: { dataBase64?: string; current: { storageId: Id<"_storage"> } | null }) {
+  if (inp.dataBase64) return decodeDocx(inp.dataBase64);
+  if (!inp.current) throw new OneBaseError("ارفع ملف وورد");
+  const blob = await ctx.storage.get(inp.current.storageId);
+  if (!blob) throw new OneBaseError("تعذّر قراءة ملف القالب");
+  return new Uint8Array(await blob.arrayBuffer());
+}
+
+async function readVariables(bytes: Uint8Array) {
+  try {
+    return await variablesOf(bytes);
+  } catch (e) {
+    throw new OneBaseError(e instanceof DocxError ? e.message : "الملف ليس ملف وورد ‎.docx صالحاً");
+  }
+}
+
+const wordArgs = {
+  spaceId: v.id("spaces"),
+  recordSetId: v.id("recordSets"),
+  /** The .docx; omitted with templateId to use the current version's file. */
+  dataBase64: v.optional(v.string()),
+  templateId: v.optional(v.id("templates")),
+  /** Variable (as written) -> column key, for the ones the user mapped by hand. */
+  mapping: v.optional(v.record(v.string(), v.string())),
+};
+
+/**
+ * Reads a Word template: its {{variables}}, each matched to a column of the record set by name
+ * (or the user's mapping), reserved ones recognised, fonts the server lacks. Writes nothing.
+ * Space managers only.
+ */
+export const analyzeWord = action({
+  args: wordArgs,
+  handler: async (ctx, args): Promise<{ variables: WordVariable[]; unmatched: string[]; missingFonts: string[] }> => {
+    const userId = await requireUserId(ctx);
+    const inp = await ctx.runQuery(internal.templates.wordInputs, { userId, ...args });
+    const bytes = await wordBytes(ctx, { dataBase64: args.dataBase64, current: inp.current });
+    const variables = matchVariables(await readVariables(bytes), inp.columns, args.mapping);
+    return { variables, unmatched: variables.filter((x) => !x.reserved && !x.column).map((x) => x.name), missingFonts: await missingFonts(bytes) };
+  },
+});
+
+/** The certificate as it will print, from the Word file and the first row of the set, as a PNG. Writes nothing. Managers only. */
+export const previewWord = action({
+  args: wordArgs,
+  handler: async (ctx, args): Promise<{ image: string | null; error: string | null }> => {
+    const userId = await requireUserId(ctx);
+    const inp = await ctx.runQuery(internal.templates.wordInputs, { userId, ...args });
+    const bytes = await wordBytes(ctx, { dataBase64: args.dataBase64, current: inp.current });
+    const variables = matchVariables(await readVariables(bytes), inp.columns, args.mapping);
+    const values: Record<string, string> = reservedValues(SAMPLE.serial, SAMPLE.verifyCode, new Date().toISOString().slice(0, 10));
+    for (const x of variables) if (x.column) values[x.name] = inp.firstRow?.[x.column] ?? `{{${x.name}}}`;
+    try {
+      const pdf = await docxToPdf(await fillDocx(bytes, values));
+      const png = await pdfPageToPng(pdf);
+      return { image: png ? `data:image/png;base64,${Buffer.from(png).toString("base64")}` : null, error: png ? null : "تعذّر عرض المعاينة على الخادم" };
+    } catch (e) {
+      return { image: null, error: e instanceof DocxError ? e.message : "تعذّر تحويل ملف وورد إلى PDF" };
+    }
+  },
+});
+
+/**
+ * Saves a Word template (new, or a new version of one): every non-reserved variable must be
+ * mapped to a column of the set. The file is kept as a private copy. Managers only; the
+ * version is used only after approval.
+ */
+export const saveWord = action({
+  args: { ...wordArgs, name: v.string() },
+  handler: async (ctx, args): Promise<{ templateId: Id<"templates">; version: number }> => {
+    const userId = await requireUserId(ctx);
+    const inp = await ctx.runQuery(internal.templates.wordInputs, { userId, ...args });
+    const bytes = await wordBytes(ctx, { dataBase64: args.dataBase64, current: inp.current });
+    const variables = matchVariables(await readVariables(bytes), inp.columns, args.mapping);
+    const fields = variables.filter((x) => !x.reserved);
+    if (fields.length === 0) throw new OneBaseError("لا توجد متغيرات في الملف. اكتب مثلاً {{الاسم}} حيث يُكتب الاسم");
+    const unmatched = fields.filter((x) => !x.column).map((x) => x.name);
+    if (unmatched.length) throw new OneBaseError(`اربط كل متغير بعمود: ${unmatched.map((n) => `{{${n}}}`).join("، ")}`);
+    const fieldsSchema = fields.map((x, i) => ({ key: `v${i + 1}`, label: x.name }));
+    const dataBinding = { recordSetId: args.recordSetId, fields: Object.fromEntries(fields.map((x, i) => [`v${i + 1}`, x.column!])) };
+    const sha256 = sha256Hex(bytes);
+    const fresh = Boolean(args.dataBase64) || !inp.current;
+    const storageId = fresh ? await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" })) : inp.current!.storageId;
+    try {
+      return await ctx.runMutation(internal.templates.insertVersion, { userId, spaceId: args.spaceId, templateId: args.templateId, name: args.name, layout: "", fieldsSchema, dataBinding, docx: { storageId, sha256 } });
+    } catch (e) {
+      if (fresh) await ctx.storage.delete(storageId);
+      throw e;
+    }
+  },
+});
+
+/** A starting Word file with the set's columns as variables, to edit in Word and upload. */
+export const sampleWord = action({
+  args: { spaceId: v.id("spaces"), recordSetId: v.id("recordSets"), name: v.string() },
+  handler: async (ctx, { spaceId, recordSetId, name }): Promise<{ base64: string; fileName: string }> => {
+    const userId = await requireUserId(ctx);
+    const inp = await ctx.runQuery(internal.templates.wordInputs, { userId, spaceId, recordSetId });
+    const bytes = await sampleDocx(name.trim() || "شهادة", inp.columns.filter((c) => c.key !== inp.subjectColumn).map((c) => c.header));
+    return { base64: Buffer.from(bytes).toString("base64"), fileName: `${(name.trim() || "قالب شهادة").slice(0, 80)}.docx` };
+  },
+});
+
+/** The Word file of a version, to edit it in Word. Members who can read the template's space. */
+export const downloadWord = action({
+  args: { templateId: v.id("templates"), version: v.optional(v.number()) },
+  handler: async (ctx, { templateId, version }): Promise<{ base64: string; fileName: string }> => {
+    const userId = await requireUserId(ctx);
+    const r = await ctx.runQuery(internal.templates.wordFileFor, { userId, templateId, version });
+    const blob = await ctx.storage.get(r.storageId);
+    if (!blob) throw new OneBaseError("تعذّر قراءة ملف القالب");
+    return { base64: Buffer.from(await blob.arrayBuffer()).toString("base64"), fileName: `${r.name.slice(0, 80)} ن${r.version}.docx` };
+  },
+});
+
+export const wordFileFor = internalQuery({
+  args: { userId: v.id("users"), templateId: v.id("templates"), version: v.optional(v.number()) },
+  handler: async (ctx, { userId, templateId, version }) => {
+    await requireActor(ctx, userId);
+    const t = await loadTemplate(ctx, templateId);
+    await assertCan(ctx, userId, t.spaceId, "read");
+    const tv = await loadVersion(ctx, t._id, version ?? t.currentVersion);
+    if (!tv.docxStorageId) throw new OneBaseError("هذا القالب ليس ملف وورد");
+    return { storageId: tv.docxStorageId, name: t.name, version: tv.version };
+  },
+});
+
+export const wordInputs = internalQuery({
+  args: { userId: v.id("users"), ...wordArgs, name: v.optional(v.string()) },
+  handler: async (ctx, { userId, spaceId, recordSetId, templateId }) => {
+    await requireActor(ctx, userId);
+    const { space } = await assertCan(ctx, userId, spaceId, "manage");
+    if (space.kind !== "shared") throw new OneBaseError("القوالب تكون في مساحة مشتركة");
+    const set = await ctx.db.get(recordSetId);
+    if (!set || set.spaceId !== space._id) throw new OneBaseError("مجموعة السجلات يجب أن تكون في مساحة القالب");
+    let current: { storageId: Id<"_storage"> } | null = null;
+    if (templateId) {
+      const t = await loadTemplate(ctx, templateId);
+      if (t.spaceId !== space._id) throw new Denied();
+      const tv = await loadVersion(ctx, t._id, t.currentVersion);
+      if (tv.docxStorageId) current = { storageId: tv.docxStorageId };
+    }
+    const row = set.currentVersion
+      ? await ctx.db.query("records").withIndex("by_set_version", (q) => q.eq("recordSetId", set._id).eq("version", set.currentVersion)).first()
+      : null;
+    const firstRow = row ? Object.fromEntries(Object.entries(row.data).map(([k, val]) => [k, val === null ? "" : typeof val === "boolean" ? (val ? "نعم" : "لا") : String(val)])) : null;
+    return { columns: set.columns.map((c) => ({ key: c.key, header: c.header })), subjectColumn: set.subjectColumn, current, firstRow };
   },
 });
 

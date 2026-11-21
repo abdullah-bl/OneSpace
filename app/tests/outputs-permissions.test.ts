@@ -24,6 +24,23 @@ afterAll(async () => {
 });
 
 const tok = (a: ActorKey) => f.tokens[a];
+
+/** A Word template in each shared space (made once by mgr), and a Word file to read. */
+let wordFile: string;
+const wordTemplates: Partial<Record<SpaceKey, string>> = {};
+const WORD_COLS = { name: "name" };
+async function wordFileB64() {
+  if (!wordFile) {
+    const { sampleDocx } = await import("../onebase/lib/docxTemplate");
+    wordFile = Buffer.from(await sampleDocx("شهادة", ["الاسم"])).toString("base64");
+  }
+  return wordFile;
+}
+async function wordTemplate(sp: SpaceKey) {
+  wordTemplates[sp] ??= must(await s.call("action", "templates:saveWord", { spaceId: f.spaces[sp], recordSetId: o.sets[sp], name: "وورد", dataBase64: await wordFileB64(), mapping: {} }, tok("mgr"))).templateId;
+  return wordTemplates[sp]!;
+}
+void WORD_COLS;
 const SHARED: SpaceKey[] = ["S_plain", "S_every", "S_sens"];
 const fail = (error: string): Result => ({ ok: false, error, status: 0 });
 
@@ -222,6 +239,14 @@ const OPS: Op[] = [
     spaces: SHARED,
     run: (a, sp) => s.call("action", "templates:preview", { spaceId: f.spaces[sp], layout: layoutFor("x"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets[sp], fields: { name: "name", course: "course", date: "date" } } }, tok(a)),
   },
+  ...(["templates:analyzeWord", "templates:previewWord", "templates:saveWord"] as const).map((name) => ({
+    name,
+    need: "manage" as Need,
+    spaces: SHARED,
+    run: async (a: ActorKey, sp: SpaceKey) => s.call("action", name, { spaceId: f.spaces[sp], recordSetId: o.sets[sp], dataBase64: await wordFileB64(), ...(name === "templates:saveWord" ? { name: "w" } : {}) }, tok(a)),
+  })),
+  { name: "templates:sampleWord", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "templates:sampleWord", { spaceId: f.spaces[sp], recordSetId: o.sets[sp], name: "x" }, tok(a)) },
+  { name: "templates:downloadWord", need: "read", spaces: SHARED, run: async (a, sp) => s.call("action", "templates:downloadWord", { templateId: await wordTemplate(sp) }, tok(a)) },
   {
     name: "templates:saveVersion",
     need: "manage",

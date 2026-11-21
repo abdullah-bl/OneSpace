@@ -1,5 +1,6 @@
-// Templates and official documents of a space. Managers write template versions and approve
-// them. Documents are issued in batches (plans/17 §4): pick rows of the template's record set
+// Templates and official documents of a space. A template is a Word file with {{variables}}
+// (plans/17 §3, WordTemplate.tsx); managers save versions and approve them. Older layout
+// templates keep issuing as they are. Documents are issued in batches (plans/17 §4): pick rows of the template's record set
 // (by default every row without a document), members create drafts, a manager approves and
 // issues in one act. The text of a document only ever comes from the template and the record.
 
@@ -7,7 +8,7 @@ import { ask } from "./ui";
 import { useState } from "react";
 import { useAction, useMutation, useOnebase, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
-import { TemplateDesigner, type DesignerStart } from "./TemplateDesigner";
+import { WordTemplate, type WordStart } from "./WordTemplate";
 
 const STATUS: Record<string, string> = { draft: "مسودة بانتظار الاعتماد", approved: "معتمدة", issued: "صادرة", rejected: "مرفوضة" };
 
@@ -24,7 +25,7 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
     fn().catch((e) => setError(errorText(e)));
   };
   const drafts = (docs ?? []).filter((d) => d.status === "draft");
-  const [designing, setDesigning] = useState<{ start?: DesignerStart } | null>(null);
+  const [designing, setDesigning] = useState<{ start?: WordStart } | null>(null);
   return (
     <div className="space-y-6">
       {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
@@ -35,7 +36,7 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
             + قالب جديد
           </button>
         )}
-        {designing && <TemplateDesigner key={designing.start?.templateId ?? "new"} spaceId={space._id} start={designing.start} onDone={() => setDesigning(null)} />}
+        {designing && <WordTemplate key={designing.start?.templateId ?? "new"} spaceId={space._id} start={designing.start} onDone={() => setDesigning(null)} />}
         <div className="card divide-y divide-rule">
           {templates?.map((t) => <TemplateRow key={t._id} t={t} canManage={space.canManage} onEdit={(start) => setDesigning({ start })} />)}
           {templates?.length === 0 && <div className="p-3 text-sm text-faint">لا قوالب بعد.</div>}
@@ -125,7 +126,15 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
   );
 }
 
-function TemplateRow({ t, canManage, onEdit }: { t: { _id: string; name: string; currentVersion: number; approvedVersion: number | null }; canManage: boolean; onEdit: (start: DesignerStart) => void }) {
+function TemplateRow({
+  t,
+  canManage,
+  onEdit,
+}: {
+  t: { _id: string; name: string; currentVersion: number; approvedVersion: number | null; recordSetId: string | null; format: "docx" | "layout" };
+  canManage: boolean;
+  onEdit: (start: WordStart) => void;
+}) {
   const approveVersion = useMutation(api.templates.approveVersion);
   const client = useOnebase();
   const [error, setError] = useState("");
@@ -134,15 +143,8 @@ function TemplateRow({ t, canManage, onEdit }: { t: { _id: string; name: string;
     try {
       const r = await client.query(api.templates.versions, { templateId: t._id as any });
       const cur = r.versions.find((x) => x.version === t.currentVersion)!;
-      const labels = new Map(cur.fieldsSchema.map((f) => [f.key, f.label]));
-      onEdit({
-        templateId: t._id,
-        name: t.name,
-        recordSetId: cur.dataBinding.recordSetId,
-        fields: Object.entries(cur.dataBinding.fields).map(([key, column]) => ({ key, label: labels.get(key) ?? key, column })),
-        layout: cur.layout,
-        hasBackground: cur.hasBackground,
-      });
+      const mapping = Object.fromEntries(cur.fieldsSchema.map((f) => [f.label, cur.dataBinding.fields[f.key]!]));
+      onEdit({ templateId: t._id, name: t.name, recordSetId: cur.dataBinding.recordSetId, mapping });
     } catch (e) {
       setError(errorText(e));
     }
@@ -152,12 +154,12 @@ function TemplateRow({ t, canManage, onEdit }: { t: { _id: string; name: string;
       <div className="flex-1">
         <div className="font-bold">{t.name}</div>
         <div className="text-xs text-muted">
-          آخر نسخة {t.currentVersion} · المعتمدة: {t.approvedVersion ?? "لا يوجد"}
+          {t.format === "docx" ? "ملف وورد" : "تخطيط"} · آخر نسخة {t.currentVersion} · المعتمدة: {t.approvedVersion ?? "لا يوجد"}
         </div>
       </div>
-      {canManage && (
+      {canManage && t.format === "docx" && (
         <button className="btn-ghost" onClick={() => void edit()}>
-          عدّل التصميم
+          عدّل
         </button>
       )}
       {canManage && t.approvedVersion !== t.currentVersion && (

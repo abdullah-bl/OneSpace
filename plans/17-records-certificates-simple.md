@@ -38,12 +38,24 @@ Backend: `records:analyzeFile` (reads the file, guesses, counts account matches;
 
 The admin uploads a staff file (email + national id and/or employee number). Accounts are matched by email; the page shows matched / not found / already set to another account before saving. One audit entry per change, like `admin:setIdentifiers`.
 
-## 3. Certificate design: no JSON
+## 3. Certificate design: a Word file with {{variables}}
 
-- **Upload your design** (PDF or image with the logo and fixed text). It is the background. Click a spot, pick a field: «هنا الاسم», «هنا التاريخ». Drag to move, size and alignment per field.
-- **Or pick a ready layout** (two or three) and add the logo.
-- **The preview uses a real row** of the record set.
-- JSON stays under «متقدم».
+People already design certificates in Word. So the template is their Word file, not a layout
+built in OneSpace.
+
+1. **Upload the .docx**, designed as they like (logo, fonts, frame), with variables where the data goes: `{{الاسم}}`, `{{الدورة}}`, `{{employee_id}}`.
+2. **The variables are read from the file** and matched to the record set's columns by name. Any variable with no column (a typo like `{{full_namne}}`) is shown to be mapped or fixed; nothing is saved until every one is.
+3. **Reserved variables** filled at issue: `{{الرقم_التسلسلي}}`, `{{رمز_التحقق}}`, `{{تاريخ_الإصدار}}` (or `{{serial}}`, `{{verify_code}}`, `{{issue_date}}`).
+4. **Preview**: the real PDF with the first row, as an image. Fonts the file uses that the server doesn't have are named.
+5. **Approve, then issue** in batches (§4), unchanged.
+
+No Word file? «نموذج جاهز» downloads a .docx with the set's variables, to edit in Word and upload.
+
+How it works:
+- Word splits text into runs, so `{{الاسم}}` may be stored in pieces. Each paragraph's runs are rejoined around a variable before reading or filling, so the user never sees this.
+- Filling is code: the values come from the record, escaped, into the variables only. The filled .docx is deterministic (same data, same bytes); LibreOffice (already on the server for file conversion) turns it into the PDF.
+- That PDF isn't byte-reproducible across LibreOffice runs, so for Word templates the issued file and its sha256 are what's kept and verified (by code or by uploading the file). «reproduce» stays for layout templates only.
+- The visual layout editor is removed from the UI. Existing layout templates keep issuing as they are; new templates are Word files.
 
 ## 4. Approval: once for the design, once per batch
 
@@ -60,7 +72,7 @@ The assistant proposes structure and picks rows. It never writes a value into an
 |---|---|
 | Excel dropped in a chat: «اعتمد هذا سجلاً للدورات» | `propose_record_set`: the same analysis as step 1, shown as a card (name, columns, owner, uniqueness) with «أنشئ». The person confirms. |
 | A file is refused | Explains the errors plainly and what to change (the cell or the column type). |
-| «صمّم شهادة بشعارنا», or an old certificate uploaded | Reads it and proposes where each field goes, as a preview. A manager saves and approves. |
+| An old certificate (Word) uploaded: «حوّلها قالباً» | Proposes which words become which {{variables}} (the name, the course…), as a preview. A manager saves and approves. |
 | «أصدر شهادات دورة السلامة لمن أنهاها هذا الشهر» | `query_records`, then a batch `fill_template`: one batch for the manager to approve. |
 | An employee: «أعطني شهادتي» | `my_records`: the download link if issued, otherwise a request to the space's manager. |
 
@@ -69,6 +81,6 @@ The assistant proposes structure and picks rows. It never writes a value into an
 1. Records from a file (§1). ✓ (`records:analyzeFile`, `records:createFromFile`)
 2. Staff file for identifiers (§2). ✓ (`staffFile:analyze`, `staffFile:apply`)
 3. Batch issue and one-step approve (§4). ✓ (`documents:rowsForTemplate`, `requestMany`, `approveAndIssue`). Not yet: the per-document approval setting, and a PDF preview before issuing (comes with §3's real-row preview).
-4. Visual template editor (§3). ✓ (`TemplateDesigner.tsx`; `templates:preview` renders with pdftoppm, already a server dependency; PNG/JPG designs become a one-page PDF; a new version can keep the background).
+4. Word templates (§3). ✓ (`lib/docxTemplate.ts`; `templates:analyzeWord`, `previewWord`, `saveWord`, `sampleWord`, `downloadWord`; `WordTemplate.tsx`). Replaces the visual layout editor built first (28655df), which was more to learn than a Word file people already have. LibreOffice runs with `SAL_DISABLE_CUPS=1`: without it every .docx import waited ~25 s on the printer service.
 5. Assistant tools (§5): `propose_record_set` first, then batch `fill_template`, then design reading.
 6. Difference preview on re-import (§1).

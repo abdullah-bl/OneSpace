@@ -19,8 +19,9 @@ import { writeAudit } from "./audit";
 import { requireActor } from "./artifacts";
 import { identityOf, loadSet } from "./records";
 import { sha256Hex } from "./recordSources";
-import { loadTemplate, loadVersion } from "./templates";
-import { parseLayout, renderPdf, type RenderInput } from "./pdf";
+import { loadTemplate, loadVersion, reservedValues } from "./templates";
+import { isoDate, parseLayout, renderPdf, type RenderInput } from "./pdf";
+import { DocxError, docxToPdf, fillDocx } from "./lib/docxTemplate";
 
 type Ctx = QueryCtx | MutationCtx;
 const TICKET_TTL_MS = 60_000;
@@ -281,7 +282,22 @@ export const approveAndIssue = action({
   },
 });
 
-async function renderFrom(ctx: { storage: { get(id: Id<"_storage">): Promise<Blob | null> } }, prep: { layout: string; fieldKeys: string[]; bodyStorageId: Id<"_storage"> | null; data: Record<string, string>; serial: string; verifyCode: string; issuedAt: number; title: string }) {
+async function renderFrom(
+  ctx: { storage: { get(id: Id<"_storage">): Promise<Blob | null> } },
+  prep: { layout: string; fieldKeys: string[]; docxStorageId?: Id<"_storage"> | null; fieldLabels?: Record<string, string>; bodyStorageId: Id<"_storage"> | null; data: Record<string, string>; serial: string; verifyCode: string; issuedAt: number; title: string },
+) {
+  if (prep.docxStorageId) {
+    // Word template (plans/17 §3): variables filled by code, LibreOffice makes the PDF.
+    const blob = await ctx.storage.get(prep.docxStorageId);
+    if (!blob) throw new OneBaseError("ملف القالب مفقود");
+    const values = reservedValues(prep.serial, prep.verifyCode, isoDate(prep.issuedAt));
+    for (const [key, label] of Object.entries(prep.fieldLabels ?? {})) values[label] = prep.data[key] ?? "";
+    try {
+      return await docxToPdf(await fillDocx(new Uint8Array(await blob.arrayBuffer()), values));
+    } catch (e) {
+      throw new OneBaseError(e instanceof DocxError ? e.message : "تعذّر إنشاء ملف PDF من قالب وورد");
+    }
+  }
   let background: Uint8Array | null = null;
   if (prep.bodyStorageId) {
     const blob = await ctx.storage.get(prep.bodyStorageId);
@@ -301,6 +317,8 @@ export const reproduce = action({
   handler: async (ctx, { documentId }): Promise<{ sha256: string; stored: string; identical: boolean }> => {
     const userId = await requireUserId(ctx);
     const prep: any = await ctx.runQuery(internal.documents.renderInputFor, { userId, documentId });
+    // LibreOffice doesn't write the same bytes twice: a Word certificate is verified by its stored file and sha256.
+    if (prep.docxStorageId) throw new OneBaseError("إعادة التوليد حرفياً متاحة لقوالب التخطيط فقط. شهادات قوالب وورد يُتحقق منها بملفها المحفوظ وبصمته");
     const bytes = await renderFrom(ctx, prep);
     const sha256 = sha256Hex(bytes);
     return { sha256, stored: prep.sha256, identical: sha256 === prep.sha256 };
@@ -368,6 +386,9 @@ async function prepFor(ctx: Ctx, d: Doc<"issuedDocuments">) {
   return {
     layout: tv.layout,
     fieldKeys: tv.fieldsSchema.map((f) => f.key),
+    // A Word template: the file, and each field's variable name (its label) for filling.
+    docxStorageId: tv.docxStorageId ?? null,
+    fieldLabels: Object.fromEntries(tv.fieldsSchema.map((f) => [f.key, f.label])),
     bodyStorageId: tv.bodyStorageId ?? null,
     data: d.data,
     serial: d.serial!,
