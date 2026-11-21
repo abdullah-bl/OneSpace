@@ -5,8 +5,9 @@
 
 import { ask } from "./ui";
 import { useState } from "react";
-import { useAction, useMutation, useQuery } from "onebase/react";
+import { useAction, useMutation, useOnebase, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
+import { TemplateDesigner, type DesignerStart } from "./TemplateDesigner";
 
 const STATUS: Record<string, string> = { draft: "مسودة بانتظار الاعتماد", approved: "معتمدة", issued: "صادرة", rejected: "مرفوضة" };
 
@@ -23,14 +24,20 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
     fn().catch((e) => setError(errorText(e)));
   };
   const drafts = (docs ?? []).filter((d) => d.status === "draft");
+  const [designing, setDesigning] = useState<{ start?: DesignerStart } | null>(null);
   return (
     <div className="space-y-6">
       {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
       <section className="space-y-2">
         <h2 className="section-title">القوالب</h2>
-        {space.canManage && <TemplateEditor spaceId={space._id} />}
+        {space.canManage && !designing && (
+          <button className="btn-ghost" onClick={() => setDesigning({})}>
+            + قالب جديد
+          </button>
+        )}
+        {designing && <TemplateDesigner key={designing.start?.templateId ?? "new"} spaceId={space._id} start={designing.start} onDone={() => setDesigning(null)} />}
         <div className="card divide-y divide-rule">
-          {templates?.map((t) => <TemplateRow key={t._id} t={t} canManage={space.canManage} />)}
+          {templates?.map((t) => <TemplateRow key={t._id} t={t} canManage={space.canManage} onEdit={(start) => setDesigning({ start })} />)}
           {templates?.length === 0 && <div className="p-3 text-sm text-faint">لا قوالب بعد.</div>}
         </div>
       </section>
@@ -118,9 +125,28 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
   );
 }
 
-function TemplateRow({ t, canManage }: { t: { _id: string; name: string; currentVersion: number; approvedVersion: number | null }; canManage: boolean }) {
+function TemplateRow({ t, canManage, onEdit }: { t: { _id: string; name: string; currentVersion: number; approvedVersion: number | null }; canManage: boolean; onEdit: (start: DesignerStart) => void }) {
   const approveVersion = useMutation(api.templates.approveVersion);
+  const client = useOnebase();
   const [error, setError] = useState("");
+  const edit = async () => {
+    setError("");
+    try {
+      const r = await client.query(api.templates.versions, { templateId: t._id as any });
+      const cur = r.versions.find((x) => x.version === t.currentVersion)!;
+      const labels = new Map(cur.fieldsSchema.map((f) => [f.key, f.label]));
+      onEdit({
+        templateId: t._id,
+        name: t.name,
+        recordSetId: cur.dataBinding.recordSetId,
+        fields: Object.entries(cur.dataBinding.fields).map(([key, column]) => ({ key, label: labels.get(key) ?? key, column })),
+        layout: cur.layout,
+        hasBackground: cur.hasBackground,
+      });
+    } catch (e) {
+      setError(errorText(e));
+    }
+  };
   return (
     <div className="flex flex-wrap items-center gap-2 p-3 text-sm">
       <div className="flex-1">
@@ -129,6 +155,11 @@ function TemplateRow({ t, canManage }: { t: { _id: string; name: string; current
           آخر نسخة {t.currentVersion} · المعتمدة: {t.approvedVersion ?? "لا يوجد"}
         </div>
       </div>
+      {canManage && (
+        <button className="btn-ghost" onClick={() => void edit()}>
+          عدّل التصميم
+        </button>
+      )}
       {canManage && t.approvedVersion !== t.currentVersion && (
         <button className="btn-primary" onClick={() => approveVersion({ templateId: t._id as any, version: t.currentVersion }).catch((e) => setError(errorText(e)))}>
           اعتماد النسخة {t.currentVersion}
@@ -136,108 +167,6 @@ function TemplateRow({ t, canManage }: { t: { _id: string; name: string; current
       )}
       {error && <span className="text-negative">{error}</span>}
     </div>
-  );
-}
-
-function TemplateEditor({ spaceId }: { spaceId: string }) {
-  const sets = useQuery(api.records.sets, { spaceId: spaceId as any });
-  const files = useQuery(api.files.list, { spaceId: spaceId as any });
-  const save = useAction(api.templates.saveVersion);
-  const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [recordSetId, setRecordSetId] = useState("");
-  const [fields, setFields] = useState<{ key: string; label: string; column: string }[]>([]);
-  const [layout, setLayout] = useState("");
-  const [background, setBackground] = useState("");
-  const [error, setError] = useState("");
-  const set = sets?.find((s) => s._id === recordSetId);
-  const suggestion = useQuery(api.templates.suggestLayout, open && name && fields.length ? { title: name, fields: fields.map(({ key, label }) => ({ key, label })) } : "skip");
-  if (!open)
-    return (
-      <button className="btn-ghost" onClick={() => setOpen(true)}>
-        + قالب جديد
-      </button>
-    );
-  return (
-    <form
-      className="card space-y-3 p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        setError("");
-        save({
-          spaceId: spaceId as any,
-          name,
-          layout: layout || suggestion || "",
-          fieldsSchema: fields.map(({ key, label }) => ({ key, label })),
-          dataBinding: { recordSetId: recordSetId as any, fields: Object.fromEntries(fields.map((f) => [f.key, f.column])) },
-          backgroundFileId: (background || undefined) as any,
-        })
-          .then(() => setOpen(false))
-          .catch((err) => setError(errorText(err)));
-      }}
-    >
-      <input className="input w-full" placeholder="اسم القالب (يُطبع عنواناً للشهادة)" value={name} onChange={(e) => setName(e.target.value)} required />
-      <select
-        className="input"
-        value={recordSetId}
-        onChange={(e) => {
-          setRecordSetId(e.target.value);
-          const s = sets?.find((x) => x._id === e.target.value);
-          setFields(s ? s.columns.filter((c) => c.key !== s.subjectColumn).map((c) => ({ key: c.key, label: c.header, column: c.key })) : []);
-        }}
-        required
-      >
-        <option value="">مصدر البيانات (مجموعة سجلات)…</option>
-        {sets?.map((s) => (
-          <option key={s._id} value={s._id}>
-            {s.name}
-          </option>
-        ))}
-      </select>
-      {set && (
-        <div className="space-y-1 text-sm">
-          <div className="text-xs text-muted">الحقول وربطها بالأعمدة (البيانات تأتي من السجل، لا يكتبها أحد):</div>
-          {fields.map((f, i) => (
-            <div key={i} className="flex items-center gap-2">
-              <input className="input w-40" value={f.label} onChange={(e) => setFields(fields.map((x, j) => (j === i ? { ...x, label: e.target.value } : x)))} />
-              <span>←</span>
-              <select className="input" value={f.column} onChange={(e) => setFields(fields.map((x, j) => (j === i ? { ...x, column: e.target.value } : x)))}>
-                {set.columns.map((c) => (
-                  <option key={c.key} value={c.key}>
-                    {c.header}
-                  </option>
-                ))}
-              </select>
-              <button type="button" className="btn-ghost" onClick={() => setFields(fields.filter((_, j) => j !== i))}>
-                إزالة
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-      <select className="input" value={background} onChange={(e) => setBackground(e.target.value)}>
-        <option value="">بلا خلفية (صفحة A4 أفقية)</option>
-        {files
-          ?.filter((x) => x.mime === "application/pdf")
-          .map((x) => (
-            <option key={x._id} value={x._id}>
-              خلفية: {x.name}
-            </option>
-          ))}
-      </select>
-      <details>
-        <summary className="cursor-pointer text-sm text-muted">التخطيط (JSON: مواضع النصوص والحقول بالنقاط)</summary>
-        <textarea className="input mt-2 h-60 w-full font-mono text-xs" dir="ltr" value={layout || suggestion || ""} onChange={(e) => setLayout(e.target.value)} />
-      </details>
-      <div className="flex gap-2">
-        <button className="btn-primary">حفظ كنسخة جديدة</button>
-        <button type="button" className="btn-ghost" onClick={() => setOpen(false)}>
-          إلغاء
-        </button>
-      </div>
-      <p className="text-xs text-muted">النسخة المحفوظة لا تُستخدم حتى تعتمدها.</p>
-      {error && <p className="text-sm text-negative">{error}</p>}
-    </form>
   );
 }
 

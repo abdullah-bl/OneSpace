@@ -36,6 +36,7 @@ export const PHASE4_PUBLIC = [
   "records:sets",
   "templates:approveVersion",
   "templates:list",
+  "templates:preview",
   "templates:saveVersion",
   "templates:suggestLayout",
   "templates:versions",

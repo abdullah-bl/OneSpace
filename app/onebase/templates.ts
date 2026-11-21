@@ -11,7 +11,8 @@ import { action, internalMutation, internalQuery, mutation, query, type Mutation
 import { assertCan, Denied, requireActive, requireUserId } from "./access";
 import { writeAudit } from "./audit";
 import { requireActor } from "./artifacts";
-import { defaultLayout, parseLayout } from "./pdf";
+import { defaultLayout, parseLayout, renderPdf } from "./pdf";
+import { pdfPageToPng } from "./lib/rasterize";
 import { sha256Hex } from "./recordSources";
 
 type Ctx = QueryCtx | MutationCtx;
@@ -73,10 +74,16 @@ export const versions = query({
 
 /** A starting layout for the given fields (for the template editor). */
 export const suggestLayout = query({
-  args: { title: v.string(), fields: v.array(v.object({ key: v.string(), label: v.string() })) },
-  handler: async (ctx, { title, fields }) => {
+  args: {
+    title: v.string(),
+    fields: v.array(v.object({ key: v.string(), label: v.string() })),
+    style: v.optional(v.union(v.literal("classic"), v.literal("centered"), v.literal("blank"))),
+    page: v.optional(v.object({ width: v.number(), height: v.number() })),
+  },
+  handler: async (ctx, { title, fields, style, page }) => {
     await requireActive(ctx);
-    return JSON.stringify(defaultLayout(title.slice(0, 200), fields.slice(0, 30)), null, 2);
+    const size = page && page.width >= 50 && page.width <= 3000 && page.height >= 50 && page.height <= 3000 ? { width: Math.round(page.width), height: Math.round(page.height) } : undefined;
+    return JSON.stringify(defaultLayout(title.slice(0, 200), fields.slice(0, 30), style ?? "classic", size), null, 2);
   },
 });
 
@@ -88,6 +95,8 @@ const versionArgs = {
   fieldsSchema: v.array(v.object({ key: v.string(), label: v.string() })),
   dataBinding: v.object({ recordSetId: v.id("recordSets"), fields: v.record(v.string(), v.string()) }),
   backgroundFileId: v.optional(v.id("files")),
+  /** With templateId and no backgroundFileId: the new version keeps the current version's background. */
+  keepBackground: v.optional(v.boolean()),
 };
 
 /** Saves a new template (or a new version of one). Space managers only; the version starts unapproved. */
@@ -97,28 +106,75 @@ export const saveVersion = action({
     const userId = await requireUserId(ctx);
     const checked = await ctx.runQuery(internal.templates.checkVersion, { userId, ...args });
     let body: { storageId: Id<"_storage">; sha256: string } | undefined;
+    let fresh = false;
     if (checked.backgroundStorageId) {
       const blob = await ctx.storage.get(checked.backgroundStorageId);
       if (!blob) throw new OneBaseError("تعذّر قراءة ملف الخلفية");
-      const bytes = new Uint8Array(await blob.arrayBuffer());
-      try {
-        const pdf = await PDFDocument.load(bytes, { updateMetadata: false });
-        if (pdf.getPageCount() < 1) throw new Error();
-      } catch {
-        throw new OneBaseError("ملف الخلفية يجب أن يكون PDF صالحاً");
-      }
+      const bytes = await backgroundPdf(new Uint8Array(await blob.arrayBuffer()), checked.backgroundMime);
       // A private copy: the template must not change or disappear if the file is edited or deleted.
-      const storageId = await ctx.storage.store(new Blob([bytes], { type: "application/pdf" }));
+      const storageId = await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/pdf" }));
       body = { storageId, sha256: sha256Hex(bytes) };
+      fresh = true;
+    } else if (checked.kept) {
+      body = checked.kept; // the current version's private copy, shared (it never changes)
     }
     try {
-      return await ctx.runMutation(internal.templates.insertVersion, { userId, ...args, backgroundFileId: undefined, body });
+      return await ctx.runMutation(internal.templates.insertVersion, { userId, ...args, backgroundFileId: undefined, keepBackground: undefined, body });
     } catch (e) {
-      if (body) await ctx.storage.delete(body.storageId);
+      if (body && fresh) await ctx.storage.delete(body.storageId);
       throw e;
     }
   },
 });
+
+const BACKGROUND_MIMES = ["application/pdf", "image/png", "image/jpeg"];
+
+/**
+ * A background as a one-page PDF: a PDF is checked and kept as is; a PNG/JPEG design becomes a
+ * page of its proportions (842 pt on the long side, like A4). Deterministic: same image, same PDF.
+ */
+export async function backgroundPdf(bytes: Uint8Array, mime: string): Promise<Uint8Array> {
+  if (mime === "application/pdf") {
+    try {
+      const pdf = await PDFDocument.load(bytes, { updateMetadata: false });
+      if (pdf.getPageCount() < 1) throw new Error();
+    } catch {
+      throw new OneBaseError("ملف الخلفية يجب أن يكون PDF صالحاً");
+    }
+    return bytes;
+  }
+  if (mime !== "image/png" && mime !== "image/jpeg") throw new OneBaseError("الخلفية تكون PDF أو صورة PNG أو JPG");
+  const doc = await PDFDocument.create({ updateMetadata: false });
+  let img;
+  try {
+    img = mime === "image/png" ? await doc.embedPng(bytes) : await doc.embedJpg(bytes);
+  } catch {
+    throw new OneBaseError("تعذّر قراءة صورة الخلفية");
+  }
+  const long = 842;
+  const landscape = img.width >= img.height;
+  const width = Math.round(landscape ? long : (long * img.width) / img.height);
+  const height = Math.round(landscape ? (long * img.height) / img.width : long);
+  const page = doc.addPage([width, height]);
+  page.drawImage(img, { x: 0, y: 0, width, height });
+  return await doc.save({ useObjectStreams: false });
+}
+
+/** Where a version's (or a preview's) background comes from: a file of the space, or the template's current version. */
+async function backgroundSource(ctx: Ctx, space: Doc<"spaces">, a: { templateId?: Id<"templates">; backgroundFileId?: Id<"files">; keepBackground?: boolean }) {
+  if (a.backgroundFileId) {
+    const file = await ctx.db.get(a.backgroundFileId);
+    if (!file || file.spaceId !== space._id) throw new OneBaseError("ملف الخلفية يجب أن يكون من ملفات هذه المساحة");
+    if (!BACKGROUND_MIMES.includes(file.mime)) throw new OneBaseError("الخلفية تكون PDF أو صورة PNG أو JPG");
+    return { backgroundStorageId: file.storageId, backgroundMime: file.mime, kept: null };
+  }
+  if (a.keepBackground && a.templateId) {
+    const t = await loadTemplate(ctx, a.templateId);
+    const current = await loadVersion(ctx, t._id, t.currentVersion);
+    if (current.bodyStorageId && current.bodySha256) return { backgroundStorageId: null, backgroundMime: "", kept: { storageId: current.bodyStorageId, sha256: current.bodySha256 } };
+  }
+  return { backgroundStorageId: null, backgroundMime: "", kept: null };
+}
 
 async function validateVersion(ctx: Ctx, userId: Id<"users">, a: { spaceId: Id<"spaces">; templateId?: Id<"templates">; name: string; layout: string; fieldsSchema: { key: string; label: string }[]; dataBinding: { recordSetId: Id<"recordSets">; fields: Record<string, string> } }) {
   await requireActor(ctx, userId);
@@ -152,21 +208,15 @@ async function validateVersion(ctx: Ctx, userId: Id<"users">, a: { spaceId: Id<"
 
 export const checkVersion = internalQuery({
   args: { userId: v.id("users"), ...versionArgs },
-  handler: async (ctx, { userId, backgroundFileId, ...a }) => {
+  handler: async (ctx, { userId, backgroundFileId, keepBackground, ...a }) => {
     const space = await validateVersion(ctx, userId, a);
-    let backgroundStorageId: Id<"_storage"> | null = null;
-    if (backgroundFileId) {
-      const file = await ctx.db.get(backgroundFileId);
-      if (!file || file.spaceId !== space._id) throw new OneBaseError("ملف الخلفية يجب أن يكون من ملفات هذه المساحة");
-      backgroundStorageId = file.storageId;
-    }
-    return { backgroundStorageId };
+    return await backgroundSource(ctx, space, { templateId: a.templateId, backgroundFileId, keepBackground });
   },
 });
 
 export const insertVersion = internalMutation({
   args: { userId: v.id("users"), ...versionArgs, body: v.optional(v.object({ storageId: v.id("_storage"), sha256: v.string() })) },
-  handler: async (ctx, { userId, backgroundFileId: _ignored, body, ...a }) => {
+  handler: async (ctx, { userId, backgroundFileId: _ignored, keepBackground: _kept, body, ...a }) => {
     const space = await validateVersion(ctx, userId, a);
     const actor = (await requireActor(ctx, userId))!;
     const now = Date.now();
@@ -194,6 +244,83 @@ export const insertVersion = internalMutation({
     });
     await writeAudit(ctx, { userId, action: "template.version", resourceType: "template", resourceId: templateId, spaceId: space._id, detail: { name: a.name.trim(), version } });
     return { templateId, version };
+  },
+});
+
+const SAMPLE = { serial: "OS-0000-000000", verifyCode: "XXXX-XXXX-XXXX" };
+
+/**
+ * The template editor's view of a design: the background alone (layout with no elements) or the
+ * certificate as it will print, rendered by the same code as issuing (pdf.ts) with a real row
+ * of the record set and a sample serial and code, as a PNG. Writes nothing. Space managers only.
+ */
+export const preview = action({
+  args: {
+    spaceId: v.id("spaces"),
+    templateId: v.optional(v.id("templates")),
+    backgroundFileId: v.optional(v.id("files")),
+    keepBackground: v.optional(v.boolean()),
+    layout: v.string(),
+    fieldsSchema: v.array(v.object({ key: v.string(), label: v.string() })),
+    dataBinding: v.optional(v.object({ recordSetId: v.id("recordSets"), fields: v.record(v.string(), v.string()) })),
+  },
+  handler: async (ctx, args): Promise<{ image: string | null; page: { width: number; height: number }; sample: Record<string, string>; error: string | null }> => {
+    const userId = await requireUserId(ctx);
+    const inp = await ctx.runQuery(internal.templates.previewInputs, { userId, ...args });
+    let background: Uint8Array | null = null;
+    if (inp.kept) {
+      const blob = await ctx.storage.get(inp.kept.storageId);
+      if (blob) background = new Uint8Array(await blob.arrayBuffer());
+    } else if (inp.backgroundStorageId) {
+      const blob = await ctx.storage.get(inp.backgroundStorageId);
+      if (!blob) throw new OneBaseError("تعذّر قراءة ملف الخلفية");
+      background = await backgroundPdf(new Uint8Array(await blob.arrayBuffer()), inp.backgroundMime);
+    }
+    let layout;
+    try {
+      layout = parseLayout(args.layout, args.fieldsSchema.map((f) => f.key));
+    } catch (e) {
+      return { image: null, page: { width: 842, height: 595 }, sample: inp.sample, error: e instanceof Error ? e.message : String(e) };
+    }
+    const bytes = await renderPdf({ layout, background, data: inp.sample, ...SAMPLE, issuedAt: Date.now(), title: "preview" });
+    const doc = await PDFDocument.load(bytes, { updateMetadata: false });
+    const { width, height } = doc.getPage(0).getSize();
+    const png = await pdfPageToPng(bytes);
+    return { image: png ? `data:image/png;base64,${Buffer.from(png).toString("base64")}` : null, page: { width, height }, sample: inp.sample, error: png ? null : "تعذّر عرض المعاينة على الخادم" };
+  },
+});
+
+export const previewInputs = internalQuery({
+  args: {
+    userId: v.id("users"),
+    spaceId: v.id("spaces"),
+    templateId: v.optional(v.id("templates")),
+    backgroundFileId: v.optional(v.id("files")),
+    keepBackground: v.optional(v.boolean()),
+    layout: v.string(),
+    fieldsSchema: v.array(v.object({ key: v.string(), label: v.string() })),
+    dataBinding: v.optional(v.object({ recordSetId: v.id("recordSets"), fields: v.record(v.string(), v.string()) })),
+  },
+  handler: async (ctx, { userId, spaceId, templateId, backgroundFileId, keepBackground, fieldsSchema, dataBinding }) => {
+    await requireActor(ctx, userId);
+    const { space } = await assertCan(ctx, userId, spaceId, "manage");
+    if (templateId && (await loadTemplate(ctx, templateId)).spaceId !== space._id) throw new Denied();
+    const src = await backgroundSource(ctx, space, { templateId, backgroundFileId, keepBackground });
+    // A real row: the first of the bound record set's current version, through the binding.
+    const sample: Record<string, string> = {};
+    for (const f of fieldsSchema) sample[f.key] = f.label;
+    if (dataBinding) {
+      const set = await ctx.db.get(dataBinding.recordSetId);
+      if (!set || set.spaceId !== space._id) throw new OneBaseError("مجموعة السجلات يجب أن تكون في مساحة القالب");
+      const row = set.currentVersion
+        ? await ctx.db.query("records").withIndex("by_set_version", (q) => q.eq("recordSetId", set._id).eq("version", set.currentVersion)).first()
+        : null;
+      if (row) for (const f of fieldsSchema) {
+        const v = row.data[dataBinding.fields[f.key] ?? ""];
+        if (v !== null && v !== undefined) sample[f.key] = typeof v === "boolean" ? (v ? "نعم" : "لا") : String(v);
+      }
+    }
+    return { ...src, sample };
   },
 });
 

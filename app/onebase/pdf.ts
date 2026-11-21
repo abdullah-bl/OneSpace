@@ -86,22 +86,46 @@ export function parseLayout(json: string, fieldKeys: string[]): TemplateLayout {
   return { page: { width: page.width, height: page.height }, elements };
 }
 
-/** A starting layout for a certificate with the given fields, A4 landscape. */
-export function defaultLayout(title: string, fields: { key: string; label: string }[]): TemplateLayout {
-  const els: LayoutElement[] = [
-    { type: "rect", x: 24, y: 24, w: 794, h: 547, width: 2 },
-    { type: "text", text: title, x: 421, y: 480, size: 30, align: "center", bold: true },
+export type LayoutStyle = "classic" | "centered" | "blank";
+
+/**
+ * Starting layouts for a certificate with the given fields (the template editor's «تصميم جاهز»).
+ * classic: frame, labels and values in rows; centered: title and values centred, no frame;
+ * blank: only serial, verification code and issue date, for a design uploaded as background.
+ * `page` is the background's size when there is one.
+ */
+export function defaultLayout(title: string, fields: { key: string; label: string }[], style: LayoutStyle = "classic", page = A4_LANDSCAPE): TemplateLayout {
+  const { width: W, height: H } = page;
+  const r = (n: number) => Math.round(n);
+  const footer: LayoutElement[] = [
+    { type: "issuedDate", prefix: "تاريخ الإصدار: ", x: r(W - 62), y: 70, size: 11, align: "right" },
+    { type: "serial", prefix: "الرقم التسلسلي: ", x: r(W - 62), y: 50, size: 11, align: "right" },
+    { type: "verifyCode", prefix: "رمز التحقق: ", x: 62, y: 50, size: 11, align: "left" },
   ];
-  let y = 400;
+  if (style === "blank") return { page, elements: footer };
+  if (style === "centered") {
+    const els: LayoutElement[] = [
+      { type: "line", x1: r(W / 2 - 120), y1: r(H * 0.74), x2: r(W / 2 + 120), y2: r(H * 0.74), width: 1 },
+      { type: "text", text: title, x: r(W / 2), y: r(H * 0.78), size: 32, align: "center", bold: true },
+    ];
+    let y = H * 0.62;
+    fields.forEach((f, i) => {
+      els.push({ type: "field", field: f.key, x: r(W / 2), y: r(y), size: i === 0 ? 24 : 16, align: "center", bold: i === 0, maxWidth: r(W * 0.7) });
+      y -= i === 0 ? 48 : 34;
+    });
+    return { page, elements: [...els, ...footer] };
+  }
+  const els: LayoutElement[] = [
+    { type: "rect", x: 24, y: 24, w: r(W - 48), h: r(H - 48), width: 2 },
+    { type: "text", text: title, x: r(W / 2), y: r(H - 115), size: 30, align: "center", bold: true },
+  ];
+  let y = H - 195;
   for (const f of fields) {
-    els.push({ type: "text", text: `${f.label}:`, x: 700, y, size: 16, align: "right" });
-    els.push({ type: "field", field: f.key, x: 560, y, size: 18, align: "right", bold: true, maxWidth: 420 });
+    els.push({ type: "text", text: `${f.label}:`, x: r(W - 142), y: r(y), size: 16, align: "right" });
+    els.push({ type: "field", field: f.key, x: r(W - 282), y: r(y), size: 18, align: "right", bold: true, maxWidth: r(W / 2) - 1 });
     y -= 42;
   }
-  els.push({ type: "issuedDate", prefix: "تاريخ الإصدار: ", x: 780, y: 70, size: 11, align: "right" });
-  els.push({ type: "serial", prefix: "الرقم التسلسلي: ", x: 780, y: 50, size: 11, align: "right" });
-  els.push({ type: "verifyCode", prefix: "رمز التحقق: ", x: 62, y: 50, size: 11, align: "left" });
-  return { page: A4_LANDSCAPE, elements: els };
+  return { page, elements: [...els, ...footer] };
 }
 
 // ---- fonts ----

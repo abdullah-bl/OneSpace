@@ -717,3 +717,56 @@ describe("plans/17 §4: issue in batches, approval and issue in one act", () => 
     expect(res.failed).toEqual([{ documentId: a, error: "المستند مرفوض" }]);
   });
 });
+
+describe("plans/17 §3: designing a certificate without JSON", () => {
+  const binding = () => ({ recordSetId: o.sets.S_plain!, fields: { name: "name", course: "course", date: "date" } });
+  // A 40×20 px PNG: a design uploaded as an image.
+  const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAACgAAAAUCAIAAABwJOjsAAAACXBIWXMAAAsSAAALEgHS3X78AAAAJ0lEQVRIx2N8eqaBYSAAE8MAgVGLRy0etXjU4lGLRy0etXjUYvoDAHr2Aln1FmjtAAAAAElFTkSuQmCC", "base64");
+
+  test("ready layouts: classic is the layout templates always started from; centered and blank; sized to a background", async () => {
+    const parse = async (args: object) => JSON.parse(must(await s.call("query", "templates:suggestLayout", { title: "شهادة", fields: FIELDS, ...args }, T("mgr"))));
+    const classic = await parse({});
+    expect(classic.elements[0]).toEqual({ type: "rect", x: 24, y: 24, w: 794, h: 547, width: 2 });
+    expect(classic.elements.find((e: any) => e.type === "field")).toEqual({ type: "field", field: "name", x: 560, y: 400, size: 18, align: "right", bold: true, maxWidth: 420 });
+    const centered = await parse({ style: "centered" });
+    expect(centered.elements.filter((e: any) => e.type === "field").every((e: any) => e.align === "center" && e.x === 421)).toBe(true);
+    const blank = await parse({ style: "blank", page: { width: 595, height: 842 } });
+    expect(blank.page).toEqual({ width: 595, height: 842 });
+    expect(blank.elements.map((e: any) => e.type)).toEqual(["issuedDate", "serial", "verifyCode"]);
+  });
+
+  test("preview renders the certificate as it will print, with the first real row, and writes nothing", async () => {
+    const docsBefore = must(await s.call("query", "documents:list", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    const r = must(await s.call("action", "templates:preview", { spaceId: f.spaces.S_plain, layout: layoutFor("شهادة"), fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(r.error).toBeNull();
+    expect(r.image).toMatch(/^data:image\/png;base64,/);
+    expect(r.page).toEqual({ width: 842, height: 595 });
+    expect(r.sample).toEqual({ name: "موظف mem", course: "إدارة المشاريع", date: "2026-01-15" });
+    expect(must(await s.call("query", "documents:list", { spaceId: f.spaces.S_plain }, T("mgr"))).length).toBe(docsBefore);
+    const bad = must(await s.call("action", "templates:preview", { spaceId: f.spaces.S_plain, layout: "{", fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(bad).toMatchObject({ image: null, error: "تخطيط القالب ليس JSON صالحاً" });
+  });
+
+  test("an image design becomes the background; a new version keeps it; previews use it", async () => {
+    const storageId = await s.upload(T("mgr")!, new Uint8Array(PNG), "image/png");
+    const fileId = must(await s.call("mutation", "files:create", { storageId, name: "تصميم.png", spaceId: f.spaces.S_plain }, T("mgr")));
+    const layout = must(await s.call("query", "templates:suggestLayout", { title: "x", fields: FIELDS, style: "blank", page: { width: 842, height: 421 } }, T("mgr")));
+    const v1 = must(await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, name: "بخلفية صورة", layout, fieldsSchema: FIELDS, dataBinding: binding(), backgroundFileId: fileId }, T("mgr")));
+    const v2 = must(await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, templateId: v1.templateId, name: "بخلفية صورة", layout, fieldsSchema: FIELDS, dataBinding: binding(), keepBackground: true }, T("mgr")));
+    expect(v2.version).toBe(2);
+    const vs = must(await s.call("query", "templates:versions", { templateId: v1.templateId }, T("mgr"))).versions;
+    expect(vs.map((x: any) => x.hasBackground)).toEqual([true, true]);
+    expect(vs[0].bodySha256).toBe(vs[1].bodySha256);
+    const p = must(await s.call("action", "templates:preview", { spaceId: f.spaces.S_plain, templateId: v1.templateId, keepBackground: true, layout, fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(p.page).toEqual({ width: 842, height: 421 }); // the image's proportions, 842 pt wide
+    // Without keepBackground a new version has none.
+    const v3 = must(await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, templateId: v1.templateId, name: "بخلفية صورة", layout, fieldsSchema: FIELDS, dataBinding: binding() }, T("mgr")));
+    expect(must(await s.call("query", "templates:versions", { templateId: v1.templateId }, T("mgr"))).versions.find((x: any) => x.version === v3.version).hasBackground).toBe(false);
+  });
+
+  test("a background that is neither PDF nor image is refused", async () => {
+    const r = await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, name: "x", layout: layoutFor("x"), fieldsSchema: FIELDS, dataBinding: binding(), backgroundFileId: f.files.S_plain }, T("mgr"));
+    expect(errOf(r)).toContain("الخلفية تكون PDF أو صورة PNG أو JPG");
+  });
+});
+

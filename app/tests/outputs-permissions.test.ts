@@ -217,6 +217,12 @@ const OPS: Op[] = [
   { name: "records:previewImport", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "records:previewImport", { recordSetId: o.sets[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
   { name: "records:commitImport", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "records:commitImport", { recordSetId: o.sets[sp], fileName: "a.xlsx", dataBase64: xlsx }, tok(a)) },
   {
+    name: "templates:preview",
+    need: "manage",
+    spaces: SHARED,
+    run: (a, sp) => s.call("action", "templates:preview", { spaceId: f.spaces[sp], layout: layoutFor("x"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets[sp], fields: { name: "name", course: "course", date: "date" } } }, tok(a)),
+  },
+  {
     name: "templates:saveVersion",
     need: "manage",
     spaces: SPACES,
