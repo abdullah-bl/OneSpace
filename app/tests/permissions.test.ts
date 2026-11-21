@@ -18,6 +18,7 @@ import { UX_COVERED } from "./ux.coverage";
 import { DECISIONS_COVERED } from "./decisions.coverage";
 import { SHARED_CHATS_COVERED } from "./shared-chats.coverage";
 import { LONGCHAT_COVERED } from "./longchat.coverage";
+import { STAFF_FILE_COVERED } from "./staff-file.coverage";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -326,6 +327,7 @@ describe("workspace-level functions", () => {
       ...SKILLS_COVERED, // checked in skills.test.ts
       ...MEMORY_COVERED, // checked in memory.test.ts
       ...LISTS_COVERED, // checked in lists.test.ts
+      ...STAFF_FILE_COVERED, // checked in staff-file.test.ts
       ...PUBLICATIONS_COVERED, // checked in publications.test.ts
       ...APPS_COVERED, // checked in apps.test.ts
       ...PLATFORM_COVERED, // checked in platform.test.ts
