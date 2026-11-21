@@ -660,3 +660,60 @@ describe("verification and the subject's own documents", () => {
     expect(all).not.toContain("/api/storage/");
   });
 });
+
+// Last: it issues more certificates for mem, which earlier tests count.
+describe("plans/17 §4: issue in batches, approval and issue in one act", () => {
+  /** A new approved template on S_plain's courses: no document exists for it yet. */
+  async function freshTemplate(name: string) {
+    const saved = must(
+      await s.call(
+        "action",
+        "templates:saveVersion",
+        { spaceId: f.spaces.S_plain, name, layout: layoutFor("شهادة"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets.S_plain, fields: { name: "name", course: "course", date: "date" } } },
+        T("mgr"),
+      ),
+    );
+    must(await s.call("mutation", "templates:approveVersion", { templateId: saved.templateId, version: saved.version }, T("mgr")));
+    return saved;
+  }
+
+  test("rows without a document, drafts for all by a member, one approve-and-issue by the manager", async () => {
+    const saved = await freshTemplate("شهادة الدفعة");
+    const before = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mem")));
+    expect(before.counts).toEqual({ none: 4, draft: 0, approved: 0, issued: 0 });
+    expect(before.rows[0].data).toEqual({ name: "موظف mem", course: "إدارة المشاريع", date: "2026-01-15" });
+    const ids = before.rows.map((r: any) => r.recordId);
+
+    const made = must(await s.call("mutation", "documents:requestMany", { templateId: saved.templateId, recordIds: ids }, T("mem")));
+    expect(made.created).toBe(4);
+    expect(must(await s.call("mutation", "documents:requestMany", { templateId: saved.templateId, recordIds: ids }, T("mem"))).created).toBe(0);
+    const docIds = made.documents.map((d: any) => d.documentId);
+
+    // A member can't approve, and nothing is approved by the attempt.
+    expect((await s.call("action", "documents:approveAndIssue", { documentIds: docIds }, T("mem"))).ok).toBe(false);
+    expect(must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mem"))).counts.draft).toBe(4);
+
+    const res = must(await s.call("action", "documents:approveAndIssue", { documentIds: docIds }, T("mgr")));
+    expect(res.failed).toEqual([]);
+    expect(new Set(res.issued.map((x: any) => x.serial)).size).toBe(4);
+    const after = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mem")));
+    expect(after.counts).toEqual({ none: 0, draft: 0, approved: 0, issued: 4 });
+    const list = must(await s.call("query", "documents:list", { spaceId: f.spaces.S_plain }, T("mgr"))).filter((d: any) => docIds.includes(d._id));
+    expect(list.every((d: any) => d.status === "issued" && d.approvedByName === "موظف mgr")).toBe(true);
+    // Issuing again returns the same documents, not new ones.
+    const again = must(await s.call("action", "documents:approveAndIssue", { documentIds: docIds }, T("mgr")));
+    expect(again.issued.map((x: any) => x.serial).sort()).toEqual(res.issued.map((x: any) => x.serial).sort());
+  });
+
+  test("a rejected document is reported, the rest of the batch is issued", async () => {
+    const t = (await freshTemplate("شهادة الرفض")).templateId;
+    const rows = must(await s.call("query", "documents:rowsForTemplate", { templateId: t }, T("mgr"))).rows.filter((r: any) => r.status === "none");
+    expect(rows.length).toBeGreaterThanOrEqual(2);
+    const made = must(await s.call("mutation", "documents:requestMany", { templateId: t, recordIds: rows.slice(0, 2).map((r: any) => r.recordId) }, T("mem")));
+    const [a, b] = made.documents.map((d: any) => d.documentId);
+    must(await s.call("mutation", "documents:reject", { documentId: a }, T("mgr")));
+    const res = must(await s.call("action", "documents:approveAndIssue", { documentIds: [a, b] }, T("mgr")));
+    expect(res.issued.map((x: any) => x.documentId)).toEqual([b]);
+    expect(res.failed).toEqual([{ documentId: a, error: "المستند مرفوض" }]);
+  });
+});

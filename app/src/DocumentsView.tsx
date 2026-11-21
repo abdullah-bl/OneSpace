@@ -1,7 +1,7 @@
 // Templates and official documents of a space. Managers write template versions and approve
-// them; members draft documents from (approved template, record); a manager approves; the
-// requester or a manager issues. The text of a document only ever comes from the template
-// and the record.
+// them. Documents are issued in batches (plans/17 §4): pick rows of the template's record set
+// (by default every row without a document), members create drafts, a manager approves and
+// issues in one act. The text of a document only ever comes from the template and the record.
 
 import { ask } from "./ui";
 import { useState } from "react";
@@ -13,7 +13,7 @@ const STATUS: Record<string, string> = { draft: "مسودة بانتظار ال�
 export function DocumentsTab({ space }: { space: SpaceInfo }) {
   const templates = useQuery(api.templates.list, { spaceId: space._id as any });
   const docs = useQuery(api.documents.list, { spaceId: space._id as any });
-  const approve = useMutation(api.documents.approve);
+  const approveAndIssue = useAction(api.documents.approveAndIssue);
   const reject = useMutation(api.documents.reject);
   const issue = useAction(api.documents.issue);
   const requestDownload = useMutation(api.documents.requestDownload);
@@ -22,6 +22,7 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
     setError("");
     fn().catch((e) => setError(errorText(e)));
   };
+  const drafts = (docs ?? []).filter((d) => d.status === "draft");
   return (
     <div className="space-y-6">
       {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
@@ -33,9 +34,23 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
           {templates?.length === 0 && <div className="p-3 text-sm text-faint">لا قوالب بعد.</div>}
         </div>
       </section>
-      {space.canWrite && templates && templates.some((t) => t.approvedVersion) && <RequestForm templates={templates.filter((t) => t.approvedVersion)} />}
+      {space.canWrite && templates && templates.some((t) => t.approvedVersion) && <IssuePanel templates={templates.filter((t) => t.approvedVersion)} canManage={space.canManage} />}
       <section className="space-y-2">
-        <h2 className="section-title">المستندات</h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="section-title flex-1">المستندات</h2>
+          {space.canManage && drafts.length > 0 && (
+            <button
+              className="btn-primary"
+              onClick={() =>
+                void ask(`اعتماد ${drafts.length} مسودة وإصدارها؟ يُسجَّل اسمك كمعتمد لكل منها.`).then((ok) => {
+                  if (ok) void run(() => approveAndIssue({ documentIds: drafts.map((d) => d._id as any) }).then(failedText));
+                })
+              }
+            >
+              اعتمد وأصدر كل المسودات ({drafts.length})
+            </button>
+          )}
+        </div>
         <div className="card overflow-auto">
           <table className="w-full text-sm">
             <thead className="bg-sunken">
@@ -70,8 +85,8 @@ export function DocumentsTab({ space }: { space: SpaceInfo }) {
                   <td className="td whitespace-nowrap">
                     {d.status === "draft" && space.canManage && (
                       <>
-                        <button className="btn-primary" onClick={() => void ask("اعتماد هذا المستند؟ يُسجَّل اسمك كمعتمد.").then((ok) => { if (ok) void run(() => approve({ documentId: d._id as any })); })}>
-                          اعتماد
+                        <button className="btn-primary" onClick={() => void ask("اعتماد هذا المستند وإصداره؟ يُسجَّل اسمك كمعتمد.").then((ok) => { if (ok) void run(() => approveAndIssue({ documentIds: [d._id as any] }).then(failedText)); })}>
+                          اعتماد وإصدار
                         </button>
                         <button className="btn-ghost" onClick={() => run(() => reject({ documentId: d._id as any }))}>
                           رفض
@@ -226,43 +241,145 @@ function TemplateEditor({ spaceId }: { spaceId: string }) {
   );
 }
 
-function RequestForm({ templates }: { templates: { _id: string; name: string; recordSetId: string | null }[] }) {
+const failedText = (r: { failed: { error: string }[] }) => {
+  if (r.failed.length) throw new Error(`لم يصدر ${r.failed.length}: ${[...new Set(r.failed.map((f) => f.error))].join("، ")}`);
+};
+
+const ROW_STATUS: Record<string, string> = { none: "بلا مستند", draft: "مسودة", approved: "معتمدة", issued: "صادرة" };
+
+/**
+ * Issue from the record set (plans/17 §4): the template's rows with the state of each one's
+ * document, rows without one ticked. A manager approves and issues the selection in one act;
+ * other members create drafts for the manager.
+ */
+function IssuePanel({ templates, canManage }: { templates: { _id: string; name: string }[]; canManage: boolean }) {
   const [templateId, setTemplateId] = useState(templates[0]?._id ?? "");
-  const t = templates.find((x) => x._id === templateId);
-  const rows = useQuery(api.records.rows, t?.recordSetId ? { recordSetId: t.recordSetId as any } : "skip");
-  const request = useMutation(api.documents.request);
-  const [recordId, setRecordId] = useState("");
+  const r = useQuery(api.documents.rowsForTemplate, templateId ? { templateId: templateId as any } : "skip");
+  const requestMany = useMutation(api.documents.requestMany);
+  const approveAndIssue = useAction(api.documents.approveAndIssue);
+  const [picked, setPicked] = useState<Set<string> | null>(null);
+  const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [error, setError] = useState("");
+  const selectable = (status: string) => status === "none" || (canManage && (status === "draft" || status === "approved"));
+  const rows = r?.rows ?? [];
+  // Until the user changes it, the selection is every row without a document.
+  const selected = picked ?? new Set(rows.filter((x) => x.status === "none").map((x) => x.recordId as string));
+  const chosen = rows.filter((x) => selected.has(x.recordId) && selectable(x.status));
+  const toggle = (id: string, on: boolean) => {
+    const next = new Set(selected);
+    if (on) next.add(id);
+    else next.delete(id);
+    setPicked(next);
+  };
+
+  const go = async () => {
+    setError("");
+    setMessage("");
+    const n = chosen.length;
+    if (!n) return;
+    if (canManage && !(await ask(`إصدار ${n} مستند؟ يُسجَّل اسمك كمعتمد لكل منها.`))) return;
+    setBusy(true);
+    try {
+      const fresh = chosen.filter((x) => x.status === "none").map((x) => x.recordId as any);
+      const made = fresh.length ? await requestMany({ templateId: templateId as any, recordIds: fresh }) : { documents: [] as { documentId: string }[], created: 0 };
+      if (!canManage) {
+        setMessage(`أُنشئت ${made.created} مسودة بانتظار اعتماد مدير المساحة.`);
+      } else {
+        const ids = [...made.documents.map((d) => d.documentId), ...chosen.filter((x) => x.documentId).map((x) => x.documentId as string)];
+        const res = await approveAndIssue({ documentIds: ids as any });
+        setMessage(`صدر ${res.issued.length} مستند.`);
+        failedText(res);
+      }
+      setPicked(null);
+    } catch (e) {
+      setError(errorText(e));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   return (
-    <section className="card flex flex-wrap items-center gap-2 p-3 text-sm">
-      <span className="font-bold">طلب مستند:</span>
-      <select className="input" value={templateId} onChange={(e) => setTemplateId(e.target.value)}>
-        {templates.map((x) => (
-          <option key={x._id} value={x._id}>
-            {x.name}
-          </option>
-        ))}
-      </select>
-      <select className="input max-w-sm" value={recordId} onChange={(e) => setRecordId(e.target.value)}>
-        <option value="">السجل…</option>
-        {rows?.rows.map((r) => (
-          <option key={r.recordId} value={r.recordId}>
-            {Object.values(r.data).filter((x) => x !== null).join(" · ")}
-          </option>
-        ))}
-      </select>
-      <button
-        className="btn-primary"
-        disabled={!recordId}
-        onClick={() =>
-          request({ templateId: templateId as any, recordId: recordId as any })
-            .then((r) => setMessage(r.existing ? "المستند موجود مسبقاً" : "أُنشئت مسودة بانتظار اعتماد مدير المساحة"))
-            .catch((e) => setMessage(errorText(e)))
-        }
-      >
-        إنشاء مسودة
-      </button>
-      {message && <span>{message}</span>}
+    <section className="card space-y-3 p-3 text-sm">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="font-bold">إصدار:</span>
+        <select
+          className="input"
+          aria-label="القالب"
+          value={templateId}
+          onChange={(e) => {
+            setTemplateId(e.target.value);
+            setPicked(null);
+          }}
+        >
+          {templates.map((x) => (
+            <option key={x._id} value={x._id}>
+              {x.name}
+            </option>
+          ))}
+        </select>
+        {r && (
+          <span className="text-muted num">
+            {r.counts.none > 0 ? <b className="text-ink">{r.counts.none} بلا مستند</b> : "لكل صف مستند"}
+            {r.counts.draft > 0 && ` · ${r.counts.draft} مسودة`}
+            {r.counts.issued > 0 && ` · ${r.counts.issued} صادرة`}
+          </span>
+        )}
+      </div>
+      {rows.length > 0 && (
+        <div className="max-h-[45vh] overflow-auto rounded border border-line">
+          <table className="w-full text-xs">
+            <thead className="sticky top-0 bg-sunken">
+              <tr>
+                <th className="th">
+                  <input
+                    type="checkbox"
+                    aria-label="تحديد الكل"
+                    checked={rows.filter((x) => selectable(x.status)).every((x) => selected.has(x.recordId))}
+                    onChange={(e) => setPicked(new Set(e.target.checked ? rows.filter((x) => selectable(x.status)).map((x) => x.recordId as string) : []))}
+                  />
+                </th>
+                {r!.fields.map((f) => (
+                  <th key={f.key} className="th">
+                    {f.label}
+                  </th>
+                ))}
+                <th className="th">الحالة</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((x) => (
+                <tr key={x.recordId} className="border-t border-rule">
+                  <td className="td">
+                    <input type="checkbox" aria-label={`تحديد الصف ${x.rowNo}`} disabled={!selectable(x.status)} checked={selectable(x.status) && selected.has(x.recordId)} onChange={(e) => toggle(x.recordId, e.target.checked)} />
+                  </td>
+                  {r!.fields.map((f) => (
+                    <td key={f.key} className="td">
+                      {x.data[f.key]}
+                    </td>
+                  ))}
+                  <td className="td text-muted">
+                    {ROW_STATUS[x.status]}
+                    {x.serial && (
+                      <span className="ms-1 text-faint" dir="ltr">
+                        {x.serial}
+                      </span>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <div className="flex flex-wrap items-center gap-2">
+        <button className="btn-primary" disabled={busy || chosen.length === 0} onClick={() => void go()}>
+          {busy ? "جارٍ الإصدار…" : canManage ? `اعتمد وأصدر (${chosen.length})` : `أنشئ مسودات (${chosen.length})`}
+        </button>
+        {!canManage && <span className="text-xs text-muted">يعتمدها مدير المساحة ثم تصدر.</span>}
+        {message && <span className="text-positive">{message}</span>}
+        {error && <span className="text-negative">{error}</span>}
+      </div>
     </section>
   );
 }

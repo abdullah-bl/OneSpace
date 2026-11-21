@@ -91,6 +91,7 @@ const OPS: Op[] = [
       return g.status === 200 && g.text.startsWith("%PDF") ? { ok: true, value: "pdf" } : fail(`GET ${g.status}`);
     },
   },
+  { name: "documents:rowsForTemplate", need: "read", spaces: SHARED, run: (a, sp) => s.call("query", "documents:rowsForTemplate", { templateId: o.templates[sp] }, tok(a)) },
   { name: "documents:reproduce", need: "read", spaces: SHARED, run: (a, sp) => s.call("action", "documents:reproduce", { documentId: o.docs[sp] }, tok(a)) },
 
   // write
@@ -173,6 +174,12 @@ const OPS: Op[] = [
     run: async (a, sp) => s.call("mutation", "documents:request", { templateId: o.templates[sp], recordId: await o.recordOf(sp, IDS.mem, "إدارة المشاريع") }, tok(a)),
   },
   {
+    name: "documents:requestMany",
+    need: "write",
+    spaces: SHARED,
+    run: async (a, sp) => s.call("mutation", "documents:requestMany", { templateId: o.templates[sp], recordIds: [await o.recordOf(sp, IDS.mem, "إدارة المشاريع")] }, tok(a)),
+  },
+  {
     name: "fill_template (tool)",
     need: "write",
     spaces: SHARED,
@@ -222,6 +229,8 @@ const OPS: Op[] = [
       ),
   },
   { name: "templates:approveVersion", need: "manage", spaces: SHARED, run: (a, sp) => s.call("mutation", "templates:approveVersion", { templateId: o.templates[sp], version: 1 }, tok(a)) },
+  // On an issued document: passes through for a manager, refused for anyone else before anything changes.
+  { name: "documents:approveAndIssue", need: "manage", spaces: SHARED, run: (a, sp) => s.call("action", "documents:approveAndIssue", { documentIds: [o.docs[sp]] }, tok(a)) },
   { name: "documents:approve", need: "manage", spaces: SHARED, run: async (a, sp) => s.call("mutation", "documents:approve", { documentId: await docFor(sp, IDS.mem, "Excel المتقدم", "draft") }, tok(a)) },
   { name: "documents:reject", need: "manage", spaces: SHARED, run: async (a, sp) => s.call("mutation", "documents:reject", { documentId: await docFor(sp, IDS.ghost, "التفاوض", "draft") }, tok(a)) },
   { name: "artifacts:transfers", need: "manage", spaces: SPACES, run: (a, sp) => s.call("query", "artifacts:transfers", { spaceId: f.spaces[sp] }, tok(a)) },

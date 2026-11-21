@@ -191,6 +191,96 @@ export const issue = action({
   },
 });
 
+const BATCH_MAX = 200;
+
+/**
+ * The current rows of a template's record set, each with the state of its document for the
+ * approved version: none, draft, approved or issued. What «أصدر» works from, and how the page
+ * knows how many rows still have no certificate (e.g. after an import). Members who can read
+ * both the template's space and the set's.
+ */
+export const rowsForTemplate = query({
+  args: { templateId: v.id("templates") },
+  handler: async (ctx, { templateId }) => {
+    const me = await requireActive(ctx);
+    const t = await loadTemplate(ctx, templateId);
+    await assertCan(ctx, me.userId, t.spaceId, "read");
+    if (!t.approvedVersion) return { fields: [], rows: [], counts: { none: 0, draft: 0, approved: 0, issued: 0 } };
+    const tv = await loadVersion(ctx, t._id, t.approvedVersion);
+    const set = await loadSet(ctx, tv.dataBinding.recordSetId);
+    await assertCan(ctx, me.userId, set.spaceId, "read");
+    const records = set.currentVersion
+      ? await ctx.db.query("records").withIndex("by_set_version", (q) => q.eq("recordSetId", set._id).eq("version", set.currentVersion)).collect()
+      : [];
+    const docs = (await ctx.db.query("issuedDocuments").withIndex("by_space", (q) => q.eq("spaceId", t.spaceId)).collect()).filter((d) => d.templateId === t._id && d.templateVersion === tv.version && d.status !== "rejected");
+    // A record keeps its id across nothing: a re-import creates new rows. Match on the subject and the bound data too.
+    const rank = { issued: 3, approved: 2, draft: 1 } as const;
+    const counts = { none: 0, draft: 0, approved: 0, issued: 0 };
+    const rows = records.map((r) => {
+      const data: Record<string, string> = {};
+      for (const f of tv.fieldsSchema) data[f.key] = cellText(r.data[tv.dataBinding.fields[f.key]!]);
+      const mine = docs.filter((d) => d.recordId === r._id || (d.subjectRef === r.subjectRef && JSON.stringify(d.data) === JSON.stringify(data)));
+      const best = mine.sort((a, b) => rank[b.status as keyof typeof rank] - rank[a.status as keyof typeof rank])[0];
+      const status = (best?.status ?? "none") as keyof typeof counts;
+      counts[status]++;
+      return { recordId: r._id, rowNo: r.rowNo, subjectRef: r.subjectRef, data, status, documentId: best?._id ?? null, serial: best?.serial ?? null };
+    });
+    return { fields: tv.fieldsSchema, rows, counts };
+  },
+});
+
+/** Drafts for many records at once (existing documents are returned, not duplicated). Writers of the template's space. */
+export const requestMany = mutation({
+  args: { templateId: v.id("templates"), recordIds: v.array(v.id("records")) },
+  handler: async (ctx, { templateId, recordIds }) => {
+    const me = await requireActive(ctx);
+    if (recordIds.length > BATCH_MAX) throw new OneBaseError(`الحد ${BATCH_MAX} مستنداً في الدفعة الواحدة`);
+    const out: { documentId: Id<"issuedDocuments">; status: string; existing: boolean }[] = [];
+    for (const recordId of new Set(recordIds)) {
+      const r = await requestDocument(ctx, me, templateId, recordId, { scope: null, via: "ui-batch" });
+      out.push({ documentId: r.documentId, status: r.status, existing: r.existing });
+    }
+    return { documents: out, created: out.filter((d) => !d.existing).length };
+  },
+});
+
+/**
+ * Approval and issue in one act, for one document or a batch: a manager of the space approves
+ * (recorded, audited, per document) and each is issued at once. Already-issued documents are
+ * returned as they are; a document that can't be issued is reported and the rest go on.
+ */
+export const approveAndIssue = action({
+  args: { documentIds: v.array(v.id("issuedDocuments")) },
+  handler: async (ctx, { documentIds }): Promise<{ issued: { documentId: string; serial: string; verifyCode: string }[]; failed: { documentId: string; error: string }[] }> => {
+    const userId = await requireUserId(ctx);
+    if (documentIds.length > BATCH_MAX) throw new OneBaseError(`الحد ${BATCH_MAX} مستنداً في الدفعة الواحدة`);
+    // Every document must be in a space the caller manages, checked before anything is approved.
+    await ctx.runQuery(internal.documents.checkManagesAll, { userId, documentIds });
+    const issued: { documentId: string; serial: string; verifyCode: string }[] = [];
+    const failed: { documentId: string; error: string }[] = [];
+    for (const documentId of new Set(documentIds)) {
+      try {
+        await ctx.runMutation(internal.documents.approveAsManager, { userId, documentId });
+        const prep: any = await ctx.runMutation(internal.documents.beginIssue, { userId, documentId });
+        let result: { serial: string; verifyCode: string };
+        if (prep.done) result = prep.done;
+        else {
+          const bytes = await renderFrom(ctx, prep);
+          const storageId = await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/pdf" }));
+          const res: any = await ctx.runMutation(internal.documents.finishIssue, { userId, documentId, storageId, sha256: sha256Hex(bytes), size: bytes.byteLength });
+          if (res.duplicate) await ctx.storage.delete(storageId);
+          result = res.result;
+        }
+        issued.push({ documentId, serial: result.serial, verifyCode: result.verifyCode });
+      } catch (e) {
+        const m = e instanceof Error ? e.message : String(e);
+        failed.push({ documentId, error: m.replace(/^.*Uncaught (OneBaseError: )?/, "").replace(/^\[.*?\]\s*/, "").split("\n")[0]! });
+      }
+    }
+    return { issued, failed };
+  },
+});
+
 async function renderFrom(ctx: { storage: { get(id: Id<"_storage">): Promise<Blob | null> } }, prep: { layout: string; fieldKeys: string[]; bodyStorageId: Id<"_storage"> | null; data: Record<string, string>; serial: string; verifyCode: string; issuedAt: number; title: string }) {
   let background: Uint8Array | null = null;
   if (prep.bodyStorageId) {
@@ -286,6 +376,32 @@ async function prepFor(ctx: Ctx, d: Doc<"issuedDocuments">) {
     title: `${t.name} ${d.serial}`,
   };
 }
+
+export const checkManagesAll = internalQuery({
+  args: { userId: v.id("users"), documentIds: v.array(v.id("issuedDocuments")) },
+  handler: async (ctx, { userId, documentIds }) => {
+    await requireActor(ctx, userId);
+    for (const id of documentIds) {
+      const d = await loadDoc(ctx, id);
+      await assertCan(ctx, userId, d.spaceId, "manage");
+    }
+    return null;
+  },
+});
+
+/** Approves a draft as part of approveAndIssue. Managers only; an approved or issued document passes through unchanged. */
+export const approveAsManager = internalMutation({
+  args: { userId: v.id("users"), documentId: v.id("issuedDocuments") },
+  handler: async (ctx, { userId, documentId }) => {
+    await requireActor(ctx, userId);
+    const d = await loadDoc(ctx, documentId);
+    await assertCan(ctx, userId, d.spaceId, "manage");
+    if (d.status === "approved" || d.status === "issued") return;
+    if (d.status !== "draft") throw new OneBaseError("المستند مرفوض");
+    await ctx.db.patch(d._id, { status: "approved", approvedBy: userId, approvedAt: Date.now() });
+    await writeAudit(ctx, { userId, action: "document.approve", resourceType: "document", resourceId: d._id, spaceId: d.spaceId, detail: { templateVersion: d.templateVersion, with: "issue" } });
+  },
+});
 
 /** Checks the issuer, then fixes serial, verification code and issue time (once). */
 export const beginIssue = internalMutation({

@@ -66,9 +66,9 @@ The assistant proposes structure and picks rows. It never writes a value into an
 
 ## Order
 
-1. Records from a file (§1). ← first
-2. Staff file for identifiers (§2).
-3. Batch issue and one-step approve (§4).
+1. Records from a file (§1). ✓ (`records:analyzeFile`, `records:createFromFile`)
+2. Staff file for identifiers (§2). ✓ (`staffFile:analyze`, `staffFile:apply`)
+3. Batch issue and one-step approve (§4). ✓ (`documents:rowsForTemplate`, `requestMany`, `approveAndIssue`). Not yet: the per-document approval setting, and a PDF preview before issuing (comes with §3's real-row preview).
 4. Visual template editor (§3).
 5. Assistant tools (§5): `propose_record_set` first, then batch `fill_template`, then design reading.
 6. Difference preview on re-import (§1).
