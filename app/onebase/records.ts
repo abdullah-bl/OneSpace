@@ -8,7 +8,7 @@
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query, type ActionCtx, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, readableSpaceIds, requireActive, requireUserId } from "./access";
 import { writeAudit } from "./audit";
 import { requireActor } from "./artifacts";
@@ -92,7 +92,7 @@ export async function queryRecords(ctx: Ctx, userId: Id<"users">, args: QueryArg
 export async function myRecords(ctx: Ctx, userId: Id<"users">) {
   const actor = await requireActor(ctx, userId);
   const ids = identityOf(actor.user);
-  const out: { recordSetId: Id<"recordSets">; setName: string; columns: { key: string; header: string; type: string }[]; rows: { recordId: Id<"records">; data: Record<string, Cell> }[] }[] = [];
+  const out: { recordSetId: Id<"recordSets">; setName: string; spaceName: string; columns: { key: string; header: string; type: string }[]; rows: { recordId: Id<"records">; data: Record<string, Cell> }[] }[] = [];
   const documents: { _id: Id<"issuedDocuments">; templateName: string; serial: string | null; issuedAt: number | null; verifyCode: string | null; sha256: string | null }[] = [];
   for (const [kind, ref] of [["nationalId", ids.nationalId], ["employeeNo", ids.employeeNo]] as const) {
     if (!ref) continue;
@@ -107,6 +107,8 @@ export async function myRecords(ctx: Ctx, userId: Id<"users">) {
       out.push({
         recordSetId: set._id,
         setName: set.name,
+        // The department the records come from: who to ask about them (a subject may not be a member).
+        spaceName: (await ctx.db.get(set.spaceId))?.name ?? "",
         columns: set.columns.map((c) => ({ key: c.key, header: c.header, type: c.type })),
         rows: current.map((r) => ({ recordId: r._id, data: r.data })),
       });
@@ -295,30 +297,35 @@ export const analyzeFile = action({
   args: { spaceId: v.id("spaces"), fileName: v.string(), dataBase64: v.string() },
   handler: async (ctx, { spaceId, fileName, dataBase64 }): Promise<Analysis> => {
     const userId = await requireUserId(ctx);
-    await ctx.runQuery(internal.records.sharedSpaceForManager, { userId, spaceId });
-    const name = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 100);
-    let raw: RawTable;
-    try {
-      raw = await excelSource.read({ bytes: decode(dataBase64) });
-      if (raw.headers.length === 0) throw new ImportError(["الصف الأول في الملف فارغ: يجب أن يحوي عناوين الأعمدة"]);
-      if (raw.rows.length === 0) throw new ImportError(["الملف لا يحوي أي صف بيانات"]);
-    } catch (e) {
-      if (e instanceof ImportError) return { ok: false, errors: e.errors, name, rowCount: 0, columns: [], owner: null, uniqueBy: [] };
-      throw e;
-    }
-    const columns = inferColumns(raw);
-    let owner: Analysis["owner"] = null;
-    for (const header of ownerCandidates(columns).slice(0, 3)) {
-      const refs = [...new Set(raw.rows.map((r) => normalizeRef(r.cells[header])).filter(Boolean))].slice(0, 2000);
-      const m: { nationalId: number; employeeNo: number } = await ctx.runQuery(internal.records.identityMatches, { userId, refs });
-      const kind = m.employeeNo > m.nationalId || (m.nationalId === 0 && /وظيفي|employee/i.test(header)) ? "employeeNo" : "nationalId";
-      const cand = { header, kind, matched: m[kind], distinct: refs.length } as const;
-      if (!owner || cand.matched > owner.matched) owner = cand;
-    }
-    const chosen = columns.map((c) => c.header);
-    return { ok: true, errors: [], name, rowCount: raw.rows.length, columns, owner, uniqueBy: owner ? suggestUnique(raw, chosen, owner.header) : [] };
+    return await analyzeBytes(ctx, userId, spaceId, decode(dataBase64), fileName);
   },
 });
+
+/** The analysis behind analyzeFile and the assistant's propose_record_set. Checks "manage" on the space. */
+export async function analyzeBytes(ctx: ActionCtx, userId: Id<"users">, spaceId: Id<"spaces">, bytes: Uint8Array, fileName: string): Promise<Analysis> {
+  await ctx.runQuery(internal.records.sharedSpaceForManager, { userId, spaceId });
+  const name = fileName.replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().slice(0, 100);
+  let raw: RawTable;
+  try {
+    raw = await excelSource.read({ bytes });
+    if (raw.headers.length === 0) throw new ImportError(["الصف الأول في الملف فارغ: يجب أن يحوي عناوين الأعمدة"]);
+    if (raw.rows.length === 0) throw new ImportError(["الملف لا يحوي أي صف بيانات"]);
+  } catch (e) {
+    if (e instanceof ImportError) return { ok: false, errors: e.errors, name, rowCount: 0, columns: [], owner: null, uniqueBy: [] };
+    throw e;
+  }
+  const columns = inferColumns(raw);
+  let owner: Analysis["owner"] = null;
+  for (const header of ownerCandidates(columns).slice(0, 3)) {
+    const refs = [...new Set(raw.rows.map((r) => normalizeRef(r.cells[header])).filter(Boolean))].slice(0, 2000);
+    const m: { nationalId: number; employeeNo: number } = await ctx.runQuery(internal.records.identityMatches, { userId, refs });
+    const kind = m.employeeNo > m.nationalId || (m.nationalId === 0 && /وظيفي|employee/i.test(header)) ? "employeeNo" : "nationalId";
+    const cand = { header, kind, matched: m[kind], distinct: refs.length } as const;
+    if (!owner || cand.matched > owner.matched) owner = cand;
+  }
+  const chosen = columns.map((c) => c.header);
+  return { ok: true, errors: [], name, rowCount: raw.rows.length, columns, owner, uniqueBy: owner ? suggestUnique(raw, chosen, owner.header) : [] };
+}
 
 const chosenColumn = v.object({ header: v.string(), type: v.union(v.literal("text"), v.literal("number"), v.literal("date"), v.literal("boolean")), required: v.boolean() });
 
@@ -338,42 +345,49 @@ export const createFromFile = action({
     ownerKind: subjectKind,
     uniqueBy: v.array(v.string()),
   },
-  handler: async (ctx, args): Promise<{ ok: true; recordSetId: Id<"recordSets">; version: number; rowCount: number } | { ok: false; errors: string[] }> => {
+  handler: async (ctx, { dataBase64, ...args }): Promise<CreateResult> => {
     const userId = await requireUserId(ctx);
-    await ctx.runQuery(internal.records.sharedSpaceForManager, { userId, spaceId: args.spaceId });
-    const headers = args.columns.map((c) => c.header.trim());
-    if (new Set(headers).size !== headers.length) throw new OneBaseError("عمود مكرر في الاختيار");
-    if (!headers.includes(args.ownerHeader.trim())) return { ok: false, errors: ["اعتمد عمود صاحب السجل (رقم الهوية أو الرقم الوظيفي)"] };
-    const keys = keysFor(headers);
-    const columns: ColumnDef[] = args.columns.map((c) => ({ key: keys.get(c.header.trim())!, header: c.header.trim(), type: c.type, required: c.required }));
-    const subjectColumn = keys.get(args.ownerHeader.trim())!;
-    const uniqueBy = [...new Set(args.uniqueBy.map((h) => keys.get(h.trim())).filter((k): k is string => Boolean(k)))];
-    if (!uniqueBy.includes(subjectColumn)) uniqueBy.unshift(subjectColumn);
-    const def = { columns, subjectColumn, uniqueBy };
-    const bytes = decode(args.dataBase64);
-    let rows;
-    try {
-      rows = validateRows(def, await excelSource.read({ bytes }));
-    } catch (e) {
-      if (e instanceof ImportError) return { ok: false, errors: e.errors };
-      throw e;
-    }
-    const storageId = await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
-    try {
-      const r = await ctx.runMutation(internal.records.createWithImport, {
-        userId,
-        spaceId: args.spaceId,
-        def: { name: args.name, columns, subjectColumn, subjectKind: args.ownerKind, uniqueBy },
-        source: { kind: "excel", name: args.fileName.slice(0, 255), sha256: sha256Hex(bytes), storageId },
-        rows,
-      });
-      return { ok: true, ...r };
-    } catch (e) {
-      await ctx.storage.delete(storageId);
-      throw e;
-    }
+    return await createFromBytes(ctx, userId, args, decode(dataBase64));
   },
 });
+
+type CreateResult = { ok: true; recordSetId: Id<"recordSets">; version: number; rowCount: number } | { ok: false; errors: string[] };
+type CreateArgs = { spaceId: Id<"spaces">; name: string; fileName: string; columns: { header: string; type: "text" | "number" | "date" | "boolean"; required: boolean }[]; ownerHeader: string; ownerKind: "nationalId" | "employeeNo"; uniqueBy: string[] };
+
+/** The creation behind createFromFile and the assistant's propose_record_set. Checks "manage" on the space. */
+export async function createFromBytes(ctx: ActionCtx, userId: Id<"users">, args: CreateArgs, bytes: Uint8Array): Promise<CreateResult> {
+  await ctx.runQuery(internal.records.sharedSpaceForManager, { userId, spaceId: args.spaceId });
+  const headers = args.columns.map((c) => c.header.trim());
+  if (new Set(headers).size !== headers.length) throw new OneBaseError("عمود مكرر في الاختيار");
+  if (!headers.includes(args.ownerHeader.trim())) return { ok: false, errors: ["اعتمد عمود صاحب السجل (رقم الهوية أو الرقم الوظيفي)"] };
+  const keys = keysFor(headers);
+  const columns: ColumnDef[] = args.columns.map((c) => ({ key: keys.get(c.header.trim())!, header: c.header.trim(), type: c.type, required: c.required }));
+  const subjectColumn = keys.get(args.ownerHeader.trim())!;
+  const uniqueBy = [...new Set(args.uniqueBy.map((h) => keys.get(h.trim())).filter((k): k is string => Boolean(k)))];
+  if (!uniqueBy.includes(subjectColumn)) uniqueBy.unshift(subjectColumn);
+  const def = { columns, subjectColumn, uniqueBy };
+  let rows;
+  try {
+    rows = validateRows(def, await excelSource.read({ bytes }));
+  } catch (e) {
+    if (e instanceof ImportError) return { ok: false, errors: e.errors };
+    throw e;
+  }
+  const storageId = await ctx.storage.store(new Blob([bytes as BlobPart], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+  try {
+    const r = await ctx.runMutation(internal.records.createWithImport, {
+      userId,
+      spaceId: args.spaceId,
+      def: { name: args.name, columns, subjectColumn, subjectKind: args.ownerKind, uniqueBy },
+      source: { kind: "excel", name: args.fileName.slice(0, 255), sha256: sha256Hex(bytes), storageId },
+      rows,
+    });
+    return { ok: true, ...r };
+  } catch (e) {
+    await ctx.storage.delete(storageId);
+    throw e;
+  }
+}
 
 // ---------- internal ----------
 
@@ -478,5 +492,28 @@ export const createWithImport = internalMutation({
     const set = (await ctx.db.get(id))!;
     const r = await writeImport(ctx, userId, set, source, rows);
     return { recordSetId: id, ...r };
+  },
+});
+
+/**
+ * propose_record_set: an Excel file the user can read, inside the turn's scope, and the shared
+ * space the set would go to (the given one, else the file's), with its name. The space's
+ * "manage" check happens in analyzeBytes / createFromBytes.
+ */
+export const fileForRecordSet = internalQuery({
+  args: { userId: v.id("users"), fileId: v.string(), spaceId: v.optional(v.string()), scopeSpaceIds: v.array(v.string()), scopeFileIds: v.optional(v.array(v.string())) },
+  handler: async (ctx, { userId, fileId, spaceId, scopeSpaceIds, scopeFileIds }) => {
+    await requireActor(ctx, userId);
+    const id = ctx.db.normalizeId("files", fileId);
+    const file = id ? await ctx.db.get(id) : null;
+    const missing = "الملف غير موجود أو لا تملك صلاحية الوصول إليه.";
+    if (!file || file.status !== "active" || !scopeSpaceIds.includes(file.spaceId) || (scopeFileIds && !scopeFileIds.includes(file._id))) return { error: missing };
+    if (!(await readableSpaceIds(ctx, userId)).includes(file.spaceId)) return { error: missing };
+    if (!/\.xlsx$/i.test(file.name) && !file.mime.includes("spreadsheetml")) return { error: "السجلات تُنشأ من ملف Excel بصيغة ‎.xlsx" };
+    const target = spaceId ? ctx.db.normalizeId("spaces", spaceId) : file.spaceId;
+    const space = target ? await ctx.db.get(target) : null;
+    if (!space) return { error: "المساحة غير موجودة." };
+    if (space.kind !== "shared") return { error: "السجلات تكون في مساحة مشتركة يديرها المستخدم. اذكر المساحة (spaceId) التي يُنشأ فيها السجل." };
+    return { storageId: file.storageId, fileName: file.name, spaceId: space._id, spaceName: space.name };
   },
 });

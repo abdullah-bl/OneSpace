@@ -207,8 +207,10 @@ describe("✓ an employee asking for their courses gets only their own records, 
     const parsed = JSON.parse(r.content);
     const rows = parsed.records.flatMap((x: any) => x.rows);
     expect(parsed.records.length).toBeGreaterThanOrEqual(3); // one per record set that has mem in it
-    expect(rows.every((row: any) => (row.nid ?? row.c1) === IDS.mem)).toBe(true); // c1: sets created from a file (plans/17)
-    expect(new Set(rows.map((row: any) => row.course ?? row.c2))).toEqual(new Set(["Excel المتقدم", "إدارة المشاريع"]));
+    // Rows by column header, whatever the keys (sets created from a file have generated keys, plans/17).
+    expect(rows.every((row: any) => row["رقم الهوية"] === IDS.mem)).toBe(true);
+    expect(new Set(rows.map((row: any) => row["الدورة"]))).toEqual(new Set(["Excel المتقدم", "إدارة المشاريع"]));
+    expect(parsed.records.every((x: any) => typeof x.from === "string" && x.from.length > 0)).toBe(true);
     expect(r.content).not.toContain(IDS.out);
     expect(r.content).not.toContain("GH77");
     expect(parsed.documents.length).toBe(3); // the certificates issued to mem
@@ -361,11 +363,12 @@ describe("✓ issuing the same certificate twice gives files with the same finge
 });
 
 describe("✓ no path lets the model write text into an official document", () => {
-  test("fill_template accepts two ids and nothing else", () => {
+  test("fill_template accepts ids and nothing else (one record, or a list of records)", () => {
     const p = tools.fill_template!.parameters as any;
     expect(p.additionalProperties).toBe(false);
-    expect(Object.keys(p.properties).sort()).toEqual(["recordId", "templateId"]);
-    expect(p.required.sort()).toEqual(["recordId", "templateId"]);
+    expect(Object.keys(p.properties).sort()).toEqual(["recordId", "recordIds", "templateId"]);
+    expect(p.properties.recordIds).toMatchObject({ type: "array", items: { type: "string" }, maxItems: 50 });
+    expect(p.required).toEqual(["templateId"]);
   });
 
   test("extra arguments are ignored: the fields come from the record, by code", async () => {
@@ -843,6 +846,70 @@ describe("plans/17 §3 (Word): the certificate is a Word file with {{variables}}
     const { variablesOf } = await import("../onebase/lib/docxTemplate");
     const sample = must(await s.call("action", "templates:sampleWord", { ...base(), name: "نموذج" }, T("mgr")));
     expect(await variablesOf(Buffer.from(sample.base64, "base64"))).toEqual(["الاسم", "الدورة", "تاريخ الإتمام", "الساعات", "الرقم_التسلسلي", "رمز_التحقق", "تاريخ_الإصدار"]);
+  });
+});
+
+describe("plans/17 §5: what the assistant does with records and certificates", () => {
+  test("fill_template for several records: one draft each, existing ones not duplicated; the card names the template and the people", async () => {
+    const saved = must(
+      await s.call("action", "templates:saveVersion", { spaceId: f.spaces.S_plain, name: "شهادة المساعد", layout: layoutFor("شهادة"), fieldsSchema: FIELDS, dataBinding: { recordSetId: o.sets.S_plain, fields: { name: "name", course: "course", date: "date" } } }, T("mgr")),
+    );
+    must(await s.call("mutation", "templates:approveVersion", { templateId: saved.templateId, version: saved.version }, T("mgr")));
+    const ids = [await o.recordOf("S_plain", IDS.mem, "إدارة المشاريع"), await o.recordOf("S_plain", IDS.out, "السلامة المهنية")];
+    const card = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mem, name: "fill_template", args: { templateId: saved.templateId, recordIds: ids, name: "INJECTED" } }));
+    expect(card.summary).toEqual({ template: "شهادة المساعد", count: 2, people: ["موظف mem", "موظف out"], existing: 0 });
+    expect(card.templateId).toBe(saved.templateId);
+    expect(card.name).toBeUndefined(); // only ids and the server's summary reach «نفّذ»
+    const r = must(await tool(s, f.ids.mem!, "fill_template", card));
+    expect(r.content).toContain("أُنشئت 2 مسودة");
+    const again = must(await tool(s, f.ids.mem!, "fill_template", { templateId: saved.templateId, recordIds: ids }));
+    expect(again.content).toContain("لم تُنشأ مسودات جديدة");
+    const rows = must(await s.call("query", "documents:rowsForTemplate", { templateId: saved.templateId }, T("mgr")));
+    expect(rows.counts.draft).toBe(2);
+    // The model sees names, not ids: the exact name works, and the card says what already exists.
+    const byName = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mem, name: "fill_template", args: { templateId: "«شهادة المساعد»", recordIds: ids } }));
+    expect(byName.templateId).toBe(saved.templateId);
+    expect(byName.summary.existing).toBe(2);
+    const unknown = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mem, name: "fill_template", args: { templateId: "شهادة غير موجودة", recordIds: ids } }));
+    expect(unknown.summary.error).toContain("لا يوجد قالب معتمد بهذا الاسم. القوالب المعتمدة:");
+    expect(unknown.summary.error).toContain("«شهادة المساعد»");
+    // Someone who can't write in the template's space gets nothing.
+    expect((await tool(s, f.ids.out!, "fill_template", { templateId: saved.templateId, recordIds: ids })).ok).toBe(false);
+  });
+
+  test("propose_record_set: the card shows the server's analysis of the file; «نفّذ» creates the set; a non-manager can't", async () => {
+    const data = Buffer.from(await xlsxBase64(COURSE_HEADERS, COURSE_ROWS), "base64");
+    const storageId = await s.upload(T("mgr")!, new Uint8Array(data), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    const fileId = must(await s.call("mutation", "files:create", { storageId, name: "دورات_الربع_الأول.xlsx", spaceId: f.spaces.S_plain }, T("mgr")));
+    const card = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mgr, name: "propose_record_set", args: { fileId } }));
+    expect(card.name).toBe("دورات الربع الأول");
+    expect(card.summary).toMatchObject({ space: "لجنة-المشتريات-QX71", rows: 4, owner: { header: "رقم الهوية", kind: "nationalId", matched: 2, distinct: 3 }, uniqueBy: ["رقم الهوية", "الدورة"], errors: [] });
+    expect(card.summary.columns.map((c: any) => c.type)).toEqual(["text", "text", "text", "date", "number"]);
+    const before = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr"))).length;
+    // mem reads the space but doesn't manage it.
+    expect((await tool(s, f.ids.mem!, "propose_record_set", { fileId })).ok).toBe(false);
+    const r = must(await tool(s, f.ids.mgr!, "propose_record_set", { ...card, summary: { columns: [{ header: "INJECTED" }] } }));
+    expect(r.failed).toBeUndefined();
+    expect(r.content).toContain("أُنشئ السجل «دورات الربع الأول»");
+    const sets = must(await s.call("query", "records:sets", { spaceId: f.spaces.S_plain }, T("mgr")));
+    expect(sets.length).toBe(before + 1);
+    const made = sets.find((x: any) => x.name === "دورات الربع الأول");
+    expect(made.columns.map((c: any) => c.header)).toEqual(COURSE_HEADERS); // from the file, not from the card's arguments
+    expect(made.currentVersion).toBe(1);
+  });
+
+  test("propose_record_set: a file outside the turn's scope, or not Excel, is refused with a reason", async () => {
+    const card = must(await s.adminRun("toolHarness:prepare", { userId: f.ids.mgr, name: "propose_record_set", args: { fileId: f.files.S_plain } }));
+    expect(card.summary.errors).toEqual(["السجلات تُنشأ من ملف Excel بصيغة ‎.xlsx"]);
+    const out = must(await tool(s, f.ids.mgr!, "propose_record_set", { fileId: f.files.S_plain }, [f.spaces.S_every]));
+    expect(out).toMatchObject({ failed: true, content: "الملف غير موجود أو لا تملك صلاحية الوصول إليه." });
+  });
+
+  test("my_records tells where to download issued certificates and whom to ask for the rest", async () => {
+    const r = must(await tool(s, f.ids.mem!, "my_records", {}));
+    const parsed = JSON.parse(r.content);
+    expect(parsed.note).toContain("#/me");
+    expect(parsed.records.map((x: any) => x.from)).toContain("لجنة-المشتريات-QX71");
   });
 });
 

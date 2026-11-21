@@ -25,3 +25,15 @@ export const run = internalAction({
     return await tool.run({ ctx, userId, scopeSpaceIds: scope, threadId }, args ?? {});
   },
 });
+
+/** What a tool's confirmation card would show and pin (its prepare step), the way the chat loop calls it. */
+export const prepare = internalAction({
+  args: { userId: v.id("users"), name: v.string(), args: v.optional(v.any()), scopeSpaceIds: v.optional(v.array(v.string())) },
+  handler: async (ctx, { userId, name, args, scopeSpaceIds }) => {
+    await primeAi(ctx);
+    const tool = getTool(name);
+    if (!tool) throw new Error(`unknown tool ${name}`);
+    const scope = (scopeSpaceIds ?? (await ctx.runQuery(internal.toolHarness.readableFor, { userId }))) as Id<"spaces">[];
+    return tool.prepare ? await tool.prepare({ ctx, userId, scopeSpaceIds: scope }, args ?? {}) : (args ?? {});
+  },
+});

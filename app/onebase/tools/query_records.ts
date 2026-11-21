@@ -1,6 +1,11 @@
 import { internal } from "../_generated/api";
 import type { AppTool } from "./types";
 
+/** A row as { column header: value }, in the set's column order. */
+export function byHeader(columns: { key: string; header: string }[], data: Record<string, unknown>) {
+  return Object.fromEntries(columns.map((c) => [c.header, data[c.key] ?? null]));
+}
+
 type Args = { recordSetId?: string; subjectRef?: string; filters?: Record<string, string | number | boolean>; limit?: number };
 
 /**
@@ -21,7 +26,7 @@ export const query_records: AppTool<Args> = {
     properties: {
       recordSetId: { type: "string" },
       subjectRef: { type: "string", description: "National id or employee number of the person to look up." },
-      filters: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] }, description: "column key or header -> value (text matches by substring)." },
+      filters: { type: "object", additionalProperties: { type: ["string", "number", "boolean"] }, description: "column header -> value (text matches by substring)." },
       limit: { type: "number", minimum: 1, maximum: 200 },
     },
   },
@@ -36,8 +41,18 @@ export const query_records: AppTool<Args> = {
       limit: typeof args.limit === "number" ? args.limit : undefined,
     });
     if (r.sets.length === 0) return { content: "لا توجد سجلات متاحة لك في نطاق هذه المحادثة.", spaceIds: [] };
+    // Rows by column header: keys of sets created from a file are generated (c1, c2…) and mean nothing to the model.
     return {
-      content: JSON.stringify(r.sets.map((s) => ({ recordSetId: s.recordSetId, name: s.setName, version: s.version, columns: s.columns, total: s.total, rows: s.rows }))),
+      content: JSON.stringify(
+        r.sets.map((s) => ({
+          recordSetId: s.recordSetId,
+          name: s.setName,
+          version: s.version,
+          columns: s.columns.map((c) => ({ header: c.header, type: c.type })),
+          total: s.total,
+          rows: s.rows.map((row) => ({ recordId: row.recordId, rowNo: row.rowNo, data: byHeader(s.columns, row.data) })),
+        })),
+      ),
       spaceIds: [...new Set(r.sets.map((s) => s.spaceId))],
     };
   },

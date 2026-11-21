@@ -10,6 +10,7 @@ import { update_artifact } from "./update_artifact";
 import { query_records } from "./query_records";
 import { my_records } from "./my_records";
 import { fill_template } from "./fill_template";
+import { propose_record_set } from "./propose_record_set";
 import { export_document } from "./export_document";
 import { query_source } from "./query_source";
 import { remember } from "./remember";
@@ -34,6 +35,8 @@ export const tools: Record<string, AppTool> = {
   query_records,
   my_records,
   fill_template,
+  // plans/17 §5: an Excel file in the chat becomes a record set (the server proposes, the user confirms)
+  propose_record_set,
   export_document,
   // Phase 5: sandbox analysis
   run_analysis: runAnalysisTool,

@@ -379,6 +379,75 @@ export const requestForUser = internalMutation({
   },
 });
 
+/**
+ * fill_template's template: its id, or its exact name (the model sees names, not ids) among the
+ * approved templates of spaces in the turn's scope the user can write in. No match, or more than
+ * one, is an error naming the templates there are.
+ */
+async function resolveTemplate(ctx: Ctx, userId: Id<"users">, scopeSpaceIds: string[], ref: string) {
+  const id = ctx.db.normalizeId("templates", ref);
+  if (id) return (await ctx.db.get(id)) ?? (await loadTemplate(ctx, ref));
+  const norm = (x: string) => x.trim().replace(/\s+/g, " ").replace(/[«»"]/g, "");
+  const usable = [];
+  for (const spaceId of scopeSpaceIds) {
+    const sid = ctx.db.normalizeId("spaces", spaceId);
+    if (!sid) continue;
+    try {
+      await assertCan(ctx, userId, sid, "write");
+    } catch {
+      continue;
+    }
+    for (const t of await ctx.db.query("templates").withIndex("by_space", (q) => q.eq("spaceId", sid)).collect()) if (t.approvedVersion) usable.push(t);
+  }
+  const hits = usable.filter((t) => norm(t.name) === norm(ref));
+  if (hits.length === 1) return hits[0]!;
+  const names = usable.map((t) => `«${t.name}»`).join("، ") || "لا توجد قوالب معتمدة في نطاق المحادثة";
+  throw new OneBaseError(hits.length > 1 ? `أكثر من قالب بهذا الاسم. القوالب المعتمدة: ${names}` : `لا يوجد قالب معتمد بهذا الاسم. القوالب المعتمدة: ${names}`);
+}
+
+/** fill_template for several records (up to 50): one draft each, existing ones returned. */
+export const requestManyForUser = internalMutation({
+  args: { userId: v.id("users"), scopeSpaceIds: v.array(v.string()), templateId: v.string(), recordIds: v.array(v.string()), threadId: v.optional(v.string()) },
+  handler: async (ctx, { userId, scopeSpaceIds, templateId, recordIds, threadId }) => {
+    const actor = await requireActor(ctx, userId);
+    if (recordIds.length > 50) throw new OneBaseError("الحد 50 سجلاً في المرة الواحدة");
+    const t = await resolveTemplate(ctx, userId, scopeSpaceIds, templateId);
+    const out: { documentId: Id<"issuedDocuments">; status: string; existing: boolean; serial: string | null }[] = [];
+    for (const recordId of new Set(recordIds)) {
+      const r = await requestDocument(ctx, actor, t._id, recordId, { scope: new Set(scopeSpaceIds), threadId, via: "agent" });
+      out.push({ documentId: r.documentId, status: r.status, existing: r.existing, serial: r.serial });
+    }
+    return out;
+  },
+});
+
+/**
+ * What fill_template's card shows: the template, whose records (the first field of each, e.g. the
+ * name), and how many already have a document from it (those are returned, not duplicated).
+ */
+export const fillSummary = internalQuery({
+  args: { userId: v.id("users"), scopeSpaceIds: v.array(v.string()), templateId: v.string(), recordIds: v.array(v.string()) },
+  handler: async (ctx, { userId, scopeSpaceIds, templateId, recordIds }) => {
+    await requireActor(ctx, userId);
+    const t = await resolveTemplate(ctx, userId, scopeSpaceIds, templateId);
+    await assertCan(ctx, userId, t.spaceId, "write");
+    if (!scopeSpaceIds.includes(t.spaceId)) throw new Denied();
+    const ids = [...new Set(recordIds)];
+    if (!t.approvedVersion) return { templateId: t._id, template: t.name, count: ids.length, people: [] as string[], existing: 0 };
+    const tv = await loadVersion(ctx, t._id, t.approvedVersion);
+    const first = tv.fieldsSchema[0] ? tv.dataBinding.fields[tv.fieldsSchema[0].key] : undefined;
+    const people: string[] = [];
+    for (const id of ids.slice(0, 5)) {
+      const rid = ctx.db.normalizeId("records", id);
+      const rec = rid ? await ctx.db.get(rid) : null;
+      if (rec && rec.recordSetId === tv.dataBinding.recordSetId && first) people.push(cellText(rec.data[first]));
+    }
+    const docs = await ctx.db.query("issuedDocuments").withIndex("by_space", (q) => q.eq("spaceId", t.spaceId)).collect();
+    const existing = new Set(docs.filter((d) => d.templateId === t._id && d.status !== "rejected" && ids.includes(d.recordId)).map((d) => d.recordId)).size;
+    return { templateId: t._id, template: t.name, count: ids.length, people, existing };
+  },
+});
+
 async function prepFor(ctx: Ctx, d: Doc<"issuedDocuments">) {
   const t = await ctx.db.get(d.templateId);
   if (!t) throw new Denied();

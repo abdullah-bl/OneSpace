@@ -1,5 +1,6 @@
 import { internal } from "../_generated/api";
 import type { AppTool } from "./types";
+import { byHeader } from "./query_records";
 
 /**
  * The user's own records (courses, certificates…). Takes no arguments at all: the identity is
@@ -18,8 +19,12 @@ export const my_records: AppTool<Record<string, never>> = {
     if (r.sets.length === 0 && r.documents.length === 0) return { content: "لا توجد سجلات باسمك." };
     return {
       content: JSON.stringify({
-        records: r.sets.map((s) => ({ name: s.setName, columns: s.columns, rows: s.rows.map((x) => x.data) })),
+        // Rows by column header (keys of sets created from a file are generated: c1, c2…).
+        records: r.sets.map((s) => ({ name: s.setName, from: s.spaceName, rows: s.rows.map((x) => byHeader(s.columns, x.data)) })),
         documents: r.documents.map((d) => ({ name: d.templateName, serial: d.serial, issuedAt: d.issuedAt ? new Date(d.issuedAt).toISOString().slice(0, 10) : null, verifyCode: d.verifyCode })),
+        note:
+          "Issued certificates are downloaded from the page «بياناتي» (link: #/me). " +
+          "A certificate that isn't issued yet is requested from the department the record comes from («from»): the assistant can't issue or request it for the employee.",
       }),
     };
   },
