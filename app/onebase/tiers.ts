@@ -7,14 +7,22 @@
 // The same placement rules run again when the tool executes (artifacts.place); this only decides
 // whether to ask first. Any doubt (unknown tool, an error resolving the target) means tier 2.
 
-import { v } from "onebase/values";
+import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalQuery, type QueryCtx } from "./_generated/server";
-import { actorFor, assertCan } from "./access";
+import { actorFor, assertCan, Denied } from "./access";
 import { homeSpaceOf, place, resolveSources, type SourceRef } from "./artifacts";
 import { placeForTier } from "./lists";
 
 export type Tier = 1 | 2 | 3;
+/**
+ * `refused`: the person can't do this at all, so chat.ts turns the call back to the model with the
+ * reason instead of showing a «نفّذ» card that could only fail. A denied target (read-only for them,
+ * or not there: one answer for both, so ids can't be probed) or a placement rule (a sensitive
+ * space's outputs stay in it, …).
+ */
+export type Resolution = Tier | { refused: string };
+export const READ_ONLY_REFUSAL = "الهدف غير موجود أو صلاحية الموظف عليه قراءة فقط";
 
 /** Tier-1 auto-run can be switched off for a deployment (TIER1_AUTORUN=0): everything asks again. */
 export const autoRunEnabled = () => process.env.TIER1_AUTORUN !== "0";
@@ -40,7 +48,7 @@ function refs(sources: unknown): SourceRef[] {
 
 export const resolve = internalQuery({
   args: { userId: v.id("users"), tool: v.string(), args: v.any(), scopeSpaceIds: v.array(v.string()), threadId: v.optional(v.string()) },
-  handler: async (ctx, { userId, tool, args, scopeSpaceIds, threadId }): Promise<Tier> => {
+  handler: async (ctx, { userId, tool, args, scopeSpaceIds, threadId }): Promise<Resolution> => {
     if (ALWAYS_OFFICIAL.has(tool)) return 3;
     const actor = await actorFor(ctx, userId);
     if (!actor) return 2;
@@ -117,7 +125,9 @@ export const resolve = internalQuery({
         default:
           return 2;
       }
-    } catch {
+    } catch (e) {
+      if (e instanceof Denied) return { refused: READ_ONLY_REFUSAL };
+      if (e instanceof OneBaseError) return { refused: e.message };
       return 2;
     }
   },

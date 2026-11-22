@@ -139,6 +139,26 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect(arts.some((a: any) => a.title === "حساس-TIER3")).toBe(false);
   }, 60_000);
 
+  test("a write the person can't do gets no «نفّذ» card: a reader is told, a member still gets the card", async () => {
+    const listId = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_plain, title: "قائمة-READER" }, tok("mgr")));
+    const agent = await publishedAgent(s, tok("admin"), cfg({ name: "مضيف صفوف", allowedTools: ["update_list"], maxSteps: 2, instructions: `CALL_TOOL update_list {"listId":"${listId}","add":[{"العنوان":"صف القارئ"}]}` }));
+    const r = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("rdr")));
+    await ask(s, tok("rdr"), r, "أضف صفاً");
+    expect(await proposalsOf(s, tok("rdr"), r)).toEqual([]);
+    const msgs = must(await s.call("query", "chat:messages", { threadId: r }, tok("rdr"))).messages;
+    const runs = msgs.filter((m: any) => m.role === "assistant").flatMap((m: any) => m.toolRuns);
+    expect(runs.some((t: any) => t.name === "update_list" && !t.ok && /قراءة فقط/.test(t.summary))).toBe(true);
+    // The model was told why, so it can say so (no card, nothing claimed as done).
+    expect(JSON.stringify(chatRequestsWith(ai, "أضف صفاً"))).toContain("لم يُقترح هذا الإجراء ولم يتغيّر شيء");
+    const list = must(await s.call("query", "lists:get", { listId }, tok("mgr")));
+    expect(list.rows.length).toBe(0);
+    // A member can write there: the same call is a card waiting for «نفّذ».
+    const m = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("mem")));
+    await ask(s, tok("mem"), m, "أضف صفاً");
+    const [p] = await proposalsOf(s, tok("mem"), m);
+    expect([p.tool, p.state, p.tier]).toEqual(["update_list", "pending", 2]);
+  }, 60_000);
+
   test("undo of an update restores the previous version as a new one", async () => {
     const art = must(await s.call("mutation", "artifacts:create", { title: "قابل للاسترجاع", kind: "markdown", content: "الأصل UNDO-ORIG" }, tok("mem"))).artifactId;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: await writer("محدّث-T4", `update_artifact {"artifactId":"${art}","content":"تعديل الوكيل UNDO-NEW"}`) }, tok("mem")));
@@ -162,12 +182,11 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect(shared.some((a: any) => a.title === "منقول-TIER5")).toBe(true);
   }, 30_000);
 
-  test("a reader's write never auto-runs into a space they only read", async () => {
+  test("a reader's write never runs into a space they only read (and gets no card that would fail)", async () => {
     const art = must(await s.call("mutation", "artifacts:create", { title: "للقراءة", kind: "markdown", content: "x", spaceId: f.spaces.S_plain }, tok("mgr"))).artifactId;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: await writer("قارئ-T6", `update_artifact {"artifactId":"${art}","content":"تغيير"}`) }, tok("rdr")));
     await ask(s, tok("rdr"), t, "عدّل");
-    const [p] = await proposalsOf(s, tok("rdr"), t);
-    expect(p.state).toBe("pending");
+    expect(await proposalsOf(s, tok("rdr"), t)).toEqual([]);
     expect(must(await s.call("mutation", "artifacts:open", { artifactId: art }, tok("mgr"))).content).toBe("x");
   }, 30_000);
 

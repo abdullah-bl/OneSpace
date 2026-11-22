@@ -212,9 +212,8 @@ describe.skipIf(!HAS_SANDBOX)("export_document tool (agent, after نفّذ)", ()
     const id = await publishedAgent(s, tok("admin"), cfg({ name: "مصدّر", allowedTools: ["export_document"], maxSteps: 2, instructions: call(`{"format":"pdf","artifactId":"${art}"}`) }));
     const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("rdr")));
     await ask(s, tok("rdr"), t, "صدّر المخرج");
-    const [p] = await proposalsOf(s, tok("rdr"), t);
-    const r = must(await s.call("action", "chat:confirmProposal", { proposalId: p.id }, tok("rdr")));
-    expect(r.ok).toBe(false);
+    // No card that could only fail at «نفّذ»: the model is told the space is read-only for them.
+    expect(await proposalsOf(s, tok("rdr"), t)).toEqual([]);
     const files = must(await s.call("query", "files:list", { spaceId: f.spaces.S_plain }, tok("mgr")));
     expect(files.some((x: any) => x.name === "للقارئ.pdf")).toBe(false);
   }, 60_000);

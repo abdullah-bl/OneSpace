@@ -47,7 +47,7 @@ import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
 import type { AppTool, Citation, ToolContext, ToolResult } from "./tools/types";
-import { autoRunEnabled, type Tier } from "./tiers";
+import { autoRunEnabled, type Resolution, type Tier } from "./tiers";
 import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
 import { listIndex, undoLists } from "./lists";
@@ -1973,7 +1973,15 @@ export const runTurn = internalAction({
             }
             // What the card must show and pin, filled in by the server (publish_output: version, grants).
             if (tool.prepare) (tc as { args: unknown }).args = await tool.prepare(tctx, tc.args as any).catch(() => tc.args);
-            let tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds, threadId: c.turn.threadId });
+            const resolved: Resolution = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds, threadId: c.turn.threadId });
+            // The person can't do this at all (a reader, a target that isn't there, a placement rule):
+            // no card that could only fail at «نفّذ»; the model hears why and tells them.
+            if (typeof resolved === "object") {
+              plans.push({ tc, tool, kind: "refused", content: refusedProposal(resolved.refused) });
+              toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: resolved.refused.slice(0, 200) });
+              continue;
+            }
+            let tier: Tier = resolved;
             // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
             // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
             if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
@@ -2091,6 +2099,15 @@ export function asksForSkill(question: string) {
   return /(مهار[ةه]|مهاراتي|\bskill\b|SKILL\.md)/i.test(question);
 }
 
+/** What the model hears when a write it asked for can't be done by this person at all (tiers.resolve). */
+export function refusedProposal(reason: string) {
+  return (
+    `لم يُقترح هذا الإجراء ولم يتغيّر شيء: ${reason}. ` +
+    "لا تعرض على الموظف بطاقة ولا تقل إنك نفّذته. أخبره بإيجاز أنه لا يستطيع ذلك هنا وبالسبب، " +
+    "واقترح البديل: أن يطلبه من مدير المساحة، أو أن تجهّز له ما يحتاجه في مساحته الخاصة."
+  );
+}
+
 export function pageScriptProblem(tool: string, args: unknown): string | null {
   const a = (args ?? {}) as Record<string, unknown>;
   const fix =
@@ -2190,7 +2207,7 @@ async function runPart(
           if (!offered.includes(tc.name)) return `الأداة ${tc.name} غير متاحة في هذا الجزء.`;
           const tool = registry[tc.name]!;
           if (tool.requiresConfirmation) {
-            const tier: Tier = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds, threadId: pc.turn.threadId });
+            const tier: Resolution = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds, threadId: pc.turn.threadId });
             if (tier !== 1 || !autoRunEnabled() || (tc.args as any)?.__invalid !== undefined) return "لا يُنفَّذ هذا الإجراء داخل جزء: يحتاج تأكيد الموظف. اكتب نتيجتك مما لديك.";
             if (sandboxRuns >= 2) return "بلغ هذا الجزء حدّ التشغيلات. اكتب نتيجتك مما لديك.";
             sandboxRuns++;
