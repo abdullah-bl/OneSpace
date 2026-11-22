@@ -48,7 +48,7 @@
 
 ### اللحظة 2 — تحليل الميزانية (محادثة جاهزة)
 - **افتح** محادثة هند المشتركة في «المالية والمشتريات» (تحليل الميزانية مقابل الفعلي 2025): نسبة التنفيذ لكل إدارة وبند، رسم أعمدة، ثم «ملخص تنفيذي — تنفيذ ميزانية 2025» في المخرجات. صدّره من لوحة المخرجات (تنزيل ← Word/PDF).
-- **لا تطلب التصدير من المحادثة:** البطاقة تصل بلا محتوى وتفشل عند «نفّذ» (انظر المشكلات).
+- **التصدير من المحادثة يعمل الآن:** «صدّر الملخص التنفيذي لتنفيذ ميزانية 2025 ملف Word.» ← بطاقة واحدة «حساس أو رسمي» ← «نفّذ» ← «ملخص تنفيذي — تنفيذ ميزانية 2025.docx» في المساحة (63 ث).
 - **تحقق قبل العرض:** الملخص يقول «6 بنود فوق 100%»، والبيانات بالبند فيها 4. صحّح الرقم في المخرج أو لا تقرأه بصوت عالٍ.
 
 ### اللحظة 3 — المؤشرات المتعثرة (13 ث + «نفّذ»)
@@ -81,11 +81,11 @@
 | 12 | office | القرارات المتأخرة من محضر لجنة الأداء | 19 ث | فشل: «لا أملك أداة لقراءة الملف» |
 | 13 | finance | قارئة في التخطيط: المبادرات المتأخرة + تعديل | 28 ث | جيد؛ لم يعدّل |
 | 14 | procure | تطبيق «حاسبة صلاحية الشراء» | 46 ث | فشل: «لم أجد» (لا تعرضه) |
-| 15 | finance | صدّر الملخص Word وPDF | 13 ث | فشل عند «نفّذ»: البطاقة بلا محتوى |
+| 15 | finance | صدّر الملخص Word | 63 ث + نفّذ | ممتاز بعد الإصلاح (كان يفشل: البطاقة بلا محتوى، ثم المعرّف في sources) |
 
 ## Issues found
 
-1. **`export_document` card with no content** (#15): the model proposed the export without `artifactId` or `content`; the card fails at «نفّذ» with «أرسل artifactId أو المحتوى». Same family as `run_analysis` without code (now turned back before the card); export needs the same check.
+1. **`export_document` card with no content** (#15) — fixed: the model now gets the outputs here with their ids («المخرجات هنا»), an export with neither an output nor content is turned back before the card, and a single output named in `sources` is taken as the one to export.
 2. **«لم أجد» / «no tool to read the file»** for questions over a docx in the strategy space (#10 report draft, #12 minutes): likely routed to an agent without `read_file`, or the minutes weren't found by search. Ask about the minutes by file name with @ in the demo, or avoid.
 3. **Reader refusal reason inaccurate** (#7): «رفضت الأداة… قراءة فقط» for an analysis whose output would have to stay in the sensitive space. No leak, but the wording confuses.
 4. **Chart not saved** (#9): the analysis computed the classification but saved no chart file; the answer says so honestly.
