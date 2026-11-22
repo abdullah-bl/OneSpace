@@ -544,6 +544,7 @@ export const readForTool = internalQuery({
       const lines = rows.slice(0, 500).map((r) => `| ${r._id}${mark(r)} | ${list.columns.map((c) => show(c, r.cells[c.key])).join(" | ")} |`);
       const replies = rows.some((r) => r.fromForm) ? `\n${REPLIES_NOTE}` : "";
       return {
+        spaceId: list.spaceId as string,
         text: `القائمة «${list.title}» (listId=${list._id}، في ${space.kind === "personal" ? "مساحتي" : `«${space.name}»`}، ${rows.length} صف)${list.description ? `\n${list.description}` : ""}${replies}\n${head}\n${lines.join("\n")}${rows.length > 500 ? `\n(و${rows.length - 500} صفاً آخر)` : ""}`,
       };
     }),

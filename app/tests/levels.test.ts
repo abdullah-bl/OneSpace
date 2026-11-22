@@ -8,7 +8,7 @@ import { ACTORS, buildFixture, type ActorKey, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
 import { waitIngest } from "./rag-helpers";
 import { chatRequestsWith } from "./agents-helpers";
-import { scrubIds } from "../onebase/chat";
+import { plainWording, scrubIds } from "../onebase/chat";
 
 let ai: FakeAI;
 let s: Server;
@@ -150,6 +150,14 @@ describe("answers never show internal ids", () => {
     expect(scrubIds("المصدر [1] و[12] (معرّف: ap7xqb5tfep392h9g4ge) هنا")).toBe("المصدر [1] و[12] هنا");
     expect(scrubIds("الطلب PO-5191 من administration [2]")).toBe("الطلب PO-5191 من administration [2]");
     expect(scrubIds("الملف k5fn9t5x28ag1awt هنا", ["k5fn9t5x28ag1awt"])).toBe("الملف  هنا");
+  });
+
+  test("«مقاطع/مقطع» never reaches the employee; video clips keep the word", () => {
+    expect(plainWording("وهي غير متوفرة في المقاطع المتاحة لديّ؛ أنصح بالتحقق")).toBe("وهي غير متوفرة في ملفاتك المتاحة؛ أنصح بالتحقق");
+    expect(plainWording("لم أجد في المقاطع ما يجيب")).toBe("لم أجد في الملفات ما يجيب");
+    expect(plainWording("بحسب المقطع [2] وللمقاطع الأخرى")).toBe("بحسب النص [2] وللملفات الأخرى");
+    expect(plainWording("أرفق مقطع فيديو أو المقاطع الصوتية")).toBe("أرفق مقطع فيديو أو المقاطع الصوتية");
+    expect(plainWording("مقاطعة الاجتماع والمقطعية")).toBe("مقاطعة الاجتماع والمقطعية");
   });
 
   test("a file id the model writes into its answer doesn't reach the saved answer", async () => {

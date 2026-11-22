@@ -17,3 +17,5 @@ deploy/models/
 
 # local bench runs (decision models)
 bench/run/
+app/onebase_gov_demo/
+app/.gov-demo-users.md

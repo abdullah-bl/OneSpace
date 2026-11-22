@@ -94,6 +94,21 @@ describe("router: one assistant, the skill is chosen per question", () => {
     expect(list).toContain("التحليل");
   }, 30_000);
 
+  test("a chat inside a space routes only to skills that can reach that space (no @ needed)", async () => {
+    // «السياسات» reads only the everyone space: inside S_plain it would answer «لم أجد».
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "ما سياسة التصعيد ROUTE-8" }, tok("mem")));
+    for (let i = 0; i < 200 && !routerListFor("ROUTE-8"); i++) await Bun.sleep(25);
+    const list = routerListFor("ROUTE-8")!;
+    expect(list).not.toContain("السياسات");
+    expect(list).toContain("المساعد العام");
+    // A free chat (no space) still offers it.
+    const free = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: free, text: "ما سياسة التصعيد ROUTE-9" }, tok("mem")));
+    for (let i = 0; i < 200 && !routerListFor("ROUTE-9"); i++) await Bun.sleep(25);
+    expect(routerListFor("ROUTE-9")).toContain("السياسات");
+  }, 30_000);
+
   test("the router never widens access: a routed skill still only searches what the user can read", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("out")));
     await ask(s, tok("out"), t, "SKILL=التحليل ما في CONTENT-S_sens ROUTE-7");
@@ -124,6 +139,71 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect(arts.some((a: any) => a.title === "حساس-TIER3")).toBe(false);
   }, 60_000);
 
+  test("a write the person can't do gets no «نفّذ» card: a reader is told, a member still gets the card", async () => {
+    const listId = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_plain, title: "قائمة-READER" }, tok("mgr")));
+    const agent = await publishedAgent(s, tok("admin"), cfg({ name: "مضيف صفوف", allowedTools: ["update_list"], maxSteps: 2, instructions: `CALL_TOOL update_list {"listId":"${listId}","add":[{"العنوان":"صف القارئ"}]}` }));
+    const r = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("rdr")));
+    await ask(s, tok("rdr"), r, "أضف صفاً");
+    expect(await proposalsOf(s, tok("rdr"), r)).toEqual([]);
+    const msgs = must(await s.call("query", "chat:messages", { threadId: r }, tok("rdr"))).messages;
+    const runs = msgs.filter((m: any) => m.role === "assistant").flatMap((m: any) => m.toolRuns);
+    expect(runs.some((t: any) => t.name === "update_list" && !t.ok && /قراءة فقط/.test(t.summary))).toBe(true);
+    // The model was told why, so it can say so (no card, nothing claimed as done).
+    expect(JSON.stringify(chatRequestsWith(ai, "أضف صفاً"))).toContain("لم يُقترح هذا الإجراء ولم يتغيّر شيء");
+    const list = must(await s.call("query", "lists:get", { listId }, tok("mgr")));
+    expect(list.rows.length).toBe(0);
+    // A member can write there: the same call is a card waiting for «نفّذ».
+    const m = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("mem")));
+    await ask(s, tok("mem"), m, "أضف صفاً");
+    const [p] = await proposalsOf(s, tok("mem"), m);
+    expect([p.tool, p.state, p.tier]).toEqual(["update_list", "pending", 2]);
+  }, 60_000);
+
+  test("data read from a sensitive space doesn't leave it: a reader gets no list; its manager gets a card", async () => {
+    // The demo leak: a reader of the sensitive HR space asked for names and salaries, and a list of
+    // them was created in their personal space at once (tier 1), with no card.
+    const call = `CALL_TOOL read_file {"fileId":"${f.files.S_sens}"}\nCALL_TOOL create_list {"title":"رواتب-LEAK","columns":[{"name":"الاسم","type":"text"}],"rows":[{"الاسم":"س"}]}`;
+    const agent = await publishedAgent(s, tok("admin"), cfg({ name: "ناسخ", allowedTools: ["read_file", "create_list"], maxSteps: 3, instructions: call }));
+    const r = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("rdr")));
+    await ask(s, tok("rdr"), r, "اعمل قائمة بالأسماء");
+    expect(await proposalsOf(s, tok("rdr"), r)).toEqual([]);
+    const runs = must(await s.call("query", "chat:messages", { threadId: r }, tok("rdr"))).messages.flatMap((m: any) => m.toolRuns ?? []);
+    expect(runs.some((t: any) => t.name === "create_list" && !t.ok && /الحساسة/.test(t.summary))).toBe(true);
+    const mine = JSON.stringify(must(await s.call("query", "lists:recent", {}, tok("rdr"))));
+    expect(mine).not.toContain("رواتب-LEAK");
+    // Its manager may move it out, but only with «نفّذ» (never auto-run into a personal space).
+    const m = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("mgr")));
+    await ask(s, tok("mgr"), m, "اعمل قائمة بالأسماء");
+    const [p] = await proposalsOf(s, tok("mgr"), m);
+    expect([p.tool, p.state, p.tier, p.auto]).toEqual(["create_list", "pending", 3, false]);
+    // Without reading the sensitive space, the same list in a personal space still runs at once.
+    const plain = await publishedAgent(s, tok("admin"), cfg({ name: "منشئ قوائم", allowedTools: ["create_list"], maxSteps: 2, instructions: `CALL_TOOL create_list {"title":"عادية-OK","columns":[{"name":"الاسم","type":"text"}]}` }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: plain }, tok("rdr")));
+    await ask(s, tok("rdr"), t, "اعمل قائمة");
+    const [q] = await proposalsOf(s, tok("rdr"), t);
+    expect([q.state, q.tier, q.auto]).toEqual(["executed", 1, true]);
+  }, 60_000);
+
+  test("the model is told the outputs here with their ids (an earlier answer's output can be exported)", async () => {
+    const mine = must(await s.call("mutation", "artifacts:create", { title: "ملخص-OUTIDX", kind: "markdown", content: "# ملخص" }, tok("mem"))).artifactId;
+    const shared = must(await s.call("mutation", "artifacts:create", { title: "مساحة-OUTIDX", kind: "markdown", content: "x", spaceId: f.spaces.S_plain }, tok("mgr"))).artifactId;
+    // A free chat: my own outputs, not a shared space's.
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    await ask(s, tok("mem"), t, "صدّر الملخص OUTIDX-1");
+    const free = JSON.stringify(chatRequestsWith(ai, "OUTIDX-1"));
+    expect(free).toContain("المخرجات هنا");
+    expect(free).toContain(`artifactId=${mine}`);
+    expect(free).not.toContain(shared);
+    // A chat inside the space: its outputs too.
+    const inSpace = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    await ask(s, tok("mem"), inSpace, "صدّر OUTIDX-2");
+    expect(JSON.stringify(chatRequestsWith(ai, "OUTIDX-2"))).toContain(`artifactId=${shared}`);
+    // Someone who can't read the space never sees it listed.
+    const o = must(await s.call("mutation", "chat:createThread", {}, tok("out")));
+    await ask(s, tok("out"), o, "صدّر OUTIDX-3");
+    expect(JSON.stringify(chatRequestsWith(ai, "OUTIDX-3"))).not.toContain(shared);
+  }, 60_000);
+
   test("undo of an update restores the previous version as a new one", async () => {
     const art = must(await s.call("mutation", "artifacts:create", { title: "قابل للاسترجاع", kind: "markdown", content: "الأصل UNDO-ORIG" }, tok("mem"))).artifactId;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: await writer("محدّث-T4", `update_artifact {"artifactId":"${art}","content":"تعديل الوكيل UNDO-NEW"}`) }, tok("mem")));
@@ -147,12 +227,11 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect(shared.some((a: any) => a.title === "منقول-TIER5")).toBe(true);
   }, 30_000);
 
-  test("a reader's write never auto-runs into a space they only read", async () => {
+  test("a reader's write never runs into a space they only read (and gets no card that would fail)", async () => {
     const art = must(await s.call("mutation", "artifacts:create", { title: "للقراءة", kind: "markdown", content: "x", spaceId: f.spaces.S_plain }, tok("mgr"))).artifactId;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: await writer("قارئ-T6", `update_artifact {"artifactId":"${art}","content":"تغيير"}`) }, tok("rdr")));
     await ask(s, tok("rdr"), t, "عدّل");
-    const [p] = await proposalsOf(s, tok("rdr"), t);
-    expect(p.state).toBe("pending");
+    expect(await proposalsOf(s, tok("rdr"), t)).toEqual([]);
     expect(must(await s.call("mutation", "artifacts:open", { artifactId: art }, tok("mgr"))).content).toBe("x");
   }, 30_000);
 
