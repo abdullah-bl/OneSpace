@@ -679,3 +679,28 @@ export const updateForUser = internalMutation({
     return await updateArtifact(ctx, actor, input, { scope: new Set(scopeSpaceIds), via: "agent" });
   },
 });
+
+const KIND_AR: Record<Doc<"artifacts">["kind"], string> = { markdown: "مستند", html: "صفحة", table: "جدول", app: "تطبيق" };
+
+/**
+ * One line per output of this chat and of the given spaces (the chat's space and my own), for the
+ * system prompt, like listIndex: without an artifactId the model can't export or update an output
+ * made in an earlier answer («صدّر الملخص الذي أنشأته» kept failing). Only spaces the turn may read.
+ */
+export async function outputIndex(ctx: QueryCtx, threadId: string, spaceIds: Id<"spaces">[]): Promise<string | null> {
+  const rows: { art: Doc<"artifacts">; where: string; here: boolean }[] = [];
+  for (const sid of spaceIds) {
+    const space = await ctx.db.get(sid);
+    if (!space) continue;
+    const where = space.kind === "personal" ? "مساحتي" : `«${space.name}»`;
+    for (const art of await ctx.db.query("artifacts").withIndex("by_space", (q) => q.eq("spaceId", sid)).order("desc").take(40))
+      rows.push({ art, where, here: art.sourceThreadId === threadId });
+  }
+  if (!rows.length) return null;
+  // This chat's outputs first, then the most recently changed.
+  rows.sort((a, b) => Number(b.here) - Number(a.here) || b.art.updatedAt - a.art.updatedAt);
+  const lines = rows
+    .slice(0, 15)
+    .map(({ art, where, here }) => `- «${art.title}» (artifactId=${art._id}، ${KIND_AR[art.kind]}، النسخة ${art.currentVersion}، في ${where}${here ? "، من هذه المحادثة" : ""})`);
+  return `المخرجات هنا (مستندات وجداول وصفحات محفوظة؛ لتصدير أحدها Word أو PDF مرّر artifactId إلى export_document، ولتعديله update_artifact، بدل كتابته من جديد):\n${lines.join("\n")}`;
+}

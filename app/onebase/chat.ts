@@ -47,8 +47,9 @@ import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
 import type { AppTool, Citation, ToolContext, ToolResult } from "./tools/types";
+import { exportTarget } from "./tools/export_document";
 import { autoRunEnabled, type Resolution, type Tier } from "./tiers";
-import { deleteArtifactRows, requireActor, updateArtifact } from "./artifacts";
+import { deleteArtifactRows, outputIndex, requireActor, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
 import { listIndex, undoLists } from "./lists";
 import { ownSkill, skillFilesText, skillIndex, undoSkills, type SkillFile } from "./skills";
@@ -1184,6 +1185,9 @@ export const turnContext = internalQuery({
       const listSpaces = [...new Set([here, personal?._id].filter((x): x is Id<"spaces"> => !!x && spaceIds.includes(x)))];
       const lists = await listIndex(ctx, turn.userId, listSpaces);
       if (lists) context.push(lists);
+      // Outputs, the same way: their ids, so an earlier answer's output can be exported or updated.
+      const outputs = await outputIndex(ctx, turn.threadId, listSpaces);
+      if (outputs) context.push(outputs);
     }
     // External data sources this employee may read (only if the agent and level allow the tool).
     if (levelTools(level, agentTools(agent.config)).includes("query_source")) {
@@ -2147,6 +2151,9 @@ export function pageScriptProblem(tool: string, args: unknown): string | null {
   // writes the code in this answer.
   if (tool === "run_analysis" && !(typeof a.code === "string" && a.code.trim()) && !(typeof a.skill === "string" && a.skill.trim()))
     return "لم يُقترح هذا: التحليل بلا كود. اكتب كود Python كاملاً في code (يقرأ الملفات من /input ويحفظ النتائج في /output)، مع fileIds، وأعد الاستدعاء في هذه الإجابة.";
+  // An export with neither the output to export nor content: same, it would only fail at «نفّذ».
+  if (tool === "export_document" && !exportTarget(a) && !(typeof a.content === "string" && a.content.trim()))
+    return "لم يُقترح هذا: التصدير بلا مخرج ولا محتوى. لتصدير مخرج موجود مرّر معرّفه في الحقل artifactId نفسه (من «المخرجات هنا»، لا في sources ولا بالعنوان)، أو اكتب النص كاملاً في content بصيغة Markdown مع title، وأعد الاستدعاء في هذه الإجابة.";
   if (tool === "run_analysis" && typeof a.code === "string" && /<script/i.test(a.code) && /\.html?\b/i.test(a.code)) return fix;
   if ((tool === "create_artifact" || tool === "update_artifact") && typeof a.content === "string" && /<script/i.test(a.content)) return fix;
   return null;

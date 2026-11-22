@@ -11,6 +11,7 @@ import { tools } from "../onebase/tools/index";
 import { ARTIFACT_CSP, buildSrcDoc, frameAttributes, SANDBOX, TABLE_TOOLS, TABLE_TOOLS_HASH } from "../src/sandbox";
 import { pageScriptProblem } from "../onebase/chat";
 import { summarize } from "../onebase/tools/run_analysis";
+import { exportTarget } from "../onebase/tools/export_document";
 
 let s: Server;
 let f: Fixture;
@@ -511,6 +512,25 @@ describe("✓ generated HTML can't reach the user's session or the network", () 
     expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], code: "   " })).toContain("بلا كود");
     expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], skill: "/تحليل", script: "script.py" })).toBeNull();
     expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], code: "import pandas as pd" })).toBeNull();
+  });
+
+  test("an export with neither an output nor content is sent back (it would fail at «نفّذ»)", () => {
+    expect(pageScriptProblem("export_document", { format: "docx" })).toContain("بلا مخرج ولا محتوى");
+    expect(pageScriptProblem("export_document", { format: "pdf", artifactId: " ", content: "" })).toContain("بلا مخرج ولا محتوى");
+    expect(pageScriptProblem("export_document", { format: "docx", artifactId: "a1" })).toBeNull();
+    expect(pageScriptProblem("export_document", { format: "docx", title: "ملخص", content: "# ملخص" })).toBeNull();
+    // Measured: the model passed the id it had as a single output in `sources`; that means "export it".
+    expect(pageScriptProblem("export_document", { format: "docx", sources: [{ type: "artifact", id: "a1" }] })).toBeNull();
+    expect(pageScriptProblem("export_document", { format: "docx", sources: [{ type: "artifact", id: "a1" }, { type: "artifact", id: "a2" }] })).toContain("بلا مخرج");
+    expect(pageScriptProblem("export_document", { format: "docx", title: "ملخص تنفيذي" })).toContain("لا في sources ولا بالعنوان");
+  });
+
+  test("exportTarget: artifactId, else one output in sources when there's no content to write", () => {
+    expect(exportTarget({ artifactId: " a1 " })).toBe("a1");
+    expect(exportTarget({ sources: [{ type: "artifact", id: "a2" }] })).toBe("a2");
+    expect(exportTarget({ sources: [{ type: "file", id: "f1" }] })).toBe("");
+    // With content, the sources are what it was built from, not the thing to export.
+    expect(exportTarget({ content: "# نص", sources: [{ type: "artifact", id: "a2" }] })).toBe("");
   });
 
   test("a run that saved nothing says so (the model mustn't claim it made a page)", () => {

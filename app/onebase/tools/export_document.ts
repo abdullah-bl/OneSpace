@@ -13,6 +13,18 @@ type Args = {
 };
 
 /**
+ * The output to export: `artifactId`, or, with no content to write, a single output named in
+ * `sources` (measured: the model kept passing the id it had as {type:"artifact"} in sources).
+ */
+export function exportTarget(a: unknown): string {
+  const x = (a ?? {}) as Partial<Args>;
+  if (typeof x.artifactId === "string" && x.artifactId.trim()) return x.artifactId.trim();
+  if (typeof x.content === "string" && x.content.trim()) return "";
+  const arts = Array.isArray(x.sources) ? x.sources.filter((s) => s && s.type === "artifact" && typeof s.id === "string" && s.id.trim()) : [];
+  return arts.length === 1 ? arts[0]!.id.trim() : "";
+}
+
+/**
  * Word / PDF / PowerPoint files. The model writes Markdown (or names an existing output) and the
  * renderer lays it out (sandbox, Arabic right-to-left): the model never writes python-docx code.
  * The Markdown is kept as an output, so the user can edit it and export again.
@@ -32,7 +44,7 @@ export const export_document: AppTool<Args> = {
     required: ["format"],
     properties: {
       format: { type: "string", enum: DOC_FORMATS },
-      artifactId: { type: "string", description: "An existing output to export." },
+      artifactId: { type: "string", description: "An existing output to export (its id from «المخرجات هنا» in the prompt, or from the result that created it)." },
       title: { type: "string", maxLength: 200 },
       content: { type: "string", description: "Markdown content (when not exporting an existing output)." },
       sources: {
@@ -44,7 +56,7 @@ export const export_document: AppTool<Args> = {
   async run(t, args) {
     const format = args?.format;
     if (!DOC_FORMATS.includes(format)) throw new OneBaseError("الصيغة يجب أن تكون docx أو pdf أو pptx");
-    let artifactId = typeof args.artifactId === "string" ? args.artifactId.trim() : "";
+    let artifactId = exportTarget(args);
     const created = !artifactId;
     const spaceIds: string[] = [];
     if (!artifactId) {

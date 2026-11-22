@@ -13,6 +13,7 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan, Denied, roleAllows, spaceRoleOf } from "./access";
 import { homeSpaceOf, place, resolveSources, type SourceRef } from "./artifacts";
 import { placeForTier } from "./lists";
+import { exportTarget } from "./tools/export_document";
 
 export type Tier = 1 | 2 | 3;
 /**
@@ -133,7 +134,7 @@ export const resolve = internalQuery({
             return at(await placeForTier(ctx, userId, threadId, scopeSpaceIds), false);
           }
           case "export_document":
-            if (a.artifactId) return await artifactTier(ctx, userId, a.artifactId, at);
+            if (exportTarget(a)) return await artifactTier(ctx, userId, exportTarget(a), at);
           // falls through: a new output from Markdown is placed like create_artifact (no explicit space)
           case "create_artifact": {
             const { sources, sensitiveOrigins } = await resolveSources(ctx, actor, refs(a.sources), scope);

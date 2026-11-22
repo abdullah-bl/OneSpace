@@ -184,6 +184,26 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect([q.state, q.tier, q.auto]).toEqual(["executed", 1, true]);
   }, 60_000);
 
+  test("the model is told the outputs here with their ids (an earlier answer's output can be exported)", async () => {
+    const mine = must(await s.call("mutation", "artifacts:create", { title: "ملخص-OUTIDX", kind: "markdown", content: "# ملخص" }, tok("mem"))).artifactId;
+    const shared = must(await s.call("mutation", "artifacts:create", { title: "مساحة-OUTIDX", kind: "markdown", content: "x", spaceId: f.spaces.S_plain }, tok("mgr"))).artifactId;
+    // A free chat: my own outputs, not a shared space's.
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    await ask(s, tok("mem"), t, "صدّر الملخص OUTIDX-1");
+    const free = JSON.stringify(chatRequestsWith(ai, "OUTIDX-1"));
+    expect(free).toContain("المخرجات هنا");
+    expect(free).toContain(`artifactId=${mine}`);
+    expect(free).not.toContain(shared);
+    // A chat inside the space: its outputs too.
+    const inSpace = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    await ask(s, tok("mem"), inSpace, "صدّر OUTIDX-2");
+    expect(JSON.stringify(chatRequestsWith(ai, "OUTIDX-2"))).toContain(`artifactId=${shared}`);
+    // Someone who can't read the space never sees it listed.
+    const o = must(await s.call("mutation", "chat:createThread", {}, tok("out")));
+    await ask(s, tok("out"), o, "صدّر OUTIDX-3");
+    expect(JSON.stringify(chatRequestsWith(ai, "OUTIDX-3"))).not.toContain(shared);
+  }, 60_000);
+
   test("undo of an update restores the previous version as a new one", async () => {
     const art = must(await s.call("mutation", "artifacts:create", { title: "قابل للاسترجاع", kind: "markdown", content: "الأصل UNDO-ORIG" }, tok("mem"))).artifactId;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: await writer("محدّث-T4", `update_artifact {"artifactId":"${art}","content":"تعديل الوكيل UNDO-NEW"}`) }, tok("mem")));
