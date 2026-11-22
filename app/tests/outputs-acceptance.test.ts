@@ -506,6 +506,13 @@ describe("✓ generated HTML can't reach the user's session or the network", () 
     expect(pageScriptProblem("search_documents", { query: "<script>" })).toBeNull();
   });
 
+  test("an analysis with no code and no skill script is sent back (it would fail at «نفّذ»)", () => {
+    expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], timeoutSeconds: 120 })).toContain("بلا كود");
+    expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], code: "   " })).toContain("بلا كود");
+    expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], skill: "/تحليل", script: "script.py" })).toBeNull();
+    expect(pageScriptProblem("run_analysis", { fileIds: ["f1"], code: "import pandas as pd" })).toBeNull();
+  });
+
   test("a run that saved nothing says so (the model mustn't claim it made a page)", () => {
     const base = { runId: "r1", ok: true, exitCode: 0, timedOut: false, oomKilled: false, stdout: "(240, 8)", stderr: "", targetSpaceId: "s", targetName: "م", inputSpaceIds: [], inputs: [{ fileId: "f", name: "employees.csv" }], outputs: [], artifactIds: [] } as any;
     expect(summarize(base)).toContain("لم يُحفظ أي ملف");

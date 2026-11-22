@@ -94,6 +94,21 @@ describe("router: one assistant, the skill is chosen per question", () => {
     expect(list).toContain("التحليل");
   }, 30_000);
 
+  test("a chat inside a space routes only to skills that can reach that space (no @ needed)", async () => {
+    // «السياسات» reads only the everyone space: inside S_plain it would answer «لم أجد».
+    const t = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain, shared: false }, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "ما سياسة التصعيد ROUTE-8" }, tok("mem")));
+    for (let i = 0; i < 200 && !routerListFor("ROUTE-8"); i++) await Bun.sleep(25);
+    const list = routerListFor("ROUTE-8")!;
+    expect(list).not.toContain("السياسات");
+    expect(list).toContain("المساعد العام");
+    // A free chat (no space) still offers it.
+    const free = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: free, text: "ما سياسة التصعيد ROUTE-9" }, tok("mem")));
+    for (let i = 0; i < 200 && !routerListFor("ROUTE-9"); i++) await Bun.sleep(25);
+    expect(routerListFor("ROUTE-9")).toContain("السياسات");
+  }, 30_000);
+
   test("the router never widens access: a routed skill still only searches what the user can read", async () => {
     const t = must(await s.call("mutation", "chat:createThread", {}, tok("out")));
     await ask(s, tok("out"), t, "SKILL=التحليل ما في CONTENT-S_sens ROUTE-7");

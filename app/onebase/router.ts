@@ -96,6 +96,13 @@ export const candidates = internalQuery({
         if (!agentTools(a.live).some((t) => FILE_TOOLS.includes(t))) continue;
         const scope = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId as Id<"users">, a.live.dataScope, meta.scope), mentions);
         if (!scope.spaceIds.length) continue;
+      } else if (meta.scope.kind !== "all" && agentTools(a.live).some((t) => FILE_TOOLS.includes(t))) {
+        // A chat inside a space (or on one file) points at that data without naming it: a skill that
+        // reads files but whose scope can't reach it would answer «لم أجد» (measured on the demo:
+        // policy-sounding questions in «خدمة المستفيدين» went to «السياسات», which reads only the
+        // everyone-space). Skills with no file tools (writing, translation) stay candidates.
+        const scope = await effectiveScope(ctx, turn.userId as Id<"users">, a.live.dataScope, meta.scope);
+        if (!scope.spaceIds.length) continue;
       }
       out.push({
         agentId: a._id,
