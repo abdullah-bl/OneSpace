@@ -20,6 +20,8 @@ export const CHARS_PER_TOKEN = 3;
 /** A message longer than this goes into the history cut, with a note; the chat keeps it whole. */
 export const LONG_MESSAGE_CHARS = 6000;
 export const SUMMARY_MAX_CHARS = 4000;
+/** How much of each message a fold sends to the summary model. */
+const FOLD_MESSAGE_CHARS = 2500;
 const ITEM_CHARS = 300;
 const MAX_ITEMS = 20;
 
@@ -55,6 +57,22 @@ export function historyWindow(lengths: number[], lastUser: number, covered: numb
   // catches up, within maxLag.
   const start = Math.min(windowStart, Math.max(covered, end - maxLag));
   return { start, windowStart, foldTo: windowStart };
+}
+
+/**
+ * Where one fold stops (plans/18): the oldest messages from `from` that fit `maxChars` as they are
+ * sent, never past `to`, and at least one so the summary always moves forward.
+ */
+export function foldUpTo(lengths: number[], from: number, to: number, maxChars: number): number {
+  let end = from;
+  let used = 0;
+  while (end < to) {
+    const n = Math.min(lengths[end] ?? 0, FOLD_MESSAGE_CHARS);
+    if (end > from && used + n > maxChars) break;
+    used += n;
+    end++;
+  }
+  return end;
 }
 
 const clean = (s: unknown, n = ITEM_CHARS) =>
@@ -105,7 +123,7 @@ export const SUMMARY_SCHEMA = {
 
 /** The messages for one fold: the previous summary (reviewed by the user or not) and what left the window. */
 export function summaryPrompt(prev: SummarySections | null, edited: boolean, msgs: HistoryMsg[]): { role: "system" | "user"; content: string }[] {
-  const convo = msgs.map((m) => `${m.role === "user" ? "الموظف" : "المساعد"}: ${m.text.slice(0, 2500)}`).join("\n\n");
+  const convo = msgs.map((m) => `${m.role === "user" ? "الموظف" : "المساعد"}: ${m.text.slice(0, FOLD_MESSAGE_CHARS)}`).join("\n\n");
   const system = [
     "أنت تحدّث ملخص محادثة طويلة بين موظف ومساعد، ليتابعها المساعد دون أن يرى رسائلها القديمة.",
     "ادمج الملخص السابق مع الرسائل الجديدة في أقسام:",

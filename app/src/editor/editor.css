@@ -1,0 +1,37 @@
+/* The document as it's edited (plans/19): close to the preview and the Word file. */
+.doc-editor { min-height: 100%; padding: 20px 24px 64px; font-size: 16px; line-height: 1.9; outline: none; overflow-wrap: anywhere; white-space: pre-wrap; }
+.doc-editor > * + * { margin-top: 0.7em; }
+.doc-editor :is(p, h1, h2, h3, h4, h5, h6) { text-align: start; }
+.doc-editor :is(h1, h2, h3, h4, h5, h6) { font-weight: 700; line-height: 1.45; }
+.doc-editor > :is(h1, h2, h3, h4, h5, h6):not(:first-child) { margin-top: 1.2em; }
+.doc-editor h1 { font-size: 24px; }
+.doc-editor h2 { font-size: 20px; }
+.doc-editor h3 { font-size: 17px; }
+.doc-editor strong { font-weight: 700; }
+.doc-editor em { font-style: italic; }
+.doc-editor s { text-decoration: line-through; }
+.doc-editor a { color: var(--color-primary); text-decoration: underline; text-underline-offset: 3px; cursor: text; }
+.doc-editor ul:not([data-type="taskList"]) { list-style: disc; padding-inline-start: 1.5em; }
+.doc-editor ol { list-style: decimal; padding-inline-start: 1.7em; }
+.doc-editor li + li { margin-top: 0.2em; }
+.doc-editor ul[data-type="taskList"] { list-style: none; padding: 0; }
+.doc-editor ul[data-type="taskList"] li { display: flex; gap: 0.5em; }
+.doc-editor ul[data-type="taskList"] li > label { flex: none; user-select: none; }
+.doc-editor ul[data-type="taskList"] li > div { min-width: 0; flex: 1; }
+.doc-editor ul[data-type="taskList"] input { width: 16px; height: 16px; accent-color: var(--color-primary); }
+.doc-editor blockquote { border-inline-start: 3px solid var(--color-control); padding-inline-start: 0.9em; color: var(--color-muted); }
+.doc-editor code { border-radius: 4px; background: var(--color-raised); padding: 0.1em 0.35em; font-family: var(--font-mono); font-size: 0.88em; }
+.doc-editor pre { overflow-x: auto; border: 1px solid var(--color-line); border-radius: 8px; background: var(--color-sunken); padding: 12px; direction: ltr; text-align: left; }
+.doc-editor pre code { background: none; padding: 0; }
+.doc-editor hr { border: 0; border-top: 1px solid var(--color-control); margin-block: 1.2em; }
+.doc-editor hr.ProseMirror-selectednode { border-top-color: var(--color-primary); }
+.doc-editor .tableWrapper { overflow-x: auto; }
+.doc-editor table { border-collapse: collapse; min-width: 50%; font-size: 14px; }
+.doc-editor :is(th, td) { position: relative; min-width: 80px; border: 1px solid var(--color-control); padding: 6px 10px; text-align: start; vertical-align: top; }
+.doc-editor :is(th, td)[style*="text-align"] p { text-align: inherit; }
+.doc-editor th { background: var(--color-sunken); font-weight: 600; }
+.doc-editor .selectedCell::after { content: ""; position: absolute; inset: 0; background: var(--color-primary-soft); opacity: 0.6; pointer-events: none; }
+.doc-kept { border: 1px dashed var(--color-control); border-radius: 8px; padding: 8px 12px; white-space: normal; cursor: default; }
+.doc-kept.ProseMirror-selectednode { outline: 2px solid var(--color-primary); }
+.doc-kept-label { margin-bottom: 4px; color: var(--color-muted); font-size: 12px; user-select: none; }
+.doc-kept img { display: block; max-width: 100%; }

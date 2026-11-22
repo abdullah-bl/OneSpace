@@ -20,6 +20,7 @@
 
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import { threadMessages } from "./lib/threadMessages";
 import { internal } from "./_generated/api";
 import { internalAction, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, isSharedThread, readableSpaceIds, requireActive, threadAllows } from "./access";
@@ -342,8 +343,7 @@ export const suggestInput = internalQuery({
     // A shared chat holds several people's messages: none of them is "the person's own" (plans/14).
     if (!meta || meta.scheduleId || isSharedThread(meta) || !(await memoryOn(ctx, meta.userId, meta))) return null;
     if (await sensitiveOrigin(ctx, meta)) return null;
-    const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const asked = page.page.filter((m) => m.role === "user" && m.text).map((m) => m.text!);
+    const asked = (await threadMessages(ctx, threadId)).filter((m) => m.role === "user" && m.text).map((m) => m.text!);
     const from = meta.memoryScannedAt ?? 0;
     if (asked.length - from < SUGGEST_EVERY) return null;
     const known = (await ctx.db.query("memories").withIndex("by_owner", (q) => q.eq("ownerId", meta.userId)).collect()).map((m) => m.text);

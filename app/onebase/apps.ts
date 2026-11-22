@@ -13,7 +13,7 @@ import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { assertCan, Denied, requireActive } from "./access";
-import { insertArtifact, place, requireActor } from "./artifacts";
+import { assertVersion, insertArtifact, place, requireActor } from "./artifacts";
 import { writeAudit } from "./audit";
 import { appendFromForm, cleanListCells, listPeople, placeForTier } from "./lists";
 import { findColumn, hashToken, newToken, publicAllowed, publishOrigin, readerMay } from "./publications";
@@ -146,6 +146,7 @@ export const writeFromTool = internalMutation({
     files: v.record(v.string(), v.union(v.string(), v.null())),
     data: v.optional(v.record(v.string(), v.any())),
     fromSkill: v.optional(v.string()),
+    expectVersion: v.optional(v.number()),
   },
   handler: async (ctx, a) => {
     const actor = await requireActor(ctx, a.userId);
@@ -155,6 +156,7 @@ export const writeFromTool = internalMutation({
         const art = await appOf(ctx, a.appId);
         const { space } = await assertCan(ctx, a.userId, art.spaceId, "write");
         if (space.kind !== "personal" && !scope.has(space._id)) throw new Denied();
+        assertVersion(art, a.expectVersion);
         const cur = (await appVersion(ctx, art._id, art.currentVersion)) ?? { files: {}, data: {} };
         const files = applyFiles(cur.files, a.files);
         const data = a.data ? await resolveGrants(ctx, a.userId, art.spaceId, a.data as Record<string, GrantInput>) : cur.data;

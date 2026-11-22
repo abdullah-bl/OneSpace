@@ -155,3 +155,31 @@
 .md .cite-unrelated:hover, .md .cite-contradicts:hover { filter: brightness(0.96); background-image: none; }
 .caret > :last-child::after { content: ""; display: inline-block; width: 7px; height: 1.1em; margin-inline-start: 2px; background: var(--color-primary); vertical-align: -3px; animation: blink 1s steps(2) infinite; }
 @keyframes blink { 50% { opacity: 0; } }
+
+/* Slide decks (src/SlidesView.tsx): reveal.js layout, our type and colours. Slides are white with
+   ink text and the one blue accent, like the rest of the app, in and out of full screen. */
+.os-deck .reveal { font-family: var(--font-sans); font-size: 40px; color: var(--color-ink); background: var(--color-surface); direction: rtl; }
+.os-deck .reveal .slides { text-align: start; }
+.os-deck .reveal .slides section { line-height: 1.55; }
+.os-deck .reveal h1, .os-deck .reveal h2, .os-deck .reveal h3 { font-weight: 700; line-height: 1.25; margin: 0 0 0.6em; letter-spacing: 0; }
+.os-deck .reveal h1 { font-size: 2.1em; color: var(--color-primary); }
+.os-deck .reveal h2 { font-size: 1.5em; }
+.os-deck .reveal h3 { font-size: 1.15em; color: var(--color-muted); }
+.os-deck .reveal p { margin: 0 0 0.6em; }
+.os-deck .reveal ul, .os-deck .reveal ol { margin: 0 1.2em 0 0; padding: 0; }
+.os-deck .reveal ul { list-style: disc; }
+.os-deck .reveal ol { list-style: decimal; }
+.os-deck .reveal li { margin: 0.25em 0; }
+.os-deck .reveal li::marker { color: var(--color-primary); }
+.os-deck .reveal strong { font-weight: 700; }
+.os-deck .reveal a { color: var(--color-primary); text-decoration: underline; }
+.os-deck .reveal table { border-collapse: collapse; font-size: 0.7em; margin: 0.4em 0; }
+.os-deck .reveal th, .os-deck .reveal td { border: 1px solid var(--color-line); padding: 0.3em 0.7em; text-align: start; }
+.os-deck .reveal th { background: var(--color-sunken); font-weight: 700; }
+.os-deck .reveal blockquote { border-inline-start: 4px solid var(--color-primary); padding-inline-start: 0.8em; color: var(--color-muted); margin: 0.5em 0; }
+.os-deck .reveal pre { font-family: var(--font-mono); font-size: 0.5em; background: var(--color-sunken); padding: 0.8em; border-radius: 8px; direction: ltr; text-align: left; white-space: pre-wrap; }
+.os-deck .reveal code { font-family: var(--font-mono); font-size: 0.85em; }
+.os-deck .reveal .controls { color: var(--color-primary); }
+.os-deck .reveal .progress { color: var(--color-primary); height: 4px; }
+.os-deck .reveal .slide-number { font-family: var(--font-sans); background: transparent; color: var(--color-faint); font-size: 14px; }
+.os-deck .reveal .slide-number a { color: inherit; text-decoration: none; }

@@ -4,6 +4,18 @@
 import type { SVGProps } from "react";
 
 const PATHS: Record<string, string> = {
+  undo: "M9 5L4 10l5 5M4 10h10a6 6 0 0 1 0 12h-2",
+  redo: "M15 5l5 5-5 5M20 10H10a6 6 0 0 0 0 12h2",
+  bold: "M7 4h6a4 4 0 0 1 0 8H7zM7 12h7a4 4 0 0 1 0 8H7z",
+  italic: "M10 4h8M6 20h8M14 4l-4 16",
+  strike: "M4 12h16M16 7c0-2-2-3-4-3s-4 1-4 3c0 5 9 3 9 9 0 2-2 4-5 4s-5-2-5-4",
+  bullets: "M4 6h12M4 12h12M4 18h12M20 6h.01M20 12h.01M20 18h.01",
+  numbers: "M4 6h11M4 12h11M4 18h11M19 4h1v5M18.5 15h2l-2 5h2.5",
+  indent: "M4 5h16M4 19h16M4 12h9M20 9l-3 3 3 3",
+  outdent: "M4 5h16M4 19h16M4 12h9M17 9l3 3-3 3",
+  quote: "M19 4v16M15 7H4M15 12H4M15 17H8",
+  link: "M10 14a4 4 0 0 0 6 0l4-4a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-4 4a4 4 0 0 0 6 6l1-1",
+  rule: "M4 12h16",
   plus: "M12 5v14M5 12h14",
   chat: "M4 5h16v11H9l-5 4z",
   folder: "M3 6h6l2 2h10v11H3z",

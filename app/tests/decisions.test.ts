@@ -15,6 +15,7 @@ import { decide, matchesSchema } from "../onebase/ai";
 import { checkCites, citePairs, guardText, missingNumber, routeTurn } from "../onebase/decisions";
 import { STEERING_NOTE } from "../onebase/chat";
 import { REPLY_STEERING } from "../onebase/lists";
+import { SHEET_NOTE } from "../onebase/lib/extract";
 
 let ai: FakeAI;
 let dec: FakeDecide;
@@ -378,6 +379,15 @@ describe("guard", () => {
     const reqs = ai.requests.filter((r) => r.path === "/v1/chat/completions" && JSON.stringify(r.body.messages).includes("GUARDFILE-7") && r.body.stream);
     expect(reqs.length).toBeGreaterThan(0);
     expect(JSON.stringify(reqs.at(-1)!.body.messages)).toContain(STEERING_NOTE);
+  }, 30_000);
+
+  test("a spreadsheet: the note indexing writes is not screened, the file's own headers are", async () => {
+    const fileId = await addBytes(a, tok(fa, "mgr"), fa.spaces.S_plain, "guard-sheet.csv", "الاسم,GUARDSHEET-3\nأحمد,5", "text/csv");
+    await waitIngest(a, tok(fa, "mgr"), fa.spaces.S_plain, fileId);
+    const screened = () => dec.requests.map((r) => JSON.stringify(r.body)).find((t) => t.includes("You screen text") && t.includes("GUARDSHEET-3"));
+    for (let i = 0; i < 100 && !screened(); i++) await Bun.sleep(50);
+    expect(screened()).toBeDefined();
+    expect(screened()).not.toContain(SHEET_NOTE);
   }, 30_000);
 
   test("a form reply: the row gets the badge and read_list shows it as data", async () => {

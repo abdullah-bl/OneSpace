@@ -33,6 +33,7 @@ export const write_app: AppTool<Args> = {
   name: "write_app",
   label: "يكتب ملفات التطبيق…",
   requiresConfirmation: true,
+  edits: (a) => (a?.appId ? String(a.appId) : null),
   description:
     "Builds a small web app that people open from a link: a quiz or placement test, survey, registration, calculator, booking or sign-up, checklist, any interactive page. " +
     "Use it (not create_artifact, not a form) whenever people must answer, enter, choose or compute something. Work like a developer: " +
@@ -80,6 +81,7 @@ export const write_app: AppTool<Args> = {
       ...(a?.title ? { title: String(a.title) } : {}),
       files,
       ...(a?.data && typeof a.data === "object" ? { data: a.data } : {}),
+      ...(t.expectVersion !== undefined ? { expectVersion: t.expectVersion } : {}),
       ...(a?.fromSkill ? { fromSkill: String(a.fromSkill).slice(0, 60) } : {}),
     });
     if (!r.ok) throw new Error(r.error);
@@ -98,6 +100,7 @@ export const write_app: AppTool<Args> = {
       display: r.created ? `أُنشئ التطبيق «${a?.title ?? ""}» (${r.files.length} ملفات).` : `حُدّث التطبيق (النسخة ${r.version}، ${Object.keys(files).length} ملفات).`,
       artifactIds: [r.artifactId],
       spaceIds: [r.spaceId],
+      version: r.version,
       undo: r.created ? { deleteArtifacts: [r.artifactId] } : { restore: { artifactId: r.artifactId, version: r.previous } },
     };
   },

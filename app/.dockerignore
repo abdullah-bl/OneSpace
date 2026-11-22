@@ -6,3 +6,6 @@ bench
 tests
 .env*
 *.log
+onebase_gov_demo*
+.demo-users.md
+.gov-demo-users.md

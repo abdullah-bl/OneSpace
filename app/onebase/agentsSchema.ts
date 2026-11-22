@@ -90,6 +90,7 @@ export const agentsTables = {
     auto: v.optional(v.boolean()), // ran without «نفّذ» (tier 1); «تراجع» can reverse it
     undo: v.optional(v.any()), // ToolResult.undo, set by server code only
     undoneAt: v.optional(v.number()),
+    baseVersion: v.optional(v.number()), // plans/18: the version of the output this edit is based on, set by server code only
   })
     .index("by_thread", ["threadId", "createdAt"])
     .index("by_message", ["messageId"]),

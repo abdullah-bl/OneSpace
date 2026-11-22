@@ -222,13 +222,13 @@ describe.skipIf(!HAS_SANDBOX)("export_document tool (agent, after نفّذ)", ()
 describe("editing an output", () => {
   test("each save is a new version; tables can't be edited as text; readers can't edit", async () => {
     const id = await markdownArtifact(tok("mgr"), "قابل للتعديل", "# الأولى", f.spaces.S_plain);
-    must(await s.call("mutation", "artifacts:edit", { artifactId: id, content: "# الثانية" }, tok("mgr")));
+    must(await s.call("mutation", "artifacts:edit", { artifactId: id, content: "# الثانية", baseVersion: 1 }, tok("mgr")));
     const v = must(await s.call("query", "artifacts:versions", { artifactId: id }, tok("mgr")));
     expect(v.artifact.currentVersion).toBe(2);
     expect(must(await s.call("mutation", "artifacts:open", { artifactId: id, version: 1 }, tok("mgr"))).content).toBe("# الأولى");
     expect(must(await s.call("mutation", "artifacts:open", { artifactId: id }, tok("mgr"))).content).toBe("# الثانية");
-    expect((await s.call("mutation", "artifacts:edit", { artifactId: id, content: "x" }, tok("rdr"))).ok).toBe(false);
+    expect((await s.call("mutation", "artifacts:edit", { artifactId: id, content: "x", baseVersion: 2 }, tok("rdr"))).ok).toBe(false);
     const table = must(await s.call("mutation", "artifacts:create", { title: "ج", kind: "table", content: JSON.stringify({ columns: ["a"], rows: [["b"]] }) }, tok("mem"))).artifactId;
-    expect((await s.call("mutation", "artifacts:edit", { artifactId: table, content: "x" }, tok("mem"))).ok).toBe(false);
+    expect((await s.call("mutation", "artifacts:edit", { artifactId: table, content: "x", baseVersion: 1 }, tok("mem"))).ok).toBe(false);
   });
 });

@@ -1,0 +1,33 @@
+# The government demo (app/scripts/gov-demo) on Fly.io, separate from onespace-app.
+# Run from app/ so the build context is the app:
+#   cd app && flyctl deploy . --config ../deploy/fly/gov-demo.fly.toml
+# Data: the demo's data directory is restored once through /data/restore.tgz (scripts/docker-start.sh).
+# Models come from the providers saved in that data (إدارة المنصة → مزوّدو النماذج), not from env.
+# Not on Fly: analysis (the sandbox runner needs Docker) and publishing (needs a second origin).
+
+app = "onespace-gov-demo"
+primary_region = "fra"
+
+[build]
+  dockerfile = "../../app/Dockerfile"
+
+[env]
+  ONEBASE_DATA = "/data"
+  PORT = "8090"
+  ONEBASE_URL = "https://onespace-gov-demo.fly.dev"
+  APP_ORIGIN = "https://onespace-gov-demo.fly.dev"
+
+[[mounts]]
+  source = "gov_demo_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8090
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+[[vm]]
+  size = "shared-cpu-2x"
+  memory = "2gb"

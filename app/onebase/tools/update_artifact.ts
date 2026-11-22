@@ -16,6 +16,7 @@ export const update_artifact: AppTool<Args> = {
   label: "يحدّث المخرج…",
   description: "Save a new version of an existing output (same kind). Give the full new content, or `table` for tables. Previous versions are kept.",
   requiresConfirmation: true,
+  edits: (args) => (args?.artifactId ? String(args.artifactId) : null),
   parameters: {
     type: "object",
     additionalProperties: false,
@@ -50,7 +51,8 @@ export const update_artifact: AppTool<Args> = {
       title: args.title,
       note: args.note,
       sources,
+      expectVersion: t.expectVersion,
     });
-    return { content: `حُفظت النسخة ${r.version} من المخرج. artifactId=${r.artifactId}`, display: `حُفظت النسخة ${r.version}.`, undo: { restore: { artifactId: r.artifactId, version: r.version - 1 } }, artifactIds: [r.artifactId], spaceIds: [r.spaceId] };
+    return { content: `حُفظت النسخة ${r.version} من المخرج. artifactId=${r.artifactId}`, display: `حُفظت النسخة ${r.version}.`, undo: { restore: { artifactId: r.artifactId, version: r.version - 1 } }, artifactIds: [r.artifactId], spaceIds: [r.spaceId], version: r.version };
   },
 };

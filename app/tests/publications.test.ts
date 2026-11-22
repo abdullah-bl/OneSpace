@@ -102,7 +102,7 @@ describe("rules", () => {
   });
 
   test("update shows the output's current version", async () => {
-    must(await s.call("mutation", "artifacts:edit", { artifactId: setup.P_mem.art, content: "<p>النسخة الثانية V2TXT</p>" }, tok("mem")));
+    must(await s.call("mutation", "artifacts:edit", { artifactId: setup.P_mem.art, content: "<p>النسخة الثانية V2TXT</p>", baseVersion: 1 }, tok("mem")));
     const before = await page(`/p/${setup.P_mem.slug}`, await openAs("mem", setup.P_mem.slug));
     expect(await before.text()).not.toContain("V2TXT");
     must(await s.call("mutation", "publications:update", { publicationId: setup.P_mem.pub }, tok("mem")));
@@ -304,7 +304,7 @@ describe("a reply form through the publish tool", () => {
       expect(prop.state).toBe("pending");
       expect(prop.args.version).toBe(1); // pinned on the card
       // A newer version after the card was shown doesn't go live with it.
-      must(await s.call("mutation", "artifacts:edit", { artifactId: art, content: "# استبيان قصير (نسخة 2)" }, tok("mgr")));
+      must(await s.call("mutation", "artifacts:edit", { artifactId: art, content: "# استبيان قصير (نسخة 2)", baseVersion: 1 }, tok("mgr")));
       const done = must(await s.call("action", "chat:confirmProposal", { proposalId: prop.id }, tok("mgr")));
       expect(done.ok).toBe(true);
       slug = /\/p\/([A-Za-z0-9_-]+)/.exec(done.result)![1]!;

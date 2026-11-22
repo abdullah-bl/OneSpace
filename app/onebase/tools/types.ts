@@ -18,6 +18,8 @@ export type ToolContext = {
   taskId?: string;
   /** plans/14: the turn is in a chat the members of this space read. Nothing personal of the asker goes in. */
   sharedSpaceId?: Id<"spaces">;
+  /** plans/18: for a tool that `edits` an output, the version this call is based on. Set by server code only. */
+  expectVersion?: number;
 };
 
 export type Citation = {
@@ -57,6 +59,8 @@ export type ToolResult = {
   artifactIds?: string[];
   /** Spaces the tool touched, for the audit log. */
   spaceIds?: string[];
+  /** plans/18: the version a tool that `edits` an output saved. */
+  version?: number;
 };
 
 export type AppTool<Args = any> = {
@@ -71,6 +75,11 @@ export type AppTool<Args = any> = {
   requiresConfirmation?: boolean;
   /** Its output is data for the model, not an answer: after "نفّذ" the agent writes the reply from it. */
   answerAfterRun?: boolean;
+  /**
+   * plans/18: the existing output this call would write a new version of, if any. Such a call is
+   * pinned to the version its answer began from, and refused once the output has moved on.
+   */
+  edits?(args: Args): string | null;
   /**
    * Optional: fills in, from the server, what the confirmation card must show and pin before it is
    * proposed (publish_output: the app's version and grants). Its result is what «نفّذ» runs.

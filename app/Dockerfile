@@ -17,11 +17,12 @@ FROM oven/bun:1.4.4-slim
 #   poppler-utils: pdftotext/pdftoppm/pdfinfo (PDF text, OCR pages, previews).
 #   unzip: reading .docx/.xlsx parts. fontconfig: fc-list for missing-font checks.
 #   Arabic fonts for LibreOffice: Amiri (used by the sample certificate), Noto Naskh/Kufi/Sans Arabic, KACST.
+#   fonts-liberation + fonts-crosextra-carlito: metric twins of Arial/Times and Calibri for Word templates.
 #   fonts-noto-core covers every script (~42 MB); only its Latin and Arabic faces are kept.
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libreoffice-writer-nogui libreoffice-calc-nogui \
       poppler-utils unzip fontconfig \
-      fonts-hosny-amiri fonts-noto-core fonts-kacst-one \
+      fonts-hosny-amiri fonts-noto-core fonts-kacst-one fonts-liberation fonts-crosextra-carlito \
     && find /usr/share/fonts/truetype/noto -type f \
          ! -name 'NotoSans-*' ! -name 'NotoSerif-*' ! -name 'NotoSansMono-*' \
          ! -name '*Arabic*' -delete \
