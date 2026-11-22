@@ -18,6 +18,7 @@ export const read_list: AppTool<{ listId?: string; title?: string }> = {
       ...(a?.listId ? { listId: String(a.listId) } : {}),
       ...(a?.title ? { title: String(a.title).slice(0, 120) } : {}),
     });
-    return { content: r.ok ? r.text : `تعذّرت قراءة القائمة: ${r.error}` };
+    // Its space counts as read this turn (tiers.resolve: data from a sensitive space stays in it).
+    return r.ok ? { content: r.text, spaceIds: [r.spaceId] } : { content: `تعذّرت قراءة القائمة: ${r.error}` };
   },
 };

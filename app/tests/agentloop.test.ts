@@ -159,6 +159,31 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect([p.tool, p.state, p.tier]).toEqual(["update_list", "pending", 2]);
   }, 60_000);
 
+  test("data read from a sensitive space doesn't leave it: a reader gets no list; its manager gets a card", async () => {
+    // The demo leak: a reader of the sensitive HR space asked for names and salaries, and a list of
+    // them was created in their personal space at once (tier 1), with no card.
+    const call = `CALL_TOOL read_file {"fileId":"${f.files.S_sens}"}\nCALL_TOOL create_list {"title":"رواتب-LEAK","columns":[{"name":"الاسم","type":"text"}],"rows":[{"الاسم":"س"}]}`;
+    const agent = await publishedAgent(s, tok("admin"), cfg({ name: "ناسخ", allowedTools: ["read_file", "create_list"], maxSteps: 3, instructions: call }));
+    const r = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("rdr")));
+    await ask(s, tok("rdr"), r, "اعمل قائمة بالأسماء");
+    expect(await proposalsOf(s, tok("rdr"), r)).toEqual([]);
+    const runs = must(await s.call("query", "chat:messages", { threadId: r }, tok("rdr"))).messages.flatMap((m: any) => m.toolRuns ?? []);
+    expect(runs.some((t: any) => t.name === "create_list" && !t.ok && /الحساسة/.test(t.summary))).toBe(true);
+    const mine = JSON.stringify(must(await s.call("query", "lists:recent", {}, tok("rdr"))));
+    expect(mine).not.toContain("رواتب-LEAK");
+    // Its manager may move it out, but only with «نفّذ» (never auto-run into a personal space).
+    const m = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("mgr")));
+    await ask(s, tok("mgr"), m, "اعمل قائمة بالأسماء");
+    const [p] = await proposalsOf(s, tok("mgr"), m);
+    expect([p.tool, p.state, p.tier, p.auto]).toEqual(["create_list", "pending", 3, false]);
+    // Without reading the sensitive space, the same list in a personal space still runs at once.
+    const plain = await publishedAgent(s, tok("admin"), cfg({ name: "منشئ قوائم", allowedTools: ["create_list"], maxSteps: 2, instructions: `CALL_TOOL create_list {"title":"عادية-OK","columns":[{"name":"الاسم","type":"text"}]}` }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: plain }, tok("rdr")));
+    await ask(s, tok("rdr"), t, "اعمل قائمة");
+    const [q] = await proposalsOf(s, tok("rdr"), t);
+    expect([q.state, q.tier, q.auto]).toEqual(["executed", 1, true]);
+  }, 60_000);
+
   test("undo of an update restores the previous version as a new one", async () => {
     const art = must(await s.call("mutation", "artifacts:create", { title: "قابل للاسترجاع", kind: "markdown", content: "الأصل UNDO-ORIG" }, tok("mem"))).artifactId;
     const t = must(await s.call("mutation", "chat:createThread", { agentId: await writer("محدّث-T4", `update_artifact {"artifactId":"${art}","content":"تعديل الوكيل UNDO-NEW"}`) }, tok("mem")));

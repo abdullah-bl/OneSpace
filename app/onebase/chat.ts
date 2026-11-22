@@ -1686,6 +1686,9 @@ export const runTurn = internalAction({
     const turnStarted = Date.now();
     const sources: Source[] = [];
     const touched = new Map<string, Set<string>>();
+    // Spaces this turn read data from (tool results); with the sources' files, what tiers.resolve
+    // checks so data from a sensitive space isn't written outside it by someone who doesn't manage it.
+    const readSpaceIds = new Set<string>();
     const touch = (spaceId: string | undefined, fileId?: string) => {
       if (!spaceId) return;
       if (!touched.has(spaceId)) touched.set(spaceId, new Set());
@@ -1945,7 +1948,9 @@ export const runTurn = internalAction({
         messages.push({ role: "assistant", content: res.text || null, tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.rawArgs || "{}" } })) });
         // Each call is classified first: refused, a card waiting for «نفّذ» (tier 2–3), run now
         // because it only touches my personal space (tier 1, undoable), or a read (tier 0).
-        type Plan = { tc: (typeof res.toolCalls)[number]; tool?: AppTool; kind: "refused" | "proposal" | "auto" | "read"; content?: string; tier?: Tier };
+        // A write's tier is decided after this step's reads run ("write" until then), so data a read in
+        // the same step brings from a sensitive space counts (tiers.resolve).
+        type Plan = { tc: (typeof res.toolCalls)[number]; tool?: AppTool; kind: "refused" | "proposal" | "auto" | "read" | "write"; content?: string; tier?: Tier };
         const plans: Plan[] = [];
         for (const tc of res.toolCalls) {
           const tool = Object.hasOwn(registry, tc.name) ? registry[tc.name] : undefined;
@@ -1973,23 +1978,7 @@ export const runTurn = internalAction({
             }
             // What the card must show and pin, filled in by the server (publish_output: version, grants).
             if (tool.prepare) (tc as { args: unknown }).args = await tool.prepare(tctx, tc.args as any).catch(() => tc.args);
-            const resolved: Resolution = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: plain(tc.args), scopeSpaceIds: c.spaceIds, threadId: c.turn.threadId });
-            // The person can't do this at all (a reader, a target that isn't there, a placement rule):
-            // no card that could only fail at «نفّذ»; the model hears why and tells them.
-            if (typeof resolved === "object") {
-              plans.push({ tc, tool, kind: "refused", content: refusedProposal(resolved.refused) });
-              toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: resolved.refused.slice(0, 200) });
-              continue;
-            }
-            let tier: Tier = resolved;
-            // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
-            // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
-            if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
-            // Same for a skill: saved at once only when the person's own message asks for one.
-            if (tool.name === "create_skill" && tier === 1 && !asksForSkill(c.question)) tier = 2;
-            // plans/16: messages a colleague at once only when the request asks to tell someone.
-            if (tool.name === "notify_colleague" && tier === 1 && !asksToNotify(c.question)) tier = 2;
-            plans.push({ tc, tool, kind: tier === 1 && autoRunEnabled() ? "auto" : "proposal", tier });
+            plans.push({ tc, tool, kind: "write" });
           } else plans.push({ tc, tool, kind: "read" });
         }
         // Reads run together; their results are applied below in call order, so source numbers are stable.
@@ -2007,6 +1996,42 @@ export const runTurn = internalAction({
             }
           }),
         );
+        // What this step's reads brought in counts for the writes in the same step.
+        for (const r of reads) {
+          for (const sid of r?.out?.spaceIds ?? []) readSpaceIds.add(sid);
+        }
+        const readFiles = new Set([...sources.map((s) => s.fileId), ...reads.flatMap((r) => (r?.out?.citations ?? []).map((ci) => ci.fileId))]);
+        for (const p of plans) {
+          if (p.kind !== "write") continue;
+          const { tc, tool } = p as { tc: Plan["tc"]; tool: AppTool };
+          const resolved: Resolution = await ctx.runQuery(internal.tiers.resolve, {
+            userId,
+            tool: tool.name,
+            args: plain(tc.args),
+            scopeSpaceIds: c.spaceIds,
+            threadId: c.turn.threadId,
+            read: { spaceIds: [...readSpaceIds], fileIds: [...readFiles] },
+          });
+          // The person can't do this at all (a reader, a target that isn't there, a placement rule,
+          // data from a sensitive space they don't manage): no card that could only fail at «نفّذ»
+          // (or leak); the model hears why and tells them.
+          if (typeof resolved === "object") {
+            p.kind = "refused";
+            p.content = refusedProposal(resolved.refused);
+            toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: resolved.refused.slice(0, 200) });
+            continue;
+          }
+          let tier: Tier = resolved;
+          // Memory the person didn't ask for (or from a sensitive space) waits for «نفّذ»: a document
+          // or tool result can't make the model write lasting memory on its own (plans/09 rule 3).
+          if (tool.name === "remember" && tier === 1 && !(c.memory.autoSave && asksToRemember(c.question))) tier = 2;
+          // Same for a skill: saved at once only when the person's own message asks for one.
+          if (tool.name === "create_skill" && tier === 1 && !asksForSkill(c.question)) tier = 2;
+          // plans/16: messages a colleague at once only when the request asks to tell someone.
+          if (tool.name === "notify_colleague" && tier === 1 && !asksToNotify(c.question)) tier = 2;
+          p.kind = tier === 1 && autoRunEnabled() ? "auto" : "proposal";
+          p.tier = tier;
+        }
         for (const [k, p] of plans.entries()) {
           const { tc, tool } = p;
           let content = p.content ?? "";
@@ -2156,6 +2181,7 @@ async function runPart(
 ): Promise<PartOut> {
   const started = Date.now();
   const usage = { prompt: 0, completion: 0 };
+  const partRead = new Set<string>(); // spaces this part's tools read (tiers.resolve, as in the main loop)
   const i = await ctx.runMutation(internal.chat.stepStart, { turnId: o.turnId, label: `جزء ${o.k + 1}: ${o.part.goal.slice(0, 80)}` });
   const done = async (text: string, ok: boolean): Promise<PartOut> => {
     await ctx.runMutation(internal.chat.stepEnd, { turnId: o.turnId, index: i, ok, detail: `→ ${o.part.agent}` });
@@ -2207,7 +2233,14 @@ async function runPart(
           if (!offered.includes(tc.name)) return `الأداة ${tc.name} غير متاحة في هذا الجزء.`;
           const tool = registry[tc.name]!;
           if (tool.requiresConfirmation) {
-            const tier: Resolution = await ctx.runQuery(internal.tiers.resolve, { userId, tool: tool.name, args: JSON.parse(JSON.stringify(tc.args ?? null)), scopeSpaceIds: pc.spaceIds, threadId: pc.turn.threadId });
+            const tier: Resolution = await ctx.runQuery(internal.tiers.resolve, {
+              userId,
+              tool: tool.name,
+              args: JSON.parse(JSON.stringify(tc.args ?? null)),
+              scopeSpaceIds: pc.spaceIds,
+              threadId: pc.turn.threadId,
+              read: { spaceIds: [...partRead], fileIds: [...new Set(o.sources.map((s) => s.fileId))] },
+            });
             if (tier !== 1 || !autoRunEnabled() || (tc.args as any)?.__invalid !== undefined) return "لا يُنفَّذ هذا الإجراء داخل جزء: يحتاج تأكيد الموظف. اكتب نتيجتك مما لديك.";
             if (sandboxRuns >= 2) return "بلغ هذا الجزء حدّ التشغيلات. اكتب نتيجتك مما لديك.";
             sandboxRuns++;
@@ -2225,6 +2258,7 @@ async function runPart(
             const out = await registry[tc.name]!.run(tctx, tc.args as any);
             const added = add((out.citations ?? []).map((ci) => ({ ...ci, n: 0 })));
             for (const s of added) o.touch(out.spaceIds?.length === 1 ? out.spaceIds[0] : undefined, s.fileId);
+            for (const sid of out.spaceIds ?? []) partRead.add(sid);
             return out.content + (added.length ? `\n\n${renderSources(added)}` : "");
           } catch (err) {
             return `فشلت الأداة: ${err instanceof Error ? err.message : String(err)}`;
