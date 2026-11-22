@@ -15,7 +15,7 @@ import { OneBaseError, v } from "onebase/values";
 import ExcelJS from "exceljs";
 import type { Doc, Id } from "./_generated/dataModel";
 import { internal } from "./_generated/api";
-import { action, internalMutation, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan, Denied, isSharedThread, requireActive, requireUserId, roleAllows, spaceRoleOf, threadAllows, type Actor } from "./access";
 import { writeAudit } from "./audit";
 import { revokeForArtifact } from "./publications";
@@ -267,7 +267,20 @@ export async function insertArtifact(
   return artifactId;
 }
 
-export type UpdateInput = { artifactId: string; content: unknown; title?: string; note?: string; sources?: SourceRef[]; runId?: string };
+export type UpdateInput = { artifactId: string; content: unknown; title?: string; note?: string; sources?: SourceRef[]; runId?: string; expectVersion?: number };
+
+/**
+ * plans/18: a write is refused when the output is no longer at the version it was based on. Call it
+ * only after the access check, in the mutation that writes (so two saves can't both pass).
+ */
+export function assertVersion(art: Doc<"artifacts">, expected: number | undefined) {
+  if (expected === undefined || art.currentVersion === expected) return;
+  throw new OneBaseError(staleText(art));
+}
+
+export function staleText(art: Doc<"artifacts">) {
+  return `لم يُحفظ شيء: تغيّر «${art.title}» بعد أن بدأ هذا التعديل (النسخة الحالية ${art.currentVersion}). راجع النسخة الحالية، ثم عدّل عليها أو اطلب التعديل من جديد.`;
+}
 
 export async function updateArtifact(ctx: MutationCtx, actor: Actor, input: UpdateInput, opts: { scope: Set<string> | null; via: string }) {
   const id = ctx.db.normalizeId("artifacts", input.artifactId);
@@ -275,6 +288,7 @@ export async function updateArtifact(ctx: MutationCtx, actor: Actor, input: Upda
   if (!art) throw new Denied();
   const { space } = await assertCan(ctx, actor.userId, art.spaceId, "write");
   if (opts.scope && space.kind !== "personal" && !opts.scope.has(space._id)) throw new Denied();
+  assertVersion(art, input.expectVersion);
   const content = normalizeContent(art.kind, input.content);
   let sources = art.sources;
   let classification = art.classification;
@@ -563,17 +577,22 @@ export const exportDocument = action({
   },
 });
 
-/** "تعديل": saves my edit of a Markdown/HTML output as a new version (write access to its space). */
+/**
+ * "تعديل": saves my edit of a Markdown/HTML output as a new version (write access to its space).
+ * `baseVersion` is the version I edited (plans/18). It is optional only so that a page opened before
+ * it existed gets a readable refusal; a save without it is never made.
+ */
 export const edit = mutation({
-  args: { artifactId: v.id("artifacts"), content: v.string(), note: v.optional(v.string()) },
-  handler: async (ctx, { artifactId, content, note }) => {
+  args: { artifactId: v.id("artifacts"), content: v.string(), note: v.optional(v.string()), baseVersion: v.optional(v.number()) },
+  handler: async (ctx, { artifactId, content, note, baseVersion }) => {
     const me = await requireActive(ctx);
     const actor = await requireActor(ctx, me.userId);
     const art = await ctx.db.get(artifactId);
     if (!art) throw new Denied();
     await assertCan(ctx, me.userId, art.spaceId, "write");
     if (art.kind === "table") throw new OneBaseError("لا يُعدَّل الجدول نصياً؛ صدّره إلى Excel أو اطلب تعديله من الوكيل");
-    return await updateArtifact(ctx, actor, { artifactId, content, note }, { scope: null, via: "user" });
+    if (baseVersion === undefined) throw new OneBaseError("لم يُحفظ شيء: هذه الصفحة قديمة. انسخ نصك، ثم حدّث الصفحة واحفظ من جديد.");
+    return await updateArtifact(ctx, actor, { artifactId, content, note, expectVersion: baseVersion }, { scope: null, via: "user" });
   },
 });
 
@@ -673,12 +692,43 @@ export const updateForUser = internalMutation({
     title: v.optional(v.string()),
     note: v.optional(v.string()),
     sources: v.optional(v.array(sourceRef)),
+    expectVersion: v.optional(v.number()),
   },
   handler: async (ctx, { userId, scopeSpaceIds, ...input }) => {
     const actor = await requireActor(ctx, userId);
     return await updateArtifact(ctx, actor, input, { scope: new Set(scopeSpaceIds), via: "agent" });
   },
 });
+
+/**
+ * The version of an output an answer that began at `at` could have known (1 for one made since).
+ * Null when the user can't read it. What a proposal or an automatic edit is pinned to (plans/18).
+ */
+export const versionAt = internalQuery({
+  args: { userId: v.id("users"), artifactId: v.string(), at: v.number() },
+  handler: async (ctx, { userId, artifactId, at }): Promise<number | null> => {
+    const art = await readableArtifact(ctx, userId, artifactId);
+    if (!art) return null;
+    for (let version = art.currentVersion; version > 1; version--) {
+      const row = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id).eq("version", version)).unique();
+      if (row && row.createdAt <= at) return version;
+    }
+    return 1;
+  },
+});
+
+/** The output if the user can read it now, else null. */
+export async function readableArtifact(ctx: QueryCtx | MutationCtx, userId: Id<"users">, artifactId: string): Promise<Doc<"artifacts"> | null> {
+  const id = ctx.db.normalizeId("artifacts", artifactId);
+  const art = id ? await ctx.db.get(id) : null;
+  if (!art) return null;
+  try {
+    await assertCan(ctx, userId, art.spaceId, "read");
+    return art;
+  } catch {
+    return null;
+  }
+}
 
 const KIND_AR: Record<Doc<"artifacts">["kind"], string> = { markdown: "مستند", html: "صفحة", table: "جدول", app: "تطبيق", slides: "عرض شرائح" };
 

@@ -195,7 +195,7 @@ export function EmptyState({ icon = "file", title, children, action }: { icon?: 
 // webviews) cancel native dialogs without showing them, which made every confirmed action
 // silently do nothing. ask() confirms, askText() asks for a line of text, tell() shows a message.
 
-type AskOptions = { confirmLabel?: string; danger?: boolean; detail?: string };
+type AskOptions = { confirmLabel?: string; danger?: boolean; detail?: string; maxLength?: number };
 type AskRequest = AskOptions & {
   message: string;
   input?: string; // askText: the starting value
@@ -274,7 +274,7 @@ export function ConfirmHost() {
           {req.message}
         </p>
         {req.detail && <p className="mt-1 text-sm text-muted">{req.detail}</p>}
-        {req.input !== undefined && <input ref={inputRef} className="input mt-3 w-full" dir="auto" value={value} onChange={(e) => setValue(e.target.value)} maxLength={200} />}
+        {req.input !== undefined && <input ref={inputRef} className="input mt-3 w-full" dir="auto" value={value} onChange={(e) => setValue(e.target.value)} maxLength={req.maxLength ?? 200} />}
         <div className="mt-5 flex justify-end gap-2">
           {!req.notice && (
             <button type="button" className="btn-secondary" onClick={() => close(false)}>

@@ -138,7 +138,7 @@ const OPS: Op[] = [
     run: async (a, sp) => {
       const owner = sp === "P_mem" ? tok("mem") : tok("mgr");
       const id = must(await s.call("mutation", "artifacts:create", { title: "ed", kind: "markdown", content: "قبل", spaceId: f.spaces[sp] }, owner)).artifactId;
-      return s.call("mutation", "artifacts:edit", { artifactId: id, content: `بعد ${a}` }, tok(a));
+      return s.call("mutation", "artifacts:edit", { artifactId: id, content: `بعد ${a}`, baseVersion: 1 }, tok(a));
     },
   },
   {

@@ -23,6 +23,7 @@ import { HelpView } from "./HelpView";
 import { WorksView } from "./WorksView";
 import { MyRecordsView } from "./MyRecordsView";
 import { ConfirmHost, tell } from "./ui";
+import { hasUnsaved, leaveUnsaved } from "./unsaved";
 
 export function App() {
   const { isLoading, isAuthenticated } = useOnebaseAuth();
@@ -135,7 +136,25 @@ function useRoute(): [string[], (path: string) => void] {
       window.history.replaceState(null, "", `/#/task-chat/${encodeURIComponent(taskId)}`);
       setParts(readHash());
     }
-    const on = () => setParts(readHash());
+    let at = window.location.hash;
+    let allowed: string | null = null; // the one move the person said yes to
+    const on = () => {
+      const next = window.location.hash;
+      if (next === at) return;
+      if (hasUnsaved() && next !== allowed) {
+        // Back where the draft is, until the person says to leave it.
+        window.history.replaceState(null, "", at || "#/");
+        void leaveUnsaved().then((ok) => {
+          if (!ok) return;
+          allowed = next;
+          window.location.hash = next;
+        });
+        return;
+      }
+      at = next;
+      allowed = null;
+      setParts(readHash());
+    };
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);

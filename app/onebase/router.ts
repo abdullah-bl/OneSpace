@@ -6,6 +6,7 @@
 
 import { v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import { threadMessages } from "./lib/threadMessages";
 import { internalQuery, type QueryCtx } from "./_generated/server";
 import { agentTools, effectiveScope, narrowByMentions, visibleTo } from "./agents";
 import { chat, type UsageTrack } from "./ai";
@@ -64,8 +65,7 @@ export const candidates = internalQuery({
     if (turn.state !== "queued") return { state: turn.state, route: null };
     if (meta.agentId || meta.agentDraft || meta.test || turn.scheduleId || turn.afterProposal) return { state: turn.state, route: null };
 
-    const page = await ctx.components.chat.listMessages({ threadId: turn.threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const msgs = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text);
+    const msgs = (await threadMessages(ctx, turn.threadId)).filter((m) => (m.role === "user" || m.role === "assistant") && m.text);
     const lastUser = msgs.map((m) => m.role).lastIndexOf("user");
     if (lastUser < 0) return { state: turn.state, route: null };
     // "@name" tokens are dropped: the files are listed separately, with their type (measured: the

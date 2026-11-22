@@ -14,6 +14,7 @@
 
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
+import { threadMessages } from "./lib/threadMessages";
 import { internal } from "./_generated/api";
 import { action, internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan, Denied, requireActive, requireUserId, threadAllows } from "./access";
@@ -369,8 +370,7 @@ export const threadForDraft = internalQuery({
   handler: async (ctx, { userId, threadId }) => {
     const meta = await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique();
     if (!meta || meta.userId !== userId) throw new Denied();
-    const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
-    const msgs = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text).slice(-30);
+    const msgs = (await threadMessages(ctx, threadId)).filter((m) => (m.role === "user" || m.role === "assistant") && m.text).slice(-30);
     const names = (await personalOf(ctx, userId)).map((s) => s.name);
     return { title: meta.title, summary: meta.summary?.text ?? null, msgs: msgs.map((m) => ({ role: m.role, text: m.text!.slice(0, 2000) })), taken: names };
   },

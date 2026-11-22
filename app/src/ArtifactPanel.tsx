@@ -1,11 +1,12 @@
 // Output (artifact) panel, plans/07 §B. Full height beside the chat on desktop (draggable divider,
 // width remembered), a full-screen sheet on tablets and phones. One toolbar row: close, title,
 // version stepper, preview/edit, download menu, overflow menu. Markdown and HTML are untrusted,
-// so they are shown only inside the fully sandboxed frame (src/sandbox.ts); tables are rendered by
+// so they are shown only inside the fully sandboxed frame (src/sandbox.ts), except while a document
+// is edited (src/editor, plans/19: built from parsed blocks, never from its HTML); tables are rendered by
 // React (escaped). Each save of an edit is a new version; every output downloads as Word / PDF /
 // PowerPoint (rendered by the server's sandbox), tables also as CSV / XLSX.
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Component, Suspense, lazy, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { marked } from "marked";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
@@ -14,6 +15,24 @@ import { PublishBox } from "./PublishView";
 import { SlidesView } from "./SlidesView";
 import { Icon, type IconName } from "./icons";
 import { EmptyState, Menu, type MenuItem, ask } from "./ui";
+import { leaveUnsaved, setUnsaved } from "./unsaved";
+import type { VisualEditorHandle } from "./editor/VisualEditor";
+
+const VisualEditor = lazy(() => import("./editor/VisualEditor"));
+
+/** If the visual editor can't open a document, its text can still be edited. */
+class EditorBoundary extends Component<{ onFail: () => void; children: ReactNode }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch() {
+    this.props.onFail();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
 
 type Kind = "markdown" | "html" | "table" | "app" | "slides";
 type Opened = { _id: string; title: string; kind: Kind; version: number; currentVersion: number; content: string; sha256: string; classification: string };
@@ -162,7 +181,7 @@ export function ArtifactDock({ artifactId, spaces, onClose, mode = "split" }: { 
   if (mode === "overlay") {
     return (
       <div className="fixed inset-0 z-40 flex">
-        <button className="hidden flex-1 animate-fade bg-ink/20 lg:block" aria-label="إغلاق" onClick={onClose} />
+        <button className="hidden flex-1 animate-fade bg-ink/20 lg:block" aria-label="إغلاق" onClick={() => void leaveUnsaved().then((ok) => ok && onClose())} />
         <div className="h-full w-full animate-slide-in border-s border-line bg-surface shadow-[0_0_40px_rgba(0,0,0,0.12)] lg:w-[min(820px,62vw)]">
           <ArtifactPanel key={artifactId} artifactId={artifactId} spaces={spaces} onClose={onClose} />
         </div>
@@ -203,6 +222,16 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   const [version, setVersion] = useState<number | null>(null);
   const [doc, setDoc] = useState<Opened | null>(null);
   const [draft, setDraft] = useState<string | null>(null);
+  // plans/18: the version my draft started from, and the newer one I was shown when they differ.
+  const [base, setBase] = useState<{ version: number; content: string } | null>(null);
+  const [compared, setCompared] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  // plans/19: documents are edited as documents; `raw` is the Markdown source, for who wants it.
+  const [raw, setRaw] = useState(false);
+  const [changed, setChanged] = useState(false); // in the visual editor, since it opened
+  const [session, setSession] = useState(0); // a new one each time the editor must open afresh
+  const editor = useRef<VisualEditorHandle>(null);
+  const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState<string | null>(null);
   const [details, setDetails] = useState(false);
   const [publishing, setPublishing] = useState(false);
@@ -222,7 +251,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
     return () => {
       alive = false;
     };
-  }, [artifactId, wanted]);
+  }, [artifactId, wanted, reload]);
 
   // Escape closes the panel (not while editing: it would drop the draft).
   useEffect(() => {
@@ -259,12 +288,106 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
         setBusy(null);
       }
     });
-  const save = () =>
-    run(async () => {
-      await edit({ artifactId: artifactId as any, content: draft ?? "" });
-      setDraft(null);
-      setVersion(null);
+  // Someone saved while I edit: my draft stays, and it's saved only over a version I have seen.
+  const visual = kind === "markdown" && !raw;
+  const dirty = draft !== null && (draft !== base?.content || changed);
+  useEffect(() => {
+    setUnsaved(dirty);
+    return () => setUnsaved(false);
+  }, [dirty]);
+  const conflict = dirty && !saving && !!base && !!current && current > base.version;
+  const latest = conflict && doc?.version === current ? doc : null;
+  const comparing = !!latest && compared === latest.version;
+  // Nothing typed yet, so nothing to reconcile: the editor follows the newest version (saving the
+  // untouched text would undo the colleague's edit).
+  useEffect(() => {
+    if (draft === null || dirty || saving || !base || !doc || doc.version !== current || doc.version <= base.version) return;
+    setBase({ version: doc.version, content: doc.content });
+    setDraft(doc.content);
+    setSession((n) => n + 1);
+    setCompared(null);
+  }, [draft, dirty, saving, base, doc, current]);
+  // Not everyone reads Markdown: the version to compare with is shown as a document.
+  const latestHtml = useMemo(() => (comparing && latest?.kind === "markdown" ? (marked.parse(latest.content, { async: false }) as string) : null), [comparing, latest]);
+  const startEdit = (from: Opened | null) => {
+    if (!from || from.version !== current) return;
+    setError("");
+    setNote("");
+    setVersion(null);
+    setBase({ version: from.version, content: from.content });
+    setCompared(null);
+    setDraft(from.content);
+    setChanged(false);
+    setSession((n) => n + 1);
+  };
+  const stopEdit = () => {
+    setDraft(null);
+    setChanged(false);
+    setRaw(false);
+    setBase(null);
+    setCompared(null);
+    setError("");
+  };
+  const leaveEdit = () =>
+    void (dirty ? ask("تجاهل التعديلات غير المحفوظة؟", { danger: true, confirmLabel: "تجاهل" }) : Promise.resolve(true)).then((ok) => {
+      if (ok) stopEdit();
+    });
+  const takeLatest = () =>
+    void (dirty ? ask(`تترك نصك وتبدأ من النسخة ${latest?.version}؟`, { danger: true, confirmLabel: "ابدأ منها" }) : Promise.resolve(true)).then((ok) => {
+      if (ok) startEdit(latest);
+    });
+  /** What's in the editor now, as Markdown. Null: not to be saved (said why, or the person said no). */
+  const contentNow = async (): Promise<string | null> => {
+    if (!visual) return draft;
+    if (!editor.current) return null; // still opening
+    try {
+      const { markdown, lossy } = editor.current.result();
+      if (typeof markdown !== "string") return null;
+      if (lossy && !(await ask("بعض التنسيق المتداخل (عريض أو مائل أو رابط) لا يُحفظ في موضعه، والنص يبقى كاملاً. تتابع؟", { confirmLabel: "تابع" }))) return null;
+      return markdown;
+    } catch (e) {
+      setError(errorText(e));
+      return null;
+    }
+  };
+  const switchSource = async () => {
+    let text: string | null = null;
+    if (visual && editor.current) {
+      try {
+        const { markdown, lossy } = editor.current.result();
+        if (lossy && !(await ask("بعض التنسيق المتداخل (عريض أو مائل أو رابط) لا يُكتب في موضعه، والنص يبقى كاملاً. تتابع؟", { confirmLabel: "تابع" }))) return;
+        text = markdown;
+      } catch {
+        // The editor can't save it as it is: its source, to fix by hand (checked again on saving).
+        text = editor.current.draft();
+        setNote("هذا نص المستند كما هو في المحرر. أصلح الموضع الذي يمنع الحفظ، ثم احفظ.");
+      }
+    } else text = draft;
+    if (text === null) return;
+    setError("");
+    setDraft(text);
+    setChanged(false);
+    setRaw(!raw);
+    setSession((n) => n + 1);
+  };
+  const save = async () => {
+    if (draft === null || !base) return;
+    const content = await contentNow();
+    if (content === null) return;
+    // Pinned before asking: a version that lands while the question is open is refused by the server.
+    const over = comparing ? latest!.version : null;
+    if (over !== null && !(await ask(`تحفظ نصك مكان النسخة ${over}؟ ما لم تنقله منها إلى نصك لن يظهر في النسخة الجديدة.`, { danger: true, confirmLabel: "احفظ نصي" }))) return;
+    await run(async () => {
+      setSaving(true);
+      try {
+        if (content !== base.content || over !== null) await edit({ artifactId: artifactId as any, content, baseVersion: over ?? base.version });
+        stopEdit();
+        setVersion(null);
+      } finally {
+        setSaving(false);
+      }
     }, "حُفظت نسخة جديدة");
+  };
   const moveTo = (to: string) => {
     const target = spaces.find((s) => s._id === to);
     if (meta?.artifact.classification === "sensitive") {
@@ -288,6 +411,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
     ...(kind === "table" ? (["divider", { label: "Excel", icon: "table", onSelect: () => void download("xlsx") }, { label: "CSV", icon: "table", onSelect: () => void download("csv") }] as MenuItem[]) : []),
   ];
   const more: MenuItem[] = [
+    ...(draft !== null && kind === "markdown" ? [{ label: raw ? "ارجع إلى المحرر" : "نص Markdown (متقدّم)", icon: "code", onSelect: () => void switchSource() } as MenuItem, "divider" as MenuItem] : []),
     { label: details ? "إخفاء التفاصيل" : "التفاصيل", icon: "eye", onSelect: () => setDetails(!details) },
     { label: "انشر برابط…", icon: "globe", onSelect: () => setPublishing(true) },
     ...(kind !== "table" && kind !== "app" && kind !== "slides" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
@@ -303,7 +427,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   return (
     <section className="panel h-full" aria-label={meta?.artifact.title ?? "مخرج"}>
       <header className="flex h-14 shrink-0 items-center gap-1 border-b border-line px-2">
-        <button className="btn-icon" aria-label="إغلاق" title="إغلاق (Esc)" onClick={onClose}>
+        <button className="btn-icon" aria-label="إغلاق" title="إغلاق (Esc)" onClick={() => void leaveUnsaved().then((ok) => ok && onClose())}>
           <Icon name="x" size={17} />
         </button>
         <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-primary-soft text-primary">
@@ -332,16 +456,16 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
         )}
         {canEdit && (
           <div className="hidden items-center rounded-md bg-raised p-0.5 sm:flex" role="tablist" aria-label="العرض">
-            <button role="tab" aria-selected={draft === null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft === null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => void (draft === null || draft === doc?.content ? Promise.resolve(true) : ask("تجاهل التعديلات غير المحفوظة؟", { danger: true, confirmLabel: "تجاهل" })).then((ok) => { if (ok) setDraft(null); })}>
+            <button role="tab" aria-selected={draft === null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft === null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => draft !== null && leaveEdit()}>
               <Icon name="eye" size={14} /> معاينة
             </button>
-            <button role="tab" aria-selected={draft !== null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft !== null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => draft === null && doc && setDraft(doc.content)}>
+            <button role="tab" aria-selected={draft !== null} className={`flex h-7 items-center gap-1 rounded px-2 text-xs ${draft !== null ? "bg-surface font-medium shadow-sm" : "text-muted"}`} onClick={() => draft === null && startEdit(doc)}>
               <Icon name="pencil" size={14} /> تعديل
             </button>
           </div>
         )}
         {canEdit && draft === null && (
-          <button className="btn-icon sm:hidden" aria-label="تعديل" onClick={() => doc && setDraft(doc.content)}>
+          <button className="btn-icon sm:hidden" aria-label="تعديل" onClick={() => startEdit(doc)}>
             <Icon name="pencil" size={16} />
           </button>
         )}
@@ -350,6 +474,30 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
       </header>
       {publishing && <PublishBox artifactId={artifactId} onClose={() => setPublishing(false)} />}
 
+      {conflict && (
+        <div className="shrink-0 px-3 pt-2" role="status">
+          <div className="alert-warning flex flex-wrap items-center gap-2">
+            <p className="min-w-0 flex-1 basis-60">
+              {comparing
+                ? `انقل ما تريده من النسخة ${current} إلى نصك، ثم احفظ.`
+                : `صدرت النسخة ${current} وأنت تعدّل. نصك باقٍ هنا ولم يُحفظ.`}
+            </p>
+            {!comparing && (
+              <button className="btn-secondary h-8" disabled={!latest} onClick={() => { setError(""); setCompared(latest!.version); }}>
+                قارن بالنسخة {current}
+              </button>
+            )}
+            <button className="btn-ghost h-8" disabled={!latest} onClick={takeLatest}>
+              ابدأ من النسخة {current}
+            </button>
+            {!latest && error && (
+              <button className="btn-secondary h-8" onClick={() => { setError(""); setReload((n) => n + 1); }}>
+                أعد تحميل النسخة {current}
+              </button>
+            )}
+          </div>
+        </div>
+      )}
       {(error || note || busy) && (
         <div className="shrink-0 px-3 pt-2">
           {error && <p className="alert-negative">{error}</p>}
@@ -362,24 +510,56 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
         {!doc && !error && <div className="grid h-full place-items-center text-sm text-faint">يفتح…</div>}
         {doc && kind === "table" && <TableView content={doc.content} />}
         {doc && kind === "app" && <AppView artifactId={artifactId} version={doc.version} content={doc.content} canTest={canWrite && wanted === current} />}
+        {/* A new frame per version: Chromium leaves a sandboxed frame blank when its srcdoc changes while it loads (after every save). */}
         {doc && kind === "slides" && draft === null && <SlidesView content={doc.content} title={doc.title} />}
-        {doc && kind !== "table" && kind !== "app" && kind !== "slides" && draft === null && <SandboxedFrame title={doc.title} html={preview} className="h-full" />}
+        {doc && kind !== "table" && kind !== "app" && kind !== "slides" && draft === null && <SandboxedFrame key={doc.version} title={doc.title} html={preview} className="h-full" />}
         {doc && draft !== null && (
-          <div className="grid h-full @3xl:grid-cols-2">
-            <textarea
-              className="h-full w-full resize-none border-0 bg-sunken p-4 text-[14px] leading-7 outline-none @3xl:border-e @3xl:border-line"
-              dir="auto"
-              value={draft}
-              autoFocus
-              onChange={(e) => setDraft(e.target.value)}
-              aria-label="نص المخرج"
-            />
-            {kind === "slides" ? (
+          <div className={`grid h-full min-h-0 grid-cols-[minmax(0,1fr)] ${!visual || comparing ? "@3xl:grid-cols-2" : ""} ${comparing ? "grid-rows-2 @3xl:grid-rows-1" : "grid-rows-[minmax(0,1fr)]"}`}>
+            {visual ? (
+              <div className="min-h-0 min-w-0 @3xl:border-e @3xl:border-line">
+                <EditorBoundary
+                  key={session}
+                  onFail={() => {
+                    setRaw(true);
+                    setNote("تعذّر فتح المحرر لهذا المستند، فهذا نصه.");
+                  }}
+                >
+                  <Suspense fallback={<div className="grid h-full place-items-center text-sm text-faint">يفتح المحرر…</div>}>
+                    <VisualEditor ref={editor} source={draft} disabled={saving} onDirty={setChanged} />
+                  </Suspense>
+                </EditorBoundary>
+              </div>
+            ) : (
+              <div className="flex min-h-0 min-w-0 flex-col bg-sunken @3xl:border-e @3xl:border-line">
+                <p className="shrink-0 border-b border-line px-4 py-2 text-xs text-muted">
+                  {kind === "html" ? "هذا كود الصفحة. الأسهل أن تطلب تعديلها من المساعد في المحادثة." : kind === "slides" ? "هذا نص الشرائح: «---» بين شريحة وأخرى، و«ملاحظات:» لملاحظات العارض." : "هذا نص Markdown. ترجع إلى المحرر من قائمة «المزيد»."}
+                </p>
+                <textarea
+                  className="min-h-0 w-full flex-1 resize-none border-0 bg-sunken p-4 text-[14px] leading-7 outline-none"
+                  dir="auto"
+                  value={draft}
+                  autoFocus
+                  readOnly={saving}
+                  onChange={(e) => setDraft(e.target.value)}
+                  aria-label="نص المخرج"
+                />
+              </div>
+            )}
+            {comparing ? (
+              <div className="flex min-h-0 flex-col border-t border-line @3xl:border-t-0">
+                <p className="meta shrink-0 px-4 pt-2">النسخة {latest!.version}، للقراءة والنسخ</p>
+                {latestHtml !== null ? (
+                  <SandboxedFrame key={latest!.version} title={`النسخة ${latest!.version}`} html={latestHtml} className="min-h-0 flex-1" />
+                ) : (
+                  <textarea className="min-h-0 w-full flex-1 resize-none border-0 bg-surface p-4 text-[14px] leading-7 outline-none" dir="auto" readOnly value={latest!.content} aria-label={`نص النسخة ${latest!.version}`} />
+                )}
+              </div>
+            ) : kind === "slides" ? (
               <div className="hidden h-full min-h-0 @3xl:block">
                 <SlidesView content={draft} title="معاينة" />
               </div>
             ) : (
-              <SandboxedFrame title="معاينة" html={preview} className="hidden h-full @3xl:block" />
+              !visual && <SandboxedFrame title="معاينة" html={preview} className="hidden h-full @3xl:block" />
             )}
           </div>
         )}
@@ -387,13 +567,13 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
 
       {draft !== null && (
         <footer className="flex shrink-0 items-center gap-2 border-t border-line px-3 py-2">
-          <button className="btn-primary" onClick={() => void save()} disabled={draft === doc?.content}>
-            حفظ كنسخة {(current ?? 0) + 1}
+          <button className="btn-primary" onClick={() => void save()} disabled={saving || (conflict ? !comparing || (!visual && draft === latest?.content) : !dirty)}>
+            {saving ? "يحفظ…" : `حفظ كنسخة ${(current ?? 0) + 1}`}
           </button>
-          <button className="btn-ghost" onClick={() => void (draft === doc?.content ? Promise.resolve(true) : ask("تجاهل التعديلات غير المحفوظة؟", { danger: true, confirmLabel: "تجاهل" })).then((ok) => { if (ok) setDraft(null); })}>
+          <button className="btn-ghost" onClick={leaveEdit} disabled={saving}>
             إلغاء
           </button>
-          <span className="meta ms-auto">{draft === doc?.content ? "لا تغييرات" : "تعديلات غير محفوظة"}</span>
+          <span className="meta ms-auto">{dirty ? "تعديلات غير محفوظة" : "لا تغييرات"}</span>
         </footer>
       )}
 

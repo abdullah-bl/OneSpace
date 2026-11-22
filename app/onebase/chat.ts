@@ -27,10 +27,11 @@ import { agentTools, effectiveScope, groundingOf, MAX_STEPS_LIMIT, MIN_STEPS, na
 import { notify } from "./notifications";
 import { mentionInChat } from "./mentions";
 import { queueTurn } from "./lib/turns";
+import { threadMessages } from "./lib/threadMessages";
 import { aiConfig, chat, ToolCallCutError, type ChatMsg, type DecisionLog, type ToolSpec, primeAi, type UsageTrack } from "./ai";
 import { routeTurn, type Route } from "./decisions";
 import { makingRequest } from "./lib/route";
-import { capForHistory, CHARS_PER_TOKEN, cleanSections, outputLine, withCodeOutputs, historyWindow, parseSummary, renderSummary, sectionsOf, SUMMARY_SCHEMA, summaryPrompt, type SummarySections } from "./lib/chatSummary";
+import { capForHistory, CHARS_PER_TOKEN, cleanSections, foldUpTo, outputLine, withCodeOutputs, historyWindow, parseSummary, renderSummary, sectionsOf, SUMMARY_SCHEMA, summaryPrompt, type SummarySections } from "./lib/chatSummary";
 export { makingRequest };
 import { writeAudit } from "./audit";
 import { searchDocuments, type Hit } from "./search";
@@ -49,7 +50,7 @@ import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
 import type { AppTool, Citation, ToolContext, ToolResult } from "./tools/types";
 import { exportTarget } from "./tools/export_document";
 import { autoRunEnabled, type Resolution, type Tier } from "./tiers";
-import { deleteArtifactRows, outputIndex, requireActor, updateArtifact } from "./artifacts";
+import { deleteArtifactRows, outputIndex, readableArtifact, requireActor, staleText, updateArtifact } from "./artifacts";
 import { deleteFileRows } from "./files";
 import { listIndex, undoLists } from "./lists";
 import { ownSkill, skillFilesText, skillIndex, undoSkills, type SkillFile } from "./skills";
@@ -147,6 +148,12 @@ const MAX_QUESTION = envNum("CHAT_MAX_QUESTION_CHARS", 32_000);
 const HISTORY_TOKENS = envNum("CHAT_HISTORY_TOKENS", 12_000);
 const HISTORY_MAX = envNum("CHAT_HISTORY_MAX", 40);
 const SUMMARY_STEP = 4;
+// plans/18: what one fold may send to the fast model, as a multiple of its history budget, so a long
+// backlog is caught up over several answers instead of in one request too big to succeed.
+const FOLD_BUDGETS = 1.5;
+const FOLD_MIN_CHARS = 9000;
+/** plans/18: how many messages a chat shows before «عرض رسائل أقدم». */
+const MESSAGES_WINDOW = 500;
 const summarySectionsV = v.object({ topics: v.string(), facts: v.array(v.string()), decisions: v.array(v.string()), open: v.array(v.string()), outputs: v.array(v.string()) });
 
 /**
@@ -588,15 +595,22 @@ export const deleteThread = mutation({
   },
 });
 
-/** A thread's messages with their citations, plus the turn in progress (queue position / tool label / stream). */
+/**
+ * A thread's newest `limit` messages (500 unless asked for more) with their citations and how many
+ * are earlier, plus the turn in progress (queue position / tool label / stream).
+ */
 export const messages = query({
-  args: { threadId: v.string() },
-  handler: async (ctx, { threadId }) => {
+  args: { threadId: v.string(), limit: v.optional(v.number()) },
+  handler: async (ctx, { threadId, limit }) => {
     const me = await requireActive(ctx);
     const meta = await useThread(ctx, me.userId, threadId, "read");
     const shared = isSharedThread(meta);
-    const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
+    const all = await threadMessages(ctx, threadId);
     const metas = new Map((await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()).map((m) => [m.messageId, m]));
+    const visible = all.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !metas.get(m.id)?.withdrawnAt);
+    const size = limit && Number.isInteger(limit) && limit > 0 ? limit : MESSAGES_WINDOW;
+    const windowed = visible.slice(-size);
+    const inWindow = new Set(windowed.map((m) => m.id));
     // The files and spaces each question had attached (its chips), by name. The asker could read
     // them when sending; a file deleted since simply drops out.
     const attached = new Map<string, { kind: "file" | "space"; name: string }[]>();
@@ -613,7 +627,7 @@ export const messages = query({
       }
     const askers = shared ? await namesOf(ctx, [...askedBy.values(), ...teamIds, ...[...metas.values()].map((mm) => mm.userId)]) : new Map<string, string>();
     for (const t of allTurns) {
-      if (!t.userMessageId || !t.mentions?.length) continue;
+      if (!t.userMessageId || !inWindow.has(t.userMessageId) || !t.mentions?.length) continue;
       const list: { kind: "file" | "space"; name: string }[] = [];
       for (const m of t.mentions) {
         if (m.kind === "file") {
@@ -631,8 +645,13 @@ export const messages = query({
     const now = Date.now();
     const proposals = new Map<string, ReturnType<typeof shapeProposal>[]>();
     for (const p of await ctx.db.query("proposals").withIndex("by_thread", (q) => q.eq("threadId", threadId)).collect()) {
+      if (!inWindow.has(p.messageId)) continue;
       if (!proposals.has(p.messageId)) proposals.set(p.messageId, []);
-      const shaped = { ...shapeProposal(p, now), mine: p.userId === me.userId };
+      const shaped = { ...shapeProposal(p, now), mine: p.userId === me.userId, stale: false };
+      // plans/18: the output moved on since this edit was proposed: «نفّذ» would be refused.
+      const target = shaped.state === "pending" ? editTarget(p.tool, p.args) : null;
+      const edited = target ? await readableArtifact(ctx, me.userId, target) : null;
+      if (edited) shaped.stale = p.baseVersion !== edited.currentVersion;
       // An output removed since («تراجع», deleted, moved away) gets no chip: opening it would fail.
       const live: string[] = [];
       for (const aid of shaped.artifactIds) {
@@ -656,8 +675,7 @@ export const messages = query({
       const ag = aid ? await ctx.db.get(aid) : null;
       agentNames.set(mm.agentId, ag?.live?.name ?? ag?.draft?.name ?? "وكيل");
     }
-    const out = page.page
-      .filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !metas.get(m.id)?.withdrawnAt)
+    const out = windowed
       .map((m) => {
         const mm = metas.get(m.id);
         return {
@@ -729,8 +747,8 @@ export const messages = query({
       pinned: !!meta.pinnedAt,
       // plans/15: what of this chat reaches the assistant as a summary: after which message, and what it says.
       summary:
-        meta.summary && meta.summary.covered > 0 && out[meta.summary.covered - 1]
-          ? { afterId: out[meta.summary.covered - 1]!.id, covered: meta.summary.covered, sections: sectionsOf(meta.summary)!, edited: !!meta.summary.editedAt, at: meta.summary.at }
+        meta.summary && meta.summary.covered > 0 && visible[meta.summary.covered - 1]
+          ? { afterId: visible[meta.summary.covered - 1]!.id, covered: meta.summary.covered, sections: sectionsOf(meta.summary)!, edited: !!meta.summary.editedAt, at: meta.summary.at }
           : null,
       noMemory: !!meta.noMemory,
       scope: meta.scope,
@@ -743,6 +761,7 @@ export const messages = query({
       test: !!meta.test,
       task,
       messages: out,
+      earlier: visible.length - windowed.length,
       turn,
     };
   },
@@ -914,8 +933,7 @@ export const handoff = mutation({
       await assertIdle(ctx, row.threadId);
       const agent = await resolveAgent(ctx, me.userId, meta);
       if ("error" in agent) throw new OneBaseError(agent.error);
-      const page = await ctx.components.chat.listMessages({ threadId: row.threadId, paginationOpts: { numItems: 500, cursor: null } });
-      const original = page.page.find((m) => m.id === messageId)?.text;
+      const original = (await threadMessages(ctx, row.threadId)).find((m) => m.id === messageId)?.text;
       if (!original) throw new Denied();
       const author = (await namesOf(ctx, [row.userId])).get(row.userId) ?? "زميل";
       const text = `طلب ${author} مني: ${original}`.slice(0, MAX_QUESTION);
@@ -1000,12 +1018,12 @@ export const retry = mutation({
     const me = await requireActive(ctx);
     const meta = await useThread(ctx, me.userId, threadId, "write");
     await assertIdle(ctx, threadId);
-    const page = await ctx.components.chat.listMessages({ threadId, paginationOpts: { numItems: 500, cursor: null } });
+    const all = await threadMessages(ctx, threadId);
     const prev = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).order("desc").first();
     // plans/16: an answer belongs to whoever asked for it. Retrying someone else's question would
     // run it again with my permissions, so only the asker retries; anyone else asks themselves.
     if (prev && prev.userId !== me.userId) throw new OneBaseError("تعيد المحاولة على سؤالك أنت فقط؛ اسأل المساعد بنفسك إن أردت");
-    const question = prev?.userMessageId ? page.page.find((m) => m.id === prev.userMessageId) : page.page.filter((m) => m.role === "user" && m.text).at(-1);
+    const question = prev?.userMessageId ? all.find((m) => m.id === prev.userMessageId) : all.filter((m) => m.role === "user" && m.text).at(-1);
     if (!question?.text) throw new OneBaseError("لا يوجد سؤال لإعادته");
     const agent = await resolveAgent(ctx, me.userId, meta);
     if ("error" in agent) throw new OneBaseError(agent.error);
@@ -1098,6 +1116,11 @@ export function buildSystemPrompt(agent: { name: string; instructions: string },
 }
 
 type ProposalDoc = Doc<"proposals">;
+
+/** plans/18: the existing output a stored call would write to, if its tool edits one. */
+function editTarget(tool: string, args: unknown): string | null {
+  return (Object.hasOwn(registry, tool) ? registry[tool]!.edits?.(args as any) : null) ?? null;
+}
 
 function shapeProposal(p: ProposalDoc, now: number) {
   const state = p.state === "pending" && now > p.expiresAt ? "expired" : p.state;
@@ -1209,11 +1232,11 @@ export const turnContext = internalQuery({
     const run = turn.afterProposal ? await ctx.db.get(turn.afterProposal) : null;
     const afterRun = run && run.userId === turn.userId && run.threadId === turn.threadId && run.state === "executed" ? { tool: run.tool, label: run.label, result: run.result ?? "" } : null;
     const defaultAgent = (await ctx.db.query("agents").collect()).find((a) => a.isDefault && a.enabled && a.live);
-    const page = await ctx.components.chat.listMessages({ threadId: turn.threadId, paginationOpts: { numItems: 500, cursor: null } });
+    const all = await threadMessages(ctx, turn.threadId);
     const metaRows = await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect();
     const notes = new Map(metaRows.filter((x) => x.modelNote).map((x) => [x.messageId, x.modelNote!]));
     const withdrawn = new Set(metaRows.filter((x) => x.withdrawnAt).map((x) => x.messageId));
-    const kept = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !withdrawn.has(m.id));
+    const kept = all.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !withdrawn.has(m.id));
     const msgs = kept.map((m) => ({ role: m.role as "user" | "assistant", text: m.text! + (notes.has(m.id) ? `\n(تفاصيل للنموذج: ${notes.get(m.id)})` : "") }));
     // plans/16: the question is this turn's own message (a retry names it), never a colleague's
     // message posted after it; messages between colleagues are never the question.
@@ -1236,17 +1259,20 @@ export const turnContext = internalQuery({
     // Fold what is older than the window into the summary once there's enough of it.
     const prevSections = sum ? sectionsOf(sum) : null;
     const folding = lastUser >= 0 && win.foldTo - covered >= SUMMARY_STEP;
+    const foldTo = folding
+      ? foldUpTo(msgs.map((m) => m.text.length), covered, win.foldTo, Math.max(FOLD_MIN_CHARS, (await historyTokens(ctx, "fast")) * CHARS_PER_TOKEN * FOLD_BUDGETS))
+      : covered;
     // What the folded messages' actions made or sent, from the records, not from the model.
     const outputs: string[] = [];
     if (folding) {
-      const ids = new Set(kept.slice(covered, win.foldTo).map((m) => m.id));
+      const ids = new Set(kept.slice(covered, foldTo).map((m) => m.id));
       for (const p of await ctx.db.query("proposals").withIndex("by_thread", (q) => q.eq("threadId", turn.threadId)).collect())
         if (ids.has(p.messageId) && p.state === "executed" && !p.undoneAt) {
           const line = outputLine(p);
           if (line) outputs.push(line);
         }
     }
-    const compact = folding ? { from: covered, to: win.foldTo, at: sum?.at ?? 0, prev: prevSections, edited: !!sum?.editedAt, msgs: withAsker(covered, win.foldTo), outputs } : null;
+    const compact = folding ? { from: covered, to: foldTo, at: sum?.at ?? 0, prev: prevSections, edited: !!sum?.editedAt, msgs: withAsker(covered, foldTo), outputs } : null;
     const summaryText = prevSections ? renderSummary(prevSections) : null;
     return {
       ...base,
@@ -1383,7 +1409,7 @@ export const finishTurn = internalMutation({
     abstained: v.boolean(),
     usage: v.optional(v.object({ prompt: v.number(), completion: v.number() })),
     touched: v.array(v.object({ spaceId: v.string(), files: v.array(v.string()) })),
-    proposals: v.optional(v.array(v.object({ tool: v.string(), label: v.string(), args: v.any(), tier: v.optional(v.number()) }))),
+    proposals: v.optional(v.array(v.object({ tool: v.string(), label: v.string(), args: v.any(), tier: v.optional(v.number()), baseVersion: v.optional(v.number()) }))),
     /** Tier-1 actions that already ran in this turn (my personal space only): recorded with their undo. */
     autoRuns: v.optional(
       v.array(v.object({ tool: v.string(), label: v.string(), args: v.any(), result: v.string(), display: v.optional(v.string()), artifactIds: v.array(v.string()), undo: v.any(), spaceIds: v.array(v.string()) })),
@@ -1441,6 +1467,7 @@ export const finishTurn = internalMutation({
         createdAt: now,
         expiresAt: a.expiresAt ?? now + proposalTtl(),
         ...(p.tier ? { tier: p.tier } : {}),
+        ...(p.baseVersion !== undefined ? { baseVersion: p.baseVersion } : {}),
       });
     }
     for (const r of a.autoRuns ?? []) {
@@ -1626,6 +1653,8 @@ export const runTurn = internalAction({
       const name = pre.route.candidates.find((x) => x.agentId === pick.agentId)?.name;
       await ctx.runMutation(internal.chat.stepEnd, { turnId, index: i, ok: true, detail: name ? `→ ${name}` : undefined });
     } else if (pre.route?.candidates.length === 1) routedTo = pre.route.candidates[0]!.agentId;
+    // plans/18: what this answer knows of any output is what that output was at this moment.
+    const knownAt = Date.now();
     const c = await ctx.runQuery(internal.chat.turnContext, { turnId, agentOverride: routedTo ?? undefined });
     if (!c) return null;
     if (pre.route && c.agent) await ctx.runMutation(internal.chat.setTurnAgent, { turnId, agentId: c.agent.agentId ?? undefined, agentVersion: c.agent.version });
@@ -1684,7 +1713,14 @@ export const runTurn = internalAction({
       sharedSpaceId: (c.sharedSpaceId as Id<"spaces"> | null) ?? undefined,
     };
     const toolRuns: { name: string; label: string; args: unknown; ok: boolean; summary: string }[] = [];
-    const proposals: { tool: string; label: string; args: unknown; tier?: Tier }[] = [];
+    const proposals: { tool: string; label: string; args: unknown; tier?: Tier; baseVersion?: number }[] = [];
+    // plans/18: an edit is based on the output as this answer found it, or as this answer last saved it.
+    const savedHere = new Map<string, number>();
+    const baseVersionOf = async (tool: AppTool, args: unknown): Promise<number | undefined> => {
+      const artifactId = tool.edits?.(args as any);
+      if (!artifactId) return undefined;
+      return savedHere.get(artifactId) ?? (await ctx.runQuery(internal.artifacts.versionAt, { userId, artifactId, at: knownAt })) ?? undefined;
+    };
     const autoRuns: { tool: string; label: string; args: unknown; result: string; display?: string; artifactIds: string[]; undo: unknown; spaceIds: string[] }[] = [];
     const plain = (x: unknown) => JSON.parse(JSON.stringify(x ?? null));
     const turnStarted = Date.now();
@@ -2058,7 +2094,7 @@ export const runTurn = internalAction({
             }
           } else if (p.kind === "proposal") {
             // Write tools that touch shared or sensitive places never run from the model's say-so.
-            proposals.push({ tool: tool!.name, label: tool!.label, args: tc.args, tier: p.tier });
+            proposals.push({ tool: tool!.name, label: tool!.label, args: tc.args, tier: p.tier, baseVersion: await baseVersionOf(tool!, tc.args) });
             content = "عُرض هذا الإجراء على المستخدم ليؤكده بزر «نفّذ»، ولم يُنفَّذ بعد. أخبره بجملة أو جملتين بما سيحدث إن أكّده، بصيغة المستقبل. لا تصف ناتجه ولا محتواه كأنه موجود (لا «الملف يحتوي…» ولا «أنشأت…»)، فقد لا يُنفَّذ أو يفشل.";
             toolRuns.push({ name: tool!.name, label: tool!.label, args: tc.args, ok: false, summary: "بانتظار تأكيد المستخدم" });
           } else if (p.kind === "auto") {
@@ -2069,8 +2105,10 @@ export const runTurn = internalAction({
               if (tool!.name === "run_analysis") sandboxRuns++;
               const i = await ctx.runMutation(internal.chat.stepStart, { turnId, label: tool!.label });
               try {
-                const out = await tool!.run(tctx, tc.args as any);
+                const out = await tool!.run({ ...tctx, expectVersion: await baseVersionOf(tool!, tc.args) }, tc.args as any);
                 if (out.failed) throw new Error(out.content);
+                const target = tool!.edits?.(tc.args as any);
+                if (target && out.version !== undefined) savedHere.set(target, out.version);
                 autoRuns.push({ tool: tool!.name, label: tool!.label, args: tc.args, result: out.content, display: out.display, artifactIds: out.artifactIds ?? [], undo: out.undo ?? null, spaceIds: out.spaceIds ?? [] });
                 for (const sid of out.spaceIds ?? []) touch(sid);
                 content = out.content + "\n\n(نُفّذ مباشرة لأنه في مساحة المستخدم الخاصة، ويستطيع التراجع عنه. لا تطلب منه الضغط على «نفّذ».)";
@@ -2302,9 +2340,9 @@ export const readForTool = internalQuery({
     } catch {
       return "لا يمكن قراءة هذه المحادثة.";
     }
-    const page = await ctx.components.chat.listMessages({ threadId: a.threadId, paginationOpts: { numItems: 500, cursor: null } });
+    const stored = await threadMessages(ctx, a.threadId);
     const withdrawn = new Set((await ctx.db.query("messageMeta").withIndex("by_thread", (q) => q.eq("threadId", a.threadId)).collect()).filter((x) => x.withdrawnAt).map((x) => x.messageId));
-    const all = page.page.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !withdrawn.has(m.id)).map((m, i) => ({ n: i + 1, role: m.role as string, text: m.text! }));
+    const all = stored.filter((m) => (m.role === "user" || m.role === "assistant") && m.text && !withdrawn.has(m.id)).map((m, i) => ({ n: i + 1, role: m.role as string, text: m.text! }));
     // The question being answered now is not "older".
     const msgs = all.at(-1)?.role === "user" ? all.slice(0, -1) : all;
     if (!msgs.length) return "لا رسائل سابقة في هذه المحادثة.";
@@ -2417,18 +2455,40 @@ export const claimProposal = internalMutation({
     const memoryTool = PERSONAL_TOOLS.includes(p.tool) || (MEMORY_TOOLS.includes(p.tool) && (await memoryOn(ctx, userId, meta)));
     if (!tool || !tool.requiresConfirmation || !(memoryTool || agentTools(agent.config).includes(p.tool))) return await fail("هذه الأداة لم تعد متاحة لهذا الوكيل");
     if (isSharedThread(meta) && SHARED_CHAT_BLOCKED.has(p.tool)) return await fail("هذه الأداة لا تعمل في المحادثة المشتركة");
+    // plans/18: an edit runs only on the version it was based on (the write checks again, atomically).
+    const target = editTarget(p.tool, p.args);
+    if (target) {
+      const art = await readableArtifact(ctx, userId, target);
+      if (!art) return await fail("المخرج لم يعد موجوداً أو لا تملك صلاحية الوصول إليه");
+      if (p.baseVersion === undefined) return await fail("لم يُحفظ شيء: هذا الاقتراح لا يذكر النسخة التي بُني عليها. اطلبه من جديد.");
+      if (p.baseVersion !== art.currentVersion) return await fail(staleText(art));
+    }
     const scope = await effectiveScope(ctx, userId, agent.config.dataScope, meta.scope);
     await ctx.db.patch(p._id, { state: "running", decidedAt: now });
-    return { proposal: { id: p._id, tool: p.tool, args: p.args, threadId: p.threadId, agentId: p.agentId ?? null }, spaceIds: scope.spaceIds as string[], fileIds: scope.fileIds, sharedSpaceId: isSharedThread(meta) ? (meta.spaceId as string) : null };
+    return { baseVersion: p.baseVersion, proposal: { id: p._id, tool: p.tool, args: p.args, threadId: p.threadId, agentId: p.agentId ?? null }, spaceIds: scope.spaceIds as string[], fileIds: scope.fileIds, sharedSpaceId: isSharedThread(meta) ? (meta.spaceId as string) : null };
   },
 });
 
+/**
+ * plans/18: one answer may propose several edits of one output, each meant to follow the one before.
+ * Once one is saved, the answer's later edits that shared its base are based on what it saved.
+ * Earlier ones stay on the old base, so they can't land on top of it.
+ */
+async function moveLaterEdits(ctx: MutationCtx, done: Doc<"proposals">, version: number) {
+  const target = editTarget(done.tool, done.args);
+  if (!target) return;
+  const rows = await ctx.db.query("proposals").withIndex("by_message", (q) => q.eq("messageId", done.messageId)).collect();
+  for (const p of rows.slice(rows.findIndex((r) => r._id === done._id) + 1))
+    if (p.state === "pending" && p.baseVersion === done.baseVersion && editTarget(p.tool, p.args) === target) await ctx.db.patch(p._id, { baseVersion: version });
+}
+
 export const finishProposal = internalMutation({
-  args: { proposalId: v.id("proposals"), ok: v.boolean(), result: v.string(), display: v.optional(v.string()), artifactIds: v.array(v.string()), spaceIds: v.array(v.string()) },
+  args: { proposalId: v.id("proposals"), ok: v.boolean(), result: v.string(), display: v.optional(v.string()), artifactIds: v.array(v.string()), spaceIds: v.array(v.string()), version: v.optional(v.number()) },
   handler: async (ctx, a) => {
     const p = await ctx.db.get(a.proposalId);
     if (!p || p.state !== "running") return null;
     await ctx.db.patch(p._id, { state: a.ok ? "executed" : "failed", result: a.result.slice(0, MAX_RUN_RESULT), display: a.display?.slice(0, 500), artifactIds: a.artifactIds });
+    if (a.ok && a.version !== undefined) await moveLaterEdits(ctx, p, a.version);
     let messageId: string | null = null;
     const tool = Object.hasOwn(registry, p.tool) ? registry[p.tool] : undefined;
     if (a.ok && tool?.answerAfterRun) {
@@ -2484,12 +2544,14 @@ export const confirmProposal = action({
       threadId: proposal.threadId,
       agentId: proposal.agentId ?? undefined,
       sharedSpaceId: (claim.sharedSpaceId as Id<"spaces"> | null) ?? undefined,
+      expectVersion: claim.baseVersion,
     };
     let ok = true;
     let result: string;
     let display: string | undefined;
     let artifactIds: string[] = [];
     let spaceIds: string[] = [];
+    let version: number | undefined;
     try {
       const out = await tool.run(tctx, proposal.args);
       // A refused write (ToolResult.failed) is a failure on the card too, not «تم».
@@ -2498,11 +2560,12 @@ export const confirmProposal = action({
       display = out.display;
       artifactIds = out.artifactIds ?? [];
       spaceIds = out.spaceIds ?? [];
+      version = out.version;
     } catch (err) {
       ok = false;
       result = err instanceof Error ? err.message.replace(/^.*Uncaught (OneBaseError: )?/, "") : String(err);
     }
-    await ctx.runMutation(internal.chat.finishProposal, { proposalId: proposal.id, ok, result, display, artifactIds, spaceIds });
+    await ctx.runMutation(internal.chat.finishProposal, { proposalId: proposal.id, ok, result, display, artifactIds, spaceIds, version });
     return { ok, result, artifactIds };
   },
 });

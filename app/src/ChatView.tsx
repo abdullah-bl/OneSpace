@@ -8,9 +8,10 @@
 // copied or retried. Write tools arrive as proposal cards ("نفّذ"); their outputs open in a side
 // panel. Threads opened from a task, test threads and scheduled-task threads use the same screen.
 
-import { Fragment, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
 import { ArtifactDock, OutputChip } from "./ArtifactPanel";
+import { leaveUnsaved } from "./unsaved";
 import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
 import { openSkillDraft } from "./SkillsView";
 import { Icon, type IconName } from "./icons";
@@ -23,7 +24,7 @@ export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: strin
 // "person": a named member of this shared space's chat, told this one message (mentions.mentionInChat).
 type Mention = { kind: "file" | "space" | "agent" | "person" | "assistant"; id: string; name: string; spaceId?: string };
 type Citation = { n: number; fileId: string; fileName: string; page?: number; section?: string; quote: string; check?: "unrelated" | "contradicts" };
-type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean };
+type Proposal = { id: string; tool: string; label: string; args: any; state: string; expiresAt: number; result: string | null; display: string | null; artifactIds: string[]; tier: number | null; auto: boolean; mine?: boolean; stale?: boolean };
 type Step = { label: string; state: "running" | "done" | "failed"; ms: number | null; detail: string | null };
 type Msg = { id: string; role: "user" | "assistant"; text: string; citations: Citation[]; toolRuns: { name: string; label: string; ok: boolean; summary: string }[]; abstained: boolean; feedback: "up" | "down" | null; proposals: Proposal[]; skill: { agentId: string; name: string; routed: boolean } | null; userSkill: string | null; attached?: { kind: "file" | "space"; name: string }[]; steps: Step[]; parts?: Part[]; ms: number | null; author?: string | null; mine?: boolean; team?: { to: TeamTo[]; viaAssistant?: boolean } | null; handoffOf?: string | null; forName?: string | null };
 type Part = { agent: string; goal: string; text: string; ok: boolean; ms: number };
@@ -101,8 +102,18 @@ function useStarters(spaceId: string | undefined): Starter[] {
   }, [mine, seed]);
 }
 
+/** How many more messages «عرض رسائل أقدم» brings. */
+const OLDER_STEP = 500;
+
 export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string | null; spaceId?: string | null; spaces: SpaceInfo[]; go: (path: string) => void }) {
-  const data = useQuery(api.chat.messages, threadId ? { threadId } : "skip");
+  // plans/18: a long chat opens on its newest messages. Asking for older ones is a new query, so
+  // the messages already on screen stay until it answers.
+  const [limit, setLimit] = useState<number | null>(null);
+  const fresh = useQuery(api.chat.messages, threadId ? { threadId, ...(limit ? { limit } : {}) } : "skip");
+  const shown = useRef(fresh);
+  if (fresh) shown.current = fresh;
+  const data = fresh ?? shown.current;
+  const loadingOlder = !!limit && !fresh;
   const createThread = useMutation(api.chat.createThread);
   const send = useMutation(api.chat.send);
   const retry = useMutation(api.chat.retry);
@@ -141,6 +152,25 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
     const el = scrollRef.current;
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   });
+
+  // Older messages land above: keep what was being read where it was.
+  const keepFromBottom = useRef<number | null>(null);
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (!el || keepFromBottom.current === null || loadingOlder) return;
+    el.scrollTop = el.scrollHeight - keepFromBottom.current;
+    keepFromBottom.current = null;
+  }, [limit, loadingOlder]);
+  const showOlder = () => {
+    const el = scrollRef.current;
+    if (el) keepFromBottom.current = el.scrollHeight - el.scrollTop;
+    stick.current = false;
+    setLimit(messages.length + OLDER_STEP);
+  };
+
+  const openArtifact = (id: string) => {
+    if (id !== artifact) void leaveUnsaved().then((ok) => ok && setArtifact(id));
+  };
 
   const submit = async (text: string, mentions: Mention[], skill?: SkillRef | null, toAssistant?: boolean) => {
     setError("");
@@ -258,9 +288,19 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
               </div>
             )}
             {data?.agent?.error && <div className="rounded-md bg-warning-soft p-3 text-sm text-warning">{data.agent.error}</div>}
+            {threadId && !!data?.earlier && (
+              <div className="flex justify-center">
+                <button className="btn-ghost h-8 text-xs" disabled={loadingOlder} onClick={showOlder}>
+                  <Icon name="up" size={13} />
+                  {loadingOlder ? "يحمّل الرسائل…" : <>عرض رسائل أقدم (<span className="num">{data.earlier}</span>)</>}
+                </button>
+              </div>
+            )}
+            {/* The summary reaches only older messages than these: its line opens the list. */}
+            {threadId && data?.summary && !messages.some((m) => m.id === data.summary!.afterId) && <SummaryDivider threadId={threadId} summary={data.summary as ChatSummaryInfo} canWrite={!!data.canWrite} />}
             {messages.map((m) => (
               <Fragment key={m.id}>
-                <MessageView m={m} canWrite={data?.canWrite ?? true} busy={working} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={setArtifact} />
+                <MessageView m={m} canWrite={data?.canWrite ?? true} busy={working} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={openArtifact} />
                 {threadId && data?.summary && data.summary.afterId === m.id && <SummaryDivider threadId={threadId} summary={data.summary as ChatSummaryInfo} canWrite={!!data.canWrite} />}
               </Fragment>
             ))}
@@ -1325,7 +1365,13 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
             {p.auto && p.state === "executed" && <span className="meta">{p.tool === "notify_colleague" ? "في هذه المحادثة" : "في مساحتك الخاصة"}</span>}
             {p.tier === 3 && pending && <span className="badge-warning">حسّاس أو رسمي</span>}
           </div>
-          {pending && view?.effect && <p className="mt-1 text-xs text-muted">{view.effect(p.args ?? {})}</p>}
+          {pending && p.stale && (
+            <p className="mt-1 text-xs text-warning" role="status">
+              تغيّر المخرج بعد هذا الاقتراح، فلن يُنفَّذ حتى لا يمحو التعديل الأحدث.
+              {p.mine !== false && " اطلبه من جديد."}
+            </p>
+          )}
+          {pending && !p.stale && view?.effect && <p className="mt-1 text-xs text-muted">{view.effect(p.args ?? {})}</p>}
           {summary.length > 0 && (
             <ul className="mt-1 text-xs text-muted">
               {summary.map((l) => (
@@ -1366,7 +1412,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
           )}
           {pending && p.mine !== false && (
             <>
-              <button className="btn-primary h-8" disabled={busy} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
+              <button className="btn-primary h-8" disabled={busy || !!p.stale} onClick={() => void run(() => confirm({ proposalId: p.id }))}>
                 <Icon name="check" size={14} /> {busy ? "يُنفَّذ…" : (view?.confirm ?? "نفّذ")}
               </button>
               <button className="btn-ghost h-8" disabled={busy} onClick={() => void run(() => cancel({ proposalId: p.id }))}>
@@ -1377,6 +1423,7 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
               </span>
             </>
           )}
+          {pending && p.stale && (p.args?.artifactId || p.args?.appId) && <OutputChip artifactId={String(p.args.artifactId ?? p.args.appId)} onOpen={onOpenArtifact} />}
           {p.artifactIds.map((id) => (
             <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
           ))}
