@@ -11,18 +11,19 @@ import { useAction, useMutation, useQuery } from "onebase/react";
 import { api, errorText, formatDate, type SpaceInfo } from "./lib";
 import { frameAttributes } from "./sandbox";
 import { PublishBox } from "./PublishView";
+import { SlidesView } from "./SlidesView";
 import { Icon, type IconName } from "./icons";
 import { EmptyState, Menu, type MenuItem, ask } from "./ui";
 
-type Kind = "markdown" | "html" | "table" | "app";
+type Kind = "markdown" | "html" | "table" | "app" | "slides";
 type Opened = { _id: string; title: string; kind: Kind; version: number; currentVersion: number; content: string; sha256: string; classification: string };
 type Format = "docx" | "pdf" | "pptx";
 
-const KIND_LABEL: Record<string, string> = { markdown: "مستند", html: "صفحة HTML", table: "جدول", app: "تطبيق" };
-const KIND_ICON: Record<string, IconName> = { markdown: "file", html: "code", table: "table", app: "code" };
+const KIND_LABEL: Record<string, string> = { markdown: "مستند", html: "صفحة HTML", table: "جدول", app: "تطبيق", slides: "عرض شرائح" };
+const KIND_ICON: Record<string, IconName> = { markdown: "file", html: "code", table: "table", app: "code", slides: "play" };
 const FORMAT_LABEL: Record<Format, string> = { docx: "Word", pdf: "PDF", pptx: "PowerPoint" };
 /** What each kind can download as (mirrors onebase/lib/docExport.ts formatsFor). */
-const DOC_FORMATS: Record<Kind, Format[]> = { markdown: ["docx", "pdf", "pptx"], table: ["docx", "pdf", "pptx"], html: ["pdf"], app: [] };
+const DOC_FORMATS: Record<Kind, Format[]> = { markdown: ["docx", "pdf", "pptx"], table: ["docx", "pdf", "pptx"], html: ["pdf"], app: [], slides: ["pptx", "pdf"] };
 
 export function saveBase64(fileName: string, mime: string, base64: string) {
   const bytes = Uint8Array.from(atob(base64), (c) => c.charCodeAt(0));
@@ -243,7 +244,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
 
   const home = spaces.find((s) => s._id === meta?.artifact.spaceId);
   const canWrite = !!home?.canWrite;
-  const canEdit = canWrite && (doc?.kind === "markdown" || doc?.kind === "html") && wanted === current;
+  const canEdit = canWrite && (doc?.kind === "markdown" || doc?.kind === "html" || doc?.kind === "slides") && wanted === current;
   const writable = spaces.filter((s) => s.canWrite && s._id !== meta?.artifact.spaceId);
   const kind = (doc?.kind ?? meta?.artifact.kind ?? "markdown") as Kind;
   const preview = useMemo(() => (doc && doc.kind === "markdown" ? (marked.parse(draft ?? doc.content, { async: false }) as string) : doc?.kind === "html" ? (draft ?? doc.content) : ""), [doc, draft]);
@@ -289,7 +290,7 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
   const more: MenuItem[] = [
     { label: details ? "إخفاء التفاصيل" : "التفاصيل", icon: "eye", onSelect: () => setDetails(!details) },
     { label: "انشر برابط…", icon: "globe", onSelect: () => setPublishing(true) },
-    ...(kind !== "table" && kind !== "app" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
+    ...(kind !== "table" && kind !== "app" && kind !== "slides" ? [{ label: "ملء الشاشة", icon: "expand", onSelect: () => void body.current?.requestFullscreen?.() } as MenuItem] : []),
     ...(writable.length ? (["divider", ...writable.map((s): MenuItem => ({ label: `نقل إلى ${s.kind === "personal" ? "مساحتي" : s.name}`, icon: "folder", onSelect: () => moveTo(s._id) }))] as MenuItem[]) : []),
     ...(canWrite
       ? (["divider", { label: "حذف المخرج", danger: true, onSelect: () => void ask(`حذف «${meta?.artifact.title}» بكل نسخه؟`, { danger: true, confirmLabel: "حذف" }).then((ok) => { if (ok) void run(async () => (await remove({ artifactId: artifactId as any }), onClose())); })}] as MenuItem[])
@@ -361,7 +362,8 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
         {!doc && !error && <div className="grid h-full place-items-center text-sm text-faint">يفتح…</div>}
         {doc && kind === "table" && <TableView content={doc.content} />}
         {doc && kind === "app" && <AppView artifactId={artifactId} version={doc.version} content={doc.content} canTest={canWrite && wanted === current} />}
-        {doc && kind !== "table" && kind !== "app" && draft === null && <SandboxedFrame title={doc.title} html={preview} className="h-full" />}
+        {doc && kind === "slides" && draft === null && <SlidesView content={doc.content} title={doc.title} />}
+        {doc && kind !== "table" && kind !== "app" && kind !== "slides" && draft === null && <SandboxedFrame title={doc.title} html={preview} className="h-full" />}
         {doc && draft !== null && (
           <div className="grid h-full @3xl:grid-cols-2">
             <textarea
@@ -372,7 +374,13 @@ export function ArtifactPanel({ artifactId, spaces, onClose }: { artifactId: str
               onChange={(e) => setDraft(e.target.value)}
               aria-label="نص المخرج"
             />
-            <SandboxedFrame title="معاينة" html={preview} className="hidden h-full @3xl:block" />
+            {kind === "slides" ? (
+              <div className="hidden h-full min-h-0 @3xl:block">
+                <SlidesView content={draft} title="معاينة" />
+              </div>
+            ) : (
+              <SandboxedFrame title="معاينة" html={preview} className="hidden h-full @3xl:block" />
+            )}
           </div>
         )}
       </div>

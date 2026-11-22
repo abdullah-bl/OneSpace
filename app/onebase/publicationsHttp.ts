@@ -14,6 +14,7 @@ import { httpAction } from "./_generated/server";
 import { appOrigin, publishOrigin } from "./publications";
 import { tableToMarkdown } from "./lib/docExport";
 import { renderAnswer } from "../src/markdown";
+import { slidesToMarkdown } from "../src/slides";
 import { ARTIFACT_CSP, BASE_STYLE, TABLE_TOOLS, stripMeta } from "../src/sandbox";
 import { bundlePage, type PageConfig } from "./lib/appFiles";
 import { runHandler } from "./lib/appHandler";
@@ -100,7 +101,7 @@ function formHtml(slug: string, form: FormView, note: string | null, previewed: 
 }
 
 export function pageHtml(p: { title: string; kind: string; content: string; spaceName: string; form?: FormView }, slug = "", note: string | null = null, previewed: PreviewResult = null) {
-  const body = p.kind === "html" ? stripMeta(p.content) : renderAnswer(p.kind === "table" ? tableToMarkdown(p.content) : p.content, new Set());
+  const body = p.kind === "html" ? stripMeta(p.content) : renderAnswer(p.kind === "table" ? tableToMarkdown(p.content) : p.kind === "slides" ? slidesToMarkdown(p.content) : p.content, new Set());
   return `<!doctype html><html lang="ar" dir="rtl"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="robots" content="noindex,nofollow"><meta name="referrer" content="no-referrer"><title>${esc(p.title)}</title><style>${BASE_STYLE}${PAGE_STYLE}</style></head><body>${body}${formHtml(slug, p.form ?? null, note, previewed)}<p class="os-pub-foot">نُشر من مساحة${p.spaceName ? ` · ${esc(p.spaceName)}` : ""}</p><script>${TABLE_TOOLS}</script></body></html>`;
 }
 

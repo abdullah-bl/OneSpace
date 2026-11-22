@@ -3,7 +3,7 @@ import type { AppTool } from "./types";
 
 type Args = {
   title: string;
-  kind: "markdown" | "html" | "table";
+  kind: "markdown" | "html" | "table" | "slides";
   content?: string;
   table?: { columns: string[]; rows: (string | number | boolean | null)[][] };
   sources?: { type: "file" | "recordSet" | "artifact"; id: string }[];
@@ -15,7 +15,10 @@ export const create_artifact: AppTool<Args> = {
   name: "create_artifact",
   label: "يُنشئ مخرجاً…",
   description:
-    "Create an output shown in the side panel: a Markdown document, an HTML page (rendered sandboxed: no network, and its own <script> doesn't run), or a table. " +
+    "Create an output shown in the side panel: a Markdown document, an HTML page (rendered sandboxed: no network, and its own <script> doesn't run), a table, or a slide deck. " +
+    "For a presentation (عرض تقديمي، شرائح) use kind=slides: Markdown, slides separated by a line containing only ---, each slide starting with a # or ## heading, " +
+    "a few short bullets per slide (not paragraphs). Presenter notes for a slide go after a line starting \"ملاحظات:\". The user presents it full screen from the panel " +
+    "and can download it as PowerPoint. Raw HTML in slides is shown as text. " +
     "Every table in an output is interactive automatically: a search box, sortable columns and a row count. So for a searchable or sortable page of data, " +
     "make a table output (or an HTML page with a <table>) — never paste page code into the chat. For a whole spreadsheet, use run_analysis to write the HTML/CSV to /output. " +
     "List the files/record sets/artifacts it was built from in `sources`; it is saved in their space (or the user's personal space). " +
@@ -29,8 +32,8 @@ export const create_artifact: AppTool<Args> = {
     required: ["title", "kind"],
     properties: {
       title: { type: "string", maxLength: 200 },
-      kind: { type: "string", enum: ["markdown", "html", "table"] },
-      content: { type: "string", description: "Markdown or HTML text (kind markdown/html)." },
+      kind: { type: "string", enum: ["markdown", "html", "table", "slides"] },
+      content: { type: "string", description: "Markdown or HTML text (kind markdown/html), or the slides' Markdown (kind slides)." },
       table: {
         type: "object",
         description: "For kind=table.",

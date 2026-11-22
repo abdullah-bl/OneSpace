@@ -4,6 +4,7 @@
 
 import { OneBaseError } from "onebase/values";
 import { callSandbox, SandboxUnavailable } from "./sandboxClient";
+import { slidesToMarkdown } from "../../src/slides";
 
 export type DocFormat = "docx" | "pdf" | "pptx";
 export const DOC_FORMATS: DocFormat[] = ["docx", "pdf", "pptx"];
@@ -22,6 +23,7 @@ const RENDER_CODE = "import onespace_doc\nonespace_doc.main()\n";
 /** Which formats an artifact kind can become. HTML only prints to PDF; tables go through Markdown. */
 export function formatsFor(kind: string): DocFormat[] {
   if (kind === "markdown" || kind === "table") return DOC_FORMATS;
+  if (kind === "slides") return ["pptx", "pdf"];
   if (kind === "html") return ["pdf"];
   return [];
 }
@@ -45,7 +47,7 @@ export function safeBaseName(title: string) {
 export async function renderDocument(art: { title: string; kind: string; content: string }, format: DocFormat): Promise<{ fileName: string; mime: string; bytes: Uint8Array }> {
   if (!formatsFor(art.kind).includes(format)) throw new OneBaseError(`لا يمكن تحويل هذا المخرج إلى ${DOC_LABEL[format] ?? format}`);
   const kind = art.kind === "html" ? "html" : "markdown";
-  const content = art.kind === "table" ? tableToMarkdown(art.content) : art.content;
+  const content = art.kind === "table" ? tableToMarkdown(art.content) : art.kind === "slides" ? slidesToMarkdown(art.content) : art.content;
   const doc = JSON.stringify({ title: art.title, kind, content, format });
   let r;
   try {

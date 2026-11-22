@@ -25,7 +25,8 @@
     "onebase-components": "github:abdullah-bl/onebase-components#469185b3066afd51452a7a555f1324cf60060158",
     "pdf-lib": "1.17.1",
     "react": "19.3.1",
-    "react-dom": "19.3.1"
+    "react-dom": "19.3.1",
+    "reveal.js": "5.2.1"
   },
   "devDependencies": {
     "@tailwindcss/vite": "4.3.5",

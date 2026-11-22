@@ -25,7 +25,7 @@ import { renderDocument, type DocFormat } from "./lib/docExport";
 import { applyFiles, serializeApp } from "./lib/appFiles";
 
 type Ctx = QueryCtx | MutationCtx;
-export type ArtifactKind = "markdown" | "html" | "table" | "app";
+export type ArtifactKind = "markdown" | "html" | "table" | "app" | "slides";
 export type SourceRef = { type: "file" | "recordSet" | "artifact"; id: string };
 export type Source = SourceRef & { spaceId: Id<"spaces"> };
 
@@ -200,7 +200,7 @@ export type CreateInput = { title: string; kind: ArtifactKind; content: unknown;
 export async function createArtifact(ctx: MutationCtx, actor: Actor, input: CreateInput, opts: { scope: Set<string> | null; threadId?: string; via: string }) {
   const title = String(input.title ?? "").trim().slice(0, 200);
   if (!title) throw new OneBaseError("اكتب عنواناً للمخرج");
-  if (!["markdown", "html", "table"].includes(input.kind)) throw new OneBaseError("نوع المخرج غير معروف");
+  if (!["markdown", "html", "table", "slides"].includes(input.kind)) throw new OneBaseError("نوع المخرج غير معروف");
   const content = normalizeContent(input.kind, input.content);
   const { sources, sensitiveOrigins } = await resolveSources(ctx, actor, input.sources ?? [], opts.scope);
   const { space, classification, originSpaceId } = await place(ctx, actor, sources, sensitiveOrigins, input.spaceId, opts.scope, { home: await homeSpaceOf(ctx, actor.userId, opts.threadId) });
@@ -341,7 +341,7 @@ export const list = query({
  * a markdown output made from a picture). Each comes with its space and the chat it came from.
  */
 export const mine = query({
-  args: { q: v.optional(v.string()), kind: v.optional(v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("image"), v.literal("app"))), spaceId: v.optional(v.string()) },
+  args: { q: v.optional(v.string()), kind: v.optional(v.union(v.literal("markdown"), v.literal("html"), v.literal("table"), v.literal("image"), v.literal("app"), v.literal("slides"))), spaceId: v.optional(v.string()) },
   handler: async (ctx, { q, kind, spaceId }) => {
     const me = await requireActive(ctx);
     const rows = (await ctx.db.query("artifacts").withIndex("by_owner", (x) => x.eq("ownerId", me.userId)).collect()).sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 500);
@@ -680,7 +680,7 @@ export const updateForUser = internalMutation({
   },
 });
 
-const KIND_AR: Record<Doc<"artifacts">["kind"], string> = { markdown: "مستند", html: "صفحة", table: "جدول", app: "تطبيق" };
+const KIND_AR: Record<Doc<"artifacts">["kind"], string> = { markdown: "مستند", html: "صفحة", table: "جدول", app: "تطبيق", slides: "عرض شرائح" };
 
 /**
  * One line per output of this chat and of the given spaces (the chat's space and my own), for the
