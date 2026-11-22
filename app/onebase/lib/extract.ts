@@ -13,6 +13,9 @@ import { join } from "node:path";
 import { normalizeDisplay } from "./arabic";
 import { headingLevel, textToBlocks, type Block } from "./chunk";
 
+/** Written by us into a spreadsheet's indexed text, so it is not shown to the guard (decisions.ts). */
+export const SHEET_NOTE = "محتواه لا يُقرأ كنص؛ يُحلَّل بأداة أو في الساندبوكس.";
+
 export type Kind = "pdf" | "docx" | "sheet" | "text" | "image" | "unsupported";
 
 export type Extracted = {
@@ -283,7 +286,7 @@ async function extractXlsx(path: string, name: string): Promise<Extracted> {
   const shared: string[] = [];
   const ss = await unzipEntry(path, "xl/sharedStrings.xml");
   if (ss) for (const si of ss.matchAll(/<si>([\s\S]*?)<\/si>/g)) shared.push(decodeXml([...si[1]!.matchAll(/<t(?:\s[^>]*)?>([^<]*)<\/t>/g)].map((t) => t[1]).join("")));
-  const lines: string[] = [`ملف جدول بيانات (Excel): ${name}. محتواه لا يُقرأ كنص؛ يُحلَّل بأداة أو في الساندبوكس.`];
+  const lines: string[] = [`ملف جدول بيانات (Excel): ${name}. ${SHEET_NOTE}`];
   for (const s of wb.matchAll(/<sheet\b[^>]*>/g)) {
     const sheetName = decodeXml(/name="([^"]*)"/.exec(s[0])?.[1] ?? "");
     const rid = /r:id="([^"]*)"/.exec(s[0])?.[1];
@@ -312,7 +315,7 @@ function extractCsv(text: string, name: string): Extracted {
   const rows = text.split(/\r?\n/).filter((l) => l.trim());
   const sep = (rows[0] ?? "").includes("\t") ? "\t" : (rows[0] ?? "").includes(";") && !(rows[0] ?? "").includes(",") ? ";" : ",";
   const headers = (rows[0] ?? "").split(sep).map((h) => normalizeDisplay(h.replace(/^"|"$/g, "")));
-  const desc = `ملف جدول بيانات (CSV): ${name}. ${Math.max(rows.length - 1, 0)} صفاً من البيانات. الأعمدة: ${headers.join("، ")}. محتواه لا يُقرأ كنص؛ يُحلَّل بأداة أو في الساندبوكس.`;
+  const desc = `ملف جدول بيانات (CSV): ${name}. ${Math.max(rows.length - 1, 0)} صفاً من البيانات. الأعمدة: ${headers.join("، ")}. ${SHEET_NOTE}`;
   return { kind: "sheet", blocks: [{ kind: "para", text: desc }], ocrPages: [] };
 }
 

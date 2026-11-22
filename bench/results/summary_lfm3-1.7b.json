@@ -1,0 +1,75 @@
+{
+ "model": "lfm3-1.7b",
+ "chats": [
+  {
+   "id": "project",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    3194,
+    4498,
+    5175,
+    5128,
+    5170,
+    6034,
+    5803
+   ],
+   "chars": 1782,
+   "passed": 5,
+   "of": 8,
+   "missed": [
+    "budget-old-gone",
+    "output",
+    "open"
+   ]
+  },
+  {
+   "id": "hr",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    1992,
+    4028,
+    5250,
+    6941,
+    8932,
+    9051,
+    10963
+   ],
+   "chars": 2987,
+   "passed": 6,
+   "of": 7,
+   "missed": [
+    "output"
+   ]
+  },
+  {
+   "id": "finance",
+   "folds": 7,
+   "failures": 0,
+   "ms": [
+    2519,
+    3972,
+    5252,
+    6920,
+    8173,
+    6670,
+    7453
+   ],
+   "chars": 2249,
+   "passed": 6,
+   "of": 7,
+   "missed": [
+    "output"
+   ]
+  }
+ ],
+ "passed": 17,
+ "of": 22,
+ "foldMs": {
+  "n": 21,
+  "p50": 5252,
+  "p90": 8932,
+  "max": 10963
+ }
+}

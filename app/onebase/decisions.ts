@@ -14,6 +14,7 @@ import { internal } from "./_generated/api";
 import type { Id } from "./_generated/dataModel";
 import { internalAction, internalMutation, internalQuery } from "./_generated/server";
 import { decide, primeAi, type ChatMsg, type DecisionLog, type TypedAsk, type TypedQuestion, type UsageTrack } from "./ai";
+import { SHEET_NOTE } from "./lib/extract";
 
 type Track = Omit<UsageTrack, "purpose">;
 
@@ -376,7 +377,8 @@ export const fileGuardInput = internalQuery({
     const file = await ctx.db.get(fileId);
     if (!file || file.version !== version || file.status !== "active") return null;
     const chunks = await ctx.db.query("chunks").withIndex("by_file", (q) => q.eq("fileId", fileId)).take(GUARD_CHUNKS);
-    return { text: chunks.map((c) => c.text).join("\n\n"), userId: file.uploadedBy };
+    // Only the file's own words: our note on a spreadsheet mentions tools, which reads like steering.
+    return { text: chunks.map((c) => c.text.replaceAll(SHEET_NOTE, "").trim()).join("\n\n"), userId: file.uploadedBy };
   },
 });
 

@@ -11,6 +11,14 @@ COPY . .
 RUN bun run build && bunx onebase codegen
 
 FROM oven/bun:1.4.4-slim
+# What the server runs (onebase/lib): unzip reads Word/Excel, poppler reads PDF, LibreOffice converts
+# old formats and turns Word templates into PDF, fc-list reports a template's missing fonts.
+# The fonts are the ones Arabic templates ask for, plus metric twins of Arial, Times and Calibri.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends \
+    unzip poppler-utils libreoffice-writer-nogui libreoffice-calc-nogui \
+    fontconfig fonts-hosny-amiri fonts-noto-core fonts-dejavu-core fonts-liberation fonts-crosextra-carlito \
+  && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=build --chown=bun:bun /app /app
 RUN mkdir -p /data /shares && chown bun:bun /data
