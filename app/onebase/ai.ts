@@ -20,6 +20,7 @@ import { OneBaseError, v } from "onebase/values";
 import { internal } from "./_generated/api";
 import { action, internalAction, internalMutation, internalQuery, type MutationCtx } from "./_generated/server";
 import { actorFor, requireUserId } from "./access";
+import { cutText, fitJson, isTooLong, learnLimit, limitFor, MIN_INPUT_CHARS } from "./lib/inputLimit";
 
 export type Role = "main" | "fast" | "decide";
 
@@ -28,10 +29,11 @@ const env = (k: string) => {
   return val ? val : undefined;
 };
 
-export type Target = { baseUrl?: string; model: string; apiKey?: string; provider?: string };
+/** maxInputChars: the longest input the role took when it was tried (lib/inputLimit.ts); unset = not measured. */
+export type Target = { baseUrl?: string; model: string; apiKey?: string; provider?: string; maxInputChars?: number };
 export type RoleName = "main" | "fast" | "vision" | "decide";
 /** The embedding model. `dimensions` is fixed by the rag index (EMBED_DIMENSIONS when it was mounted). */
-export type EmbedTarget = { baseUrl?: string; model: string; apiKey?: string; dimensions: number; queryPrefix: string; docPrefix: string; sendDimensions?: boolean };
+export type EmbedTarget = { baseUrl?: string; model: string; apiKey?: string; dimensions: number; queryPrefix: string; docPrefix: string; sendDimensions?: boolean; maxInputChars?: number };
 /** Which decisions (plans/12) run; off (or a failed call) returns that decision to code. Missing = on. */
 export type DecisionSwitches = { route?: boolean; cite?: boolean; guard?: boolean };
 export type Overrides = Partial<Record<RoleName, Target>> & { embed?: EmbedTarget; decisions?: DecisionSwitches };
@@ -99,7 +101,7 @@ export async function embedConfigFromDb(db: any): Promise<EmbedTarget> {
   const c = (row?.value as any)?.embed;
   if (c) {
     const p = await db.get(c.providerId);
-    if (p?.enabled) return { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey, dimensions: INDEX_DIMENSIONS, queryPrefix: c.queryPrefix ?? "", docPrefix: c.docPrefix ?? "", sendDimensions: !!c.sendDimensions };
+    if (p?.enabled) return { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey, dimensions: INDEX_DIMENSIONS, queryPrefix: c.queryPrefix ?? "", docPrefix: c.docPrefix ?? "", sendDimensions: !!c.sendDimensions, ...(c.maxInputChars ? { maxInputChars: c.maxInputChars } : {}) };
   }
   return envEmbed();
 }
@@ -154,6 +156,8 @@ export type ChatOptions = {
   role?: Role;
   messages: ChatMsg[];
   tools?: ToolSpec[];
+  /** "required": the model must call one of `tools` (sent as tool_choice; dropped if the server refuses it). */
+  toolChoice?: "auto" | "required";
   /** Constrain the answer to this JSON schema (llama.cpp/vLLM `response_format`); falls back to plain JSON mode if refused. */
   jsonSchema?: Record<string, unknown>;
   maxTokens?: number;
@@ -242,12 +246,18 @@ async function chatOnce(opts: ChatOptions): Promise<ChatResult> {
     ...((opts.thinking ?? cfg.thinking) ? {} : { reasoning: { enabled: false } }),
   };
   if (opts.tools?.length) body.tools = opts.tools.map((t) => ({ type: "function", function: t }));
+  if (opts.tools?.length && opts.toolChoice) body.tool_choice = opts.toolChoice;
   if (opts.jsonSchema) body.response_format = { type: "json_schema", json_schema: { name: "answer", schema: opts.jsonSchema, strict: true } };
 
   let res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
   if (!res.ok && res.status === 400 && body.reasoning) {
     // A model that must reason refuses the switch: ask again without it.
     delete body.reasoning;
+    res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
+  }
+  if (!res.ok && res.status === 400 && body.tool_choice) {
+    // A server that doesn't support tool_choice: the same request without it.
+    delete body.tool_choice;
     res = await post(`${target.baseUrl}/chat/completions`, body, target.apiKey, undefined, opts.signal);
   }
   if (!res.ok && opts.jsonSchema && res.status === 400) {
@@ -403,7 +413,8 @@ export async function decide<T>(
       thinking: false,
       maxTokens: opts.maxTokens ?? 80,
       jsonSchema: schema,
-      messages,
+      // A small decision model may take less than the passages we have: fitted, like the typed path.
+      messages: fitJson(messages, limitFor(cfg.decide.baseUrl, cfg.decide.model, cfg.decide.maxInputChars)),
       signal,
       ...(opts.track ? { track: { ...opts.track, purpose: `decide:${kind}` as const } } : {}),
     });
@@ -420,7 +431,11 @@ export async function decide<T>(
     }
     done({ ok: true, out: value });
     return value as T;
-  } catch {
+  } catch (e) {
+    // Refused for length on the chat path: the next decision sends half (the typed path retries itself).
+    const msg = e instanceof Error ? e.message : String(e);
+    const status = Number(/HTTP (\d{3})/.exec(msg)?.[1] ?? 0);
+    if (status && isTooLong(status, msg)) learnLimit(cfg.decide.baseUrl, cfg.decide.model, JSON.stringify(fitJson(messages, limitFor(cfg.decide.baseUrl, cfg.decide.model, cfg.decide.maxInputChars))).length);
     done({ ok: false, why: signal.aborted ? "timeout" : "error" });
     return null;
   }
@@ -468,8 +483,15 @@ async function askTyped<T>(t: Target, kind: DecisionKind, ask: TypedAsk<T>, sign
   let ok = false;
   let inputTokens = 0;
   try {
-    const res = await post(`${t.baseUrl}/systemone`, { model: t.model, state: ask.state, questions: ask.questions }, t.apiKey, undefined, signal);
-    if (!res.ok) throw new Error(`systemone HTTP ${res.status}`);
+    // The state fitted to what the server takes (lib/inputLimit.ts); refused for length, once more at half.
+    const send = (max: number) => post(`${t.baseUrl}/systemone`, { model: t.model, state: fitJson(ask.state, max), questions: ask.questions }, t.apiKey, undefined, signal);
+    let res = await send(limitFor(t.baseUrl, t.model, t.maxInputChars));
+    if (!res.ok) {
+      const body = await res.text();
+      if (!isTooLong(res.status, body)) throw new Error(`systemone HTTP ${res.status}`);
+      res = await send(learnLimit(t.baseUrl, t.model, JSON.stringify(fitJson(ask.state, limitFor(t.baseUrl, t.model, t.maxInputChars))).length));
+      if (!res.ok) throw new Error(`systemone HTTP ${res.status}`);
+    }
     const data: any = await res.json();
     inputTokens = data?.usage?.input_tokens ?? 0;
     ok = true;
@@ -518,18 +540,45 @@ export async function embed(texts: string[], kind: "query" | "document"): Promis
   const prefix = kind === "query" ? cfg.queryPrefix : cfg.docPrefix;
   const out: number[][] = [];
   for (let i = 0; i < texts.length; i += 64) {
-    const batch = texts.slice(i, i + 64).map((t) => withPrefix(prefix, t, kind));
-    const data = await postJson(`${cfg.baseUrl}/embeddings`, { model: cfg.model, input: batch, ...(cfg.sendDimensions ? { dimensions: cfg.dimensions } : {}) }, cfg.apiKey);
-    const rows = [...(data.data ?? [])].sort((a: any, b: any) => a.index - b.index);
-    if (rows.length !== batch.length) throw new Error(`خادم التضمين أعاد ${rows.length} متجهاً لـ${batch.length} نصاً`);
-    for (const r of rows) {
-      if (!Array.isArray(r.embedding) || r.embedding.length !== cfg.dimensions) {
-        throw new Error(`بُعد التضمين ${r.embedding?.length} لا يطابق EMBED_DIMENSIONS=${cfg.dimensions}`);
-      }
-      out.push(r.embedding);
-    }
+    out.push(...(await embedBatch(cfg, texts.slice(i, i + 64).map((t) => withPrefix(prefix, t, kind)))));
   }
   return out;
+}
+
+/**
+ * One batch, fitted to the server (lib/inputLimit.ts): each text cut to the known limit; a refusal
+ * for length halves the batch, then the text, and remembers the smaller limit. A text that is
+ * still refused at the minimum fails the call. The cut text is only what is embedded: the chunk
+ * keeps its full text for reading and keyword search.
+ */
+async function embedBatch(cfg: EmbedTarget, batch: string[]): Promise<number[][]> {
+  const limit = limitFor(cfg.baseUrl, cfg.model, cfg.maxInputChars);
+  const input = batch.map((t) => cutText(t, limit));
+  const res = await post(`${cfg.baseUrl}/embeddings`, { model: cfg.model, input, ...(cfg.sendDimensions ? { dimensions: cfg.dimensions } : {}) }, cfg.apiKey);
+  if (!res.ok) {
+    const body = (await res.text()).slice(0, 300);
+    if (isTooLong(res.status, body)) {
+      if (input.length > 1) {
+        const half = Math.ceil(input.length / 2);
+        return [...(await embedBatch(cfg, batch.slice(0, half))), ...(await embedBatch(cfg, batch.slice(half)))];
+      }
+      const size = input[0]!.length;
+      if (size > MIN_INPUT_CHARS) {
+        learnLimit(cfg.baseUrl, cfg.model, size);
+        return await embedBatch(cfg, batch);
+      }
+    }
+    throw new Error(`${cfg.baseUrl}/embeddings → HTTP ${res.status}: ${body}`);
+  }
+  const data: any = await res.json();
+  const rows = [...(data.data ?? [])].sort((a: any, b: any) => a.index - b.index);
+  if (rows.length !== input.length) throw new Error(`خادم التضمين أعاد ${rows.length} متجهاً لـ${input.length} نصاً`);
+  return rows.map((r: any) => {
+    if (!Array.isArray(r.embedding) || r.embedding.length !== cfg.dimensions) {
+      throw new Error(`بُعد التضمين ${r.embedding?.length} لا يطابق EMBED_DIMENSIONS=${cfg.dimensions}`);
+    }
+    return r.embedding as number[];
+  });
 }
 
 // ---------------------------------------------------------------- rerank

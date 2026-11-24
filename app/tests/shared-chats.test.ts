@@ -53,6 +53,8 @@ describe("shared space chats", () => {
     expect((await s.call("query", "chat:messages", { threadId: p }, tok("mgr"))).ok).toBe(false);
     const mine = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.P_mem }, tok("mem")));
     expect(must(await s.call("query", "chat:messages", { threadId: mine }, tok("mem"))).shared).toBe(false);
+    // One personal chat: a chat asked for in my own space is the general chat (no space of its own).
+    expect(must(await s.call("query", "chat:messages", { threadId: mine }, tok("mem")))).toMatchObject({ spaceId: null, scope: { kind: "all" } });
     // A reader can't start a shared chat (they can't ask in one).
     const r = must(await s.call("mutation", "chat:createThread", { spaceId: f.spaces.S_plain }, tok("rdr")));
     expect(must(await s.call("query", "chat:messages", { threadId: r }, tok("rdr"))).shared).toBe(false);

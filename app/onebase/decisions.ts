@@ -21,10 +21,17 @@ type Track = Omit<UsageTrack, "purpose">;
 // ---------------------------------------------------------------- route
 
 /** `query` is null when the model can't write one (a native decision model): rewriteQuery then. */
-export type Route = { needsFiles: boolean; query: string | null; effort: "light" | "normal" };
+export type Route = { needsFiles: boolean; query: string | null; effort: "light" | "normal"; needsTool?: boolean };
 
 /** A typed decision model's yes/no is a probability: true at or above this. */
 export const TYPED_THRESHOLD = 0.5;
+/**
+ * needsTool forces a first tool call (chat.ts), so a typed model must be surer than for needsFiles.
+ * bench/decisions «tool», d1-Omni-2B on 98 requests: at 0.85 no request that needs no tool was
+ * marked (0 of 56) and 15 of 42 that do were; at 0.8 three messages to write («صغ لي رسالة…») were
+ * marked, which could force a needless notify_colleague. DECIDE_NEEDS_TOOL_THRESHOLD overrides it.
+ */
+const needsToolThreshold = () => Number(process.env.DECIDE_NEEDS_TOOL_THRESHOLD) || 0.85;
 
 export const ROUTE_SCHEMA = {
   type: "object",
@@ -32,8 +39,9 @@ export const ROUTE_SCHEMA = {
     needsFiles: { type: "boolean" },
     query: { type: "string" },
     effort: { type: "string", enum: ["light", "normal"] },
+    needsTool: { type: "boolean" },
   },
-  required: ["needsFiles", "query", "effort"],
+  required: ["needsFiles", "query", "effort", "needsTool"],
   additionalProperties: false,
 };
 
@@ -41,16 +49,18 @@ export const ROUTE_PROMPT = `You route one message sent to an Arabic workplace a
 
 needsFiles: true when a good answer must look in those files: anything about the organisation itself (its rules, policies, procedures, numbers, budgets, spending, people and roles, deadlines, projects, meetings, documents), or a request to summarise/compare/analyse/extract/build something from their files or data. A follow-up to an earlier question about the organisation also needs the files. false when the message can be answered from general knowledge or from the message itself: writing or creating something new that does not name the organisation's own documents or data (a letter, email, quiz, template, CV, study or work plan, poem, translation of a given sentence), general questions, chit-chat, thanks, or reworking the previous answer. Also false for the employee's own lists and tasks, which are kept apart from the files and read with other tools: making or updating a list, tracker or table of their own items, and questions about their tasks, lists or tracked projects ("مهامي", "قوائمي", "كم عندي مهام").
 query: the message as a short standalone Arabic search question (at most 15 words), with references to earlier messages resolved. If the message is already standalone, copy its key words.
+needsTool: true when the assistant must DO something rather than only write a reply: save or remember something, make or change a list/tracker, create, edit, export (Word/PDF/PowerPoint) or publish a document, page, table or presentation, build or test an app or quiz people will fill, run an analysis or chart on a data file, read a named file, list, task list, record or external system, tell or send something to a colleague, use a saved skill, or look up an earlier chat. false when a written reply is the whole answer: general knowledge, a short text written in the reply (a letter, message or translation that is not to be saved or exported), chit-chat, thanks, or reworking the previous answer. Searching the files is not a tool here (needsFiles covers it), and a table or list written in the reply is not one either. When unsure, false.
 effort: "light" ONLY when the message asks for nothing new: thanks, a greeting or acknowledgement, or reworking the assistant's previous answer (shorten, rephrase, translate, summarise it). Any new request or question, even a small one, is "normal".
 
 Examples:
-"كم مدة الإجازة السنوية حسب اللائحة؟" → {"needsFiles":true,"query":"مدة الإجازة السنوية في اللائحة","effort":"normal"}
-"سوّ لي اختبار من ١٠ أسئلة عن الكسور" → {"needsFiles":false,"query":"اختبار عن الكسور","effort":"normal"}
-"اكتب رسالة شكر لفريق المبيعات" → {"needsFiles":false,"query":"رسالة شكر لفريق المبيعات","effort":"normal"}
-"ودي تطلع لي جدول بمواعيد التسليم اللي في خطة المشروع" → {"needsFiles":true,"query":"مواعيد التسليم في خطة المشروع","effort":"normal"}
-"سوي لي قائمة أدير فيها مشاريعي" → {"needsFiles":false,"query":"قائمة لإدارة المشاريع","effort":"normal"}
-"كم عندي مهام؟" → {"needsFiles":false,"query":"عدد مهامي","effort":"normal"}
-"شكراً جزيلاً" → {"needsFiles":false,"query":"شكراً","effort":"light"}`;
+"كم مدة الإجازة السنوية حسب اللائحة؟" → {"needsFiles":true,"query":"مدة الإجازة السنوية في اللائحة","effort":"normal","needsTool":false}
+"سوّ لي اختبار من ١٠ أسئلة عن الكسور" → {"needsFiles":false,"query":"اختبار عن الكسور","effort":"normal","needsTool":false}
+"اكتب رسالة شكر لفريق المبيعات" → {"needsFiles":false,"query":"رسالة شكر لفريق المبيعات","effort":"normal","needsTool":false}
+"ودي تطلع لي جدول بمواعيد التسليم اللي في خطة المشروع" → {"needsFiles":true,"query":"مواعيد التسليم في خطة المشروع","effort":"normal","needsTool":false}
+"سوي لي قائمة أدير فيها مشاريعي" → {"needsFiles":false,"query":"قائمة لإدارة المشاريع","effort":"normal","needsTool":true}
+"كم عندي مهام؟" → {"needsFiles":false,"query":"عدد مهامي","effort":"normal","needsTool":true}
+"شكراً جزيلاً" → {"needsFiles":false,"query":"شكراً","effort":"light","needsTool":false}
+"احفظ لي هذا التقرير PDF" → {"needsFiles":false,"query":"حفظ التقرير PDF","effort":"normal","needsTool":true}`;
 
 /** The conversation as the routing call sees it: the summary and the last four messages, short. */
 function convo(history: { role: string; text: string }[], summary: string | null) {
@@ -65,7 +75,7 @@ export async function routeTurn(question: string, history: { role: string; text:
     { role: "system", content: ROUTE_PROMPT },
     { role: "user", content: (before ? `المحادثة السابقة:\n${before}\n\n` : "") + `الرسالة: ${question.slice(0, 1500)}` },
   ];
-  const r = await decide<{ needsFiles: boolean; query: string; effort: "light" | "normal" }>("route", messages, ROUTE_SCHEMA, {
+  const r = await decide<{ needsFiles: boolean; query: string; effort: "light" | "normal"; needsTool: boolean }>("route", messages, ROUTE_SCHEMA, {
     ...opts,
     maxTokens: 80,
     typed: {
@@ -76,6 +86,11 @@ export async function routeTurn(question: string, history: { role: string; text:
           instructions:
             "An employee sent this message to a workplace assistant. Does a good answer need to look in the organisation's own files (its policies, rules, procedures, numbers, budgets, people, deadlines, documents), or summarise/compare/extract from them? False for general knowledge, writing something new on a general topic, chit-chat, thanks, or reworking the previous answer. Also false for the employee's own lists and tasks (making or updating a list or tracker of their items, or asking about their tasks or lists): those are not in the files.",
         },
+        needsTool: {
+          type: "noul",
+          instructions:
+            "Must the assistant DO something with a tool rather than only write a reply: save or remember something, make or change a list, create/edit/export/publish a document or presentation, build or test an app or quiz, analyse a data file, read a named file, list, tasks, records or external system, message a colleague, use a saved skill, or look up an earlier chat? False when a written reply is the whole answer (general knowledge, a short letter or translation in the reply, chit-chat, thanks).",
+        },
         effort: {
           type: "choice",
           instructions: "Does the message ask for nothing new?",
@@ -83,7 +98,8 @@ export async function routeTurn(question: string, history: { role: string; text:
         },
       },
       // No text from such a model: the search question stays rewriteQuery's.
-      map: (a) => (typeof a.needsFiles?.noul === "number" && a.effort?.choice ? { needsFiles: a.needsFiles.noul >= TYPED_THRESHOLD, query: "", effort: a.effort.choice === "light" ? "light" : "normal" } : null),
+      map: (a) => (typeof a.needsFiles?.noul === "number" && a.effort?.choice ? { needsFiles: a.needsFiles.noul >= TYPED_THRESHOLD, query: "", effort: a.effort.choice === "light" ? "light" : "normal", // Always present (the schema requires it), so a missing answer never drops the whole route.
+              needsTool: typeof a.needsTool?.noul === "number" && a.needsTool.noul >= needsToolThreshold() } : null),
     },
   });
   if (!r) return null;

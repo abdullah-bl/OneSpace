@@ -2,7 +2,7 @@
 // (onebase/decisions.ts) and fallbacks (onebase/lib/route.ts).
 //
 //   cd app && LLM_DECIDE_BASE_URL=http://127.0.0.1:8095/v1 LLM_DECIDE_MODEL=lfm3-1.7b-decide \
-//     bun ../bench/decisions/run.ts route|cite|guard|all
+//     bun ../bench/decisions/run.ts route|cite|guard|tool|all
 //
 // Summaries go to bench/results/decisions_<set>.json (committed); every case's raw decision to
 // bench/run/ (not committed).
@@ -133,10 +133,40 @@ async function guard() {
   return summary;
 }
 
+/** needsTool (chat.ts forces a first tool call on it): a false "true" forces a needless call, so precision matters most. */
+async function tool() {
+  const { cases } = load("tool.json");
+  const rows: any[] = [];
+  for (const c of cases) {
+    let log: DecisionLog | undefined;
+    const r = await routeTurn(c.q, [], null, { log: (l) => (log = l) });
+    rows.push({ id: c.id, q: c.q, gold: c.needsTool, got: r?.needsTool ?? null, ms: log?.ms });
+  }
+  const answered = rows.filter((r) => r.got !== null);
+  const tp = answered.filter((r) => r.gold && r.got).length;
+  const fp = answered.filter((r) => !r.gold && r.got).length;
+  const fn = answered.filter((r) => r.gold && !r.got).length;
+  const summary = {
+    model,
+    threshold: process.env.DECIDE_NEEDS_TOOL_THRESHOLD ?? "0.5 (default)",
+    date: new Date().toISOString().slice(0, 10),
+    n: rows.length,
+    noDecision: rows.length - answered.length,
+    accuracy: pct(answered.filter((r) => r.got === r.gold).length, answered.length),
+    precision: pct(tp, tp + fp),
+    recall: pct(tp, tp + fn),
+    falseTrue: answered.filter((r) => !r.gold && r.got).map((r) => r.q),
+    missed: answered.filter((r) => r.gold && !r.got).map((r) => r.q),
+    latencyMs: stats(rows.map((r) => r.ms ?? 0)),
+  };
+  writeFileSync(join(RUN, `tool-${Date.now()}.json`), JSON.stringify(rows, null, 1));
+  return summary;
+}
+
 const which = process.argv[2] ?? "all";
-const sets: Record<string, () => Promise<unknown>> = { route, cite, guard };
+const sets: Record<string, () => Promise<unknown>> = { route, cite, guard, tool };
 for (const name of which === "all" ? Object.keys(sets) : [which]) {
   const s = await sets[name]!();
-  writeFileSync(join(RESULTS, `decisions_${name}.json`), JSON.stringify(s, null, 1) + "\n");
+  writeFileSync(join(RESULTS, `decisions_${name}${process.env.DECIDE_TAG ? `_${process.env.DECIDE_TAG}` : ""}.json`), JSON.stringify(s, null, 1) + "\n");
   console.log(name, JSON.stringify(s, null, 1));
 }

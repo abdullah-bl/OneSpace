@@ -13,6 +13,7 @@ import { internalQuery, type QueryCtx } from "./_generated/server";
 import { actorFor, assertCan, Denied, roleAllows, spaceRoleOf } from "./access";
 import { homeSpaceOf, place, resolveSources, type SourceRef } from "./artifacts";
 import { placeForTier } from "./lists";
+import { checkTaskCall } from "./tasks";
 import { exportTarget } from "./tools/export_document";
 
 export type Tier = 1 | 2 | 3;
@@ -158,6 +159,15 @@ export const resolve = internalQuery({
             }
             const placed = await place(ctx, actor, sources, new Set(), a.targetSpaceId, scope, { managerMayExport: true, home: await homeSpaceOf(ctx, userId, threadId) });
             return at(placed.space, sensitive);
+          }
+          case "create_task":
+          case "update_task": {
+            // Always asks: assigning, moving or commenting on a task notifies other people. Checked
+            // as the person first (manager, assignee, the status flow), so nothing doomed gets a card.
+            const meta = threadId ? await ctx.db.query("threadMeta").withIndex("by_thread", (q) => q.eq("threadId", threadId)).unique() : null;
+            const plan = await checkTaskCall(ctx, { userId, tool, args: a, scopeSpaceIds, chatSpaceId: meta?.spaceId ?? null });
+            target = plan.space._id;
+            return plan.space.sensitive ? 3 : 2;
           }
           default:
             return 2;

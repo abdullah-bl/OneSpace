@@ -215,6 +215,8 @@ async function deleteList(ctx: MutationCtx, userId: Id<"users">, list: Doc<"list
 }
 
 type Change = {
+  /** New columns, added before any row is touched so the same call can fill them. */
+  addColumns?: { name: string; type: string; options?: string[] }[];
   add?: Record<string, unknown>[];
   update?: { rowId: string; cells: Record<string, unknown> }[];
   remove?: string[];
@@ -222,7 +224,19 @@ type Change = {
 
 /** Rows added, changed and removed in one go; returns what «تراجع» needs to put it back. */
 async function applyChanges(ctx: MutationCtx, userId: Id<"users">, list: Doc<"lists">, space: Doc<"spaces">, c: Change, grow: boolean) {
-  const columns = list.columns.map((x) => ({ ...x, options: x.options ? [...x.options] : undefined }));
+  let columns: Column[] = list.columns.map((x) => ({ ...x, options: x.options ? [...x.options] : undefined }));
+  let nextKey = list.nextKey;
+  const addedColumns: string[] = [];
+  if (c.addColumns?.length) {
+    for (const n of c.addColumns) {
+      const name = String(n?.name ?? "").trim();
+      if (columns.some((x) => x.name === name)) throw new OneBaseError(`العمود «${name}» موجود في «${list.title}»؛ عبّئه بـ update بدل إضافته`);
+    }
+    const r = cleanColumns([...columns, ...c.addColumns.map((n) => ({ name: n.name, type: n.type, options: n.options }))], nextKey);
+    addedColumns.push(...r.columns.slice(columns.length).map((x) => x.key));
+    columns = r.columns;
+    nextKey = r.nextKey;
+  }
   const people = await peopleOf(ctx, space);
   const rows = await rowsOf(ctx, list._id);
   const byId = new Map(rows.map((r) => [r._id as string, r]));
@@ -252,8 +266,8 @@ async function applyChanges(ctx: MutationCtx, userId: Id<"users">, list: Doc<"li
     count++;
   }
   const grew = JSON.stringify(columns) !== JSON.stringify(list.columns);
-  await touch(ctx, list, { rowCount: count, ...(grew ? { columns } : {}) });
-  return { added, restore };
+  await touch(ctx, list, { rowCount: count, ...(grew ? { columns } : {}), ...(nextKey !== list.nextKey ? { nextKey } : {}) });
+  return { added, restore, addedColumns };
 }
 
 /**
@@ -500,6 +514,7 @@ export const updateFromTool = internalMutation({
     userId: v.id("users"),
     scopeSpaceIds: v.array(v.string()),
     listId: v.string(),
+    addColumns: v.optional(v.array(v.object({ name: v.string(), type: v.string(), options: v.optional(v.array(v.string())) }))),
     add: v.optional(v.array(v.record(v.string(), v.any()))),
     update: v.optional(v.array(v.object({ rowId: v.string(), cells: v.record(v.string(), v.any()) }))),
     remove: v.optional(v.array(v.string())),
@@ -508,7 +523,7 @@ export const updateFromTool = internalMutation({
   handler: async (ctx, a) => {
     const { list, space } = await toolList(ctx, a.userId, a.listId, a.scopeSpaceIds, true);
     const r = await applyChanges(ctx, a.userId, list, space, a, true);
-    return { id: list._id as string, title: list.title, spaceId: list.spaceId as string, added: r.added, restore: r.restore, changed: (a.update?.length ?? 0) + (a.remove?.length ?? 0) };
+    return { id: list._id as string, title: list.title, spaceId: list.spaceId as string, added: r.added, restore: r.restore, addedColumns: r.addedColumns, columnNames: (a.addColumns ?? []).map((c) => c.name.trim()), changed: (a.update?.length ?? 0) + (a.remove?.length ?? 0) };
   },
 });
 
@@ -564,7 +579,7 @@ export async function listIndex(ctx: QueryCtx, userId: Id<"users">, spaceIds: Id
 }
 
 /** «تراجع» for list changes the assistant made in my personal space. */
-export async function undoLists(ctx: MutationCtx, userId: Id<"users">, u: { deleteLists?: string[]; listId?: string; deleteRows?: string[]; restoreRows?: { rowId?: string; cells: Record<string, Cell>; order: number }[] }) {
+export async function undoLists(ctx: MutationCtx, userId: Id<"users">, u: { deleteLists?: string[]; listId?: string; deleteRows?: string[]; restoreRows?: { rowId?: string; cells: Record<string, Cell>; order: number }[]; dropColumns?: string[] }) {
   const mine = async (spaceId: Id<"spaces">) => {
     const space = await ctx.db.get(spaceId);
     return !!space && space.kind === "personal" && space.ownerId === userId;
@@ -596,6 +611,18 @@ export async function undoLists(ctx: MutationCtx, userId: Id<"users">, u: { dele
       await ctx.db.insert("listRows", { listId: list._id, cells: r.cells, order: r.order, createdBy: userId, updatedBy: userId, createdAt: now, updatedAt: now });
       count++;
     }
+  }
+  // Columns the change added go too, with whatever was typed in them since.
+  const drop = new Set(u.dropColumns ?? []);
+  if (drop.size && list.columns.some((c) => drop.has(c.key))) {
+    for (const r of await rowsOf(ctx, list._id)) {
+      if (!Object.keys(r.cells).some((k) => drop.has(k))) continue;
+      const cells = { ...r.cells };
+      for (const k of drop) delete cells[k];
+      await ctx.db.patch(r._id, { cells });
+    }
+    await touch(ctx, list, { rowCount: count, columns: list.columns.filter((c) => !drop.has(c.key)) });
+    return;
   }
   await touch(ctx, list, { rowCount: count });
 }

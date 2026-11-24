@@ -187,6 +187,8 @@ export const runAnalysisTool: AppTool<RunAnalysisArgs> = {
   },
   requiresConfirmation: true,
   answerAfterRun: true,
+  // The schema can't require "code or skill" in a way every model server accepts.
+  checkArgs: (args) => (typeof args.code === "string" && args.code.trim()) || args.skill ? null : "أرسل كود بايثون كاملاً في الحقل code (أو اسم مهارة في skill)، فالتحليل لا يعمل بدونه",
   async run(t: ToolContext, args: RunAnalysisArgs): Promise<ToolResult> {
     const r = await executeAnalysis(t, args);
     return {

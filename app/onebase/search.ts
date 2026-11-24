@@ -157,6 +157,16 @@ export async function searchDocuments(
     const d = details[i];
     if (d) hits.push({ fileId: c.fileId, text: c.text, fused: c.fused, ...d });
   });
+  // The same passage from identical files (one file uploaded twice, or copied to another space the
+  // asker also reads) counts once: the best-ranked copy stays. Compared without the context line
+  // («[name | section | p]»), so a copy under another name is caught too.
+  const seenBody = new Set<string>();
+  hits = hits.filter((h) => {
+    const body = textHash(h.text.replace(/^\[[^\]\n]*\]\s*/, "").replace(/\s+/g, " ").trim());
+    if (seenBody.has(body)) return false;
+    seenBody.add(body);
+    return true;
+  });
   hits = hits.slice(0, pool);
   const candidates = hits.slice();
 

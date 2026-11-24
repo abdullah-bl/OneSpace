@@ -116,8 +116,40 @@ export function SandboxedFrame({ html, title, className = "h-[60vh]" }: { html: 
   return <iframe title={title} className={`w-full bg-white ${className}`} {...attrs} />;
 }
 
+/**
+ * Around anything that shows one output: when the output is deleted (or no longer mine to read)
+ * its live query fails, and only this piece says so. Without it the error reached the screen's
+ * boundary and replaced the whole page (deleting an output opened from the home screen).
+ */
+export class OutputGone extends Component<{ children: ReactNode; fallback: ReactNode }, { gone: boolean }> {
+  state = { gone: false };
+  static getDerivedStateFromError() {
+    return { gone: true };
+  }
+  render() {
+    return this.state.gone ? this.props.fallback : this.props.children;
+  }
+}
+
+/** An output that is no longer there, where its chip or link was. */
+export function GoneChip({ small }: { small?: boolean }) {
+  return (
+    <span className={`inline-flex max-w-full items-center gap-1.5 rounded-md border border-dashed border-line text-muted ${small ? "h-7 px-2 text-xs" : "px-3 py-2 text-sm"}`} title="حُذف هذا المخرج أو لم يعد متاحاً لك">
+      <Icon name="file" size={small ? 13 : 15} /> مخرج محذوف
+    </span>
+  );
+}
+
 /** A compact link to an output (chat, tasks, analysis): type icon, title, version. */
-export function OutputChip({ artifactId, onOpen }: { artifactId: string; onOpen: (id: string) => void }) {
+export function OutputChip(props: { artifactId: string; onOpen: (id: string) => void }) {
+  return (
+    <OutputGone key={props.artifactId} fallback={<GoneChip />}>
+      <OutputChipInner {...props} />
+    </OutputGone>
+  );
+}
+
+function OutputChipInner({ artifactId, onOpen }: { artifactId: string; onOpen: (id: string) => void }) {
   const meta = useQuery(api.artifacts.versions, { artifactId: artifactId as any });
   const a = meta?.artifact;
   return (
@@ -183,7 +215,9 @@ export function ArtifactDock({ artifactId, spaces, onClose, mode = "split" }: { 
       <div className="fixed inset-0 z-40 flex">
         <button className="hidden flex-1 animate-fade bg-ink/20 lg:block" aria-label="إغلاق" onClick={() => void leaveUnsaved().then((ok) => ok && onClose())} />
         <div className="h-full w-full animate-slide-in border-s border-line bg-surface shadow-[0_0_40px_rgba(0,0,0,0.12)] lg:w-[min(820px,62vw)]">
+          <OutputGone key={artifactId} fallback={<PanelGone onClose={onClose} />}>
           <ArtifactPanel key={artifactId} artifactId={artifactId} spaces={spaces} onClose={onClose} />
+        </OutputGone>
         </div>
       </div>
     );
@@ -204,7 +238,29 @@ export function ArtifactDock({ artifactId, spaces, onClose, mode = "split" }: { 
         <span className="absolute inset-y-0 -inset-x-1.5" />
       </div>
       <div className="min-w-0 flex-1">
-        <ArtifactPanel key={artifactId} artifactId={artifactId} spaces={spaces} onClose={onClose} />
+        <OutputGone key={artifactId} fallback={<PanelGone onClose={onClose} />}>
+          <ArtifactPanel key={artifactId} artifactId={artifactId} spaces={spaces} onClose={onClose} />
+        </OutputGone>
+      </div>
+    </div>
+  );
+}
+
+/** The side panel when its output was deleted (by me just now, or by a colleague). */
+function PanelGone({ onClose }: { onClose: () => void }) {
+  return (
+    <div className="flex h-full flex-col">
+      <div className="flex justify-end p-3">
+        <button className="btn-icon" aria-label="إغلاق" onClick={onClose}>
+          <Icon name="x" size={16} />
+        </button>
+      </div>
+      <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center text-sm text-muted">
+        <Icon name="file" size={22} />
+        <p>حُذف هذا المخرج أو لم يعد متاحاً لك.</p>
+        <button className="btn-secondary h-8" onClick={onClose}>
+          إغلاق
+        </button>
       </div>
     </div>
   );

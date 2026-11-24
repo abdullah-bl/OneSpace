@@ -8,6 +8,8 @@
 //    containing `CALL_TOOL <name> <json>` makes it call that tool — the tools must hold the line.
 //    The same line in the system prompt (an agent's instructions) works too, and the call is made
 //    whether or not that tool was offered (only that *some* tools were).
+//    `ANNOUNCE_TOOL <name> <json>` in a question: it names the tool without calling it, unless the
+//    request has tool_choice "required".
 //  - vision (an image in the message): returns fixed OCR text.
 
 import { keywordQuery, tokens } from "../onebase/lib/arabic";
@@ -69,6 +71,14 @@ function answerFor(body: any): { text: string; toolCalls: { name: string; args: 
       }
     }
     if (calls.length) return { text: "", toolCalls: calls };
+    // "ANNOUNCE_TOOL <name> <json>" in a question: like a small model, it says it will use the tool
+    // and makes no call, unless the request requires a call (tool_choice "required").
+    const asked = messages.filter((m) => m.role === "user").map((m) => contentText(m.content)).join("\n");
+    const ann = /ANNOUNCE_TOOL (\w+) (\{[^\n]*?\})(?=\s|$)/.exec(asked);
+    if (ann && !done.has(`${ann[1]} ${ann[2]}`)) {
+      if (body.tool_choice === "required") return { text: "", toolCalls: [{ name: ann[1]!, args: ann[2]! }] };
+      return { text: `سأستخدم \`${ann[1]}\` لقراءة الملف.`, toolCalls: [] };
+    }
   }
   const question = contentText(messages.at(-1)?.role === "user" ? messages.at(-1).content : messages.findLast((m: any) => m.role === "user")?.content);
   // A general ("open") assistant answers from general knowledge when no file passage was given

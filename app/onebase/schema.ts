@@ -566,6 +566,10 @@ export default defineSchema({
     steps: v.optional(v.array(v.object({ label: v.string(), state: v.union(v.literal("running"), v.literal("done"), v.literal("failed")), startedAt: v.number(), ms: v.optional(v.number()), detail: v.optional(v.string()) }))), // live step timeline (plans/07 §D)
     // Decision-model calls for this turn (plans/12): kind, time, the output or why code decided.
     decisions: v.optional(v.array(v.object({ kind: v.string(), ms: v.number(), ok: v.boolean(), why: v.optional(v.string()), out: v.optional(v.any()) }))),
+    // The largest request this turn sent its answering model (tokens) and that model's role: how full
+    // its context was, for the chat's context meter (usage.record keeps it).
+    contextTokens: v.optional(v.number()),
+    contextRole: v.optional(v.string()),
     queuedAt: v.number(),
     startedAt: v.optional(v.number()),
     finishedAt: v.optional(v.number()),

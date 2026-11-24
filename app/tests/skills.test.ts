@@ -6,7 +6,7 @@ import { Server, must } from "./harness";
 import { ACTORS, buildFixture, type ActorKey, type Fixture } from "./fixture";
 import { aiEnv, startFakeAI, type FakeAI } from "./fake-ai";
 import { ask, waitIngest } from "./rag-helpers";
-import { chatRequestsWith, systemOf } from "./agents-helpers";
+import { cfg, chatRequestsWith, publishedAgent, systemOf } from "./agents-helpers";
 import { SKILLS_COVERED } from "./skills.coverage";
 
 let ai: FakeAI;
@@ -149,6 +149,23 @@ describe("follow-ups remember the chat's files and agent", () => {
     // ...and the answer itself is about that file: its passages reach the model.
     const answerReq = chatRequestsWith(ai, "FOLLOW-2").filter((r) => !r.body.response_format).at(-1);
     expect(JSON.stringify(answerReq.body.messages)).toContain("PERSONAL-CONTENT");
+  }, 30_000);
+});
+
+describe("a question about files or a space goes only to agents that read files", () => {
+  test("a records-only agent isn't offered for «مساحتي»: it could only refuse with «لا يقرأ الملفات»", async () => {
+    await publishedAgent(s, tok("admin"), cfg({ name: "سجلات-فقط-ROUTE", description: "يستعلم في السجلات ويعد التقارير", allowedTools: ["query_records"] }));
+    const t = must(await s.call("mutation", "chat:createThread", {}, tok("mem")));
+    must(await s.call("mutation", "chat:send", { to: "assistant", threadId: t, text: "ما أهم ما في ملفات هذه المساحة؟ READROUTE-1", mentions: [{ kind: "space", id: f.spaces.P_mem }] }, tok("mem")));
+    for (let i = 0; i < 400; i++) {
+      const r = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem")));
+      if (!r.turn && r.messages.at(-1)?.role === "assistant") break;
+      await Bun.sleep(25);
+    }
+    const router = ai.requests.filter((r) => JSON.stringify(r.body.response_format ?? "").includes('"skill"') && JSON.stringify(r.body.messages).includes("READROUTE-1")).at(-1);
+    if (router) expect(String(router.body.messages[0].content)).not.toContain("سجلات-فقط-ROUTE");
+    const last = must(await s.call("query", "chat:messages", { threadId: t }, tok("mem"))).messages.at(-1);
+    expect(last.text).not.toContain("لا يقرأ الملفات");
   }, 30_000);
 });
 

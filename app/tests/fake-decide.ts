@@ -1,6 +1,7 @@
 // A scripted decision model (plans/12) for the tests, speaking the OpenAI chat API. It reads the
 // markers in what it is shown:
 //   route  «R-NOFILES» → needsFiles false, «R-LIGHT» → effort light (and no files); otherwise needsFiles true.
+//          «R-TOOL» → needsTool true (the first generation must call a tool).
 //          The query is "QUERY-FROM-DECIDE" plus the message (so a test sees whose query was used).
 //   cite   a CLAIM containing «CITE-BAD» → contradicts, «CITE-OFF» → unrelated; otherwise supports.
 //   guard  a line containing «STEER-ME» → steering, quoting that line.
@@ -24,7 +25,7 @@ export function startFakeDecide(): FakeDecide {
       let out: unknown;
       if (sys.startsWith("You route")) {
         const msg = /الرسالة: ([\s\S]*)$/.exec(user)?.[1] ?? user;
-        out = { needsFiles: !msg.includes("R-NOFILES") && !msg.includes("R-LIGHT"), query: `QUERY-FROM-DECIDE ${msg}`.slice(0, 200), effort: msg.includes("R-LIGHT") ? "light" : "normal" };
+        out = { needsFiles: !msg.includes("R-NOFILES") && !msg.includes("R-LIGHT"), query: `QUERY-FROM-DECIDE ${msg}`.slice(0, 200), effort: msg.includes("R-LIGHT") ? "light" : "normal", needsTool: msg.includes("R-TOOL") };
       } else if (sys.startsWith("You check citations")) {
         const pairs = [...user.matchAll(/^(\d+)\. CLAIM: (.*)$/gm)];
         out = { verdicts: pairs.map((p) => ({ i: Number(p[1]), verdict: p[2]!.includes("CITE-BAD") ? "contradicts" : p[2]!.includes("CITE-OFF") ? "unrelated" : "supports" })) };

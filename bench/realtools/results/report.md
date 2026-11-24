@@ -1,0 +1,454 @@
+| model | cond | ok | right_tool | no_call_when_needed | abstain_right | schema_valid | args_right | markup_leak | prompt_tokens_avg | secs_avg | errors |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| LFM3-1.7B-Uncensored-GGUF:Q6_K | full | 61.5 | 57.1 | 14.3 | 100.0 | 100.0 | 100.0 | 1 | 8950 | 8.29 | 0 |
+| LFM3-1.7B-Uncensored-GGUF:Q6_K | routed | 68.4 | 67.6 | 24.8 | 100.0 | 100.0 | 95.8 | 0 | 3162 | 20.0 | 0 |
+| LFM3-1.7B-Uncensored-GGUF:Q6_K | full | 56.4 | 52.4 | 24.8 | 100.0 | 100.0 | 98.2 | 1 | 8838 | 2.17 | 0 |
+| LFM3-1.7B-Uncensored-GGUF:Q6_K | lean | 54.7 | 50.5 | 26.7 | 100.0 | 100.0 | 98.1 | 0 | 5550 | 2.36 | 0 |
+| LFM3-1.7B-Uncensored-GGUF:Q6_K | routed | 53.8 | 48.6 | 42.9 | 100.0 | 100.0 | 100.0 | 0 | 2968 | 3.4 | 0 |
+| Muse-Glimmer-30B-GGUF:Q4_K_XL | full | 87.2 | 88.6 | 0.0 | 75.0 | 100.0 | 100.0 | 0 | 9593 | 26.54 | 0 |
+| Muse-Glimmer-30B-GGUF:Q4_K_XL | lean | 82.1 | 80.0 | 0.0 | 100.0 | 100.0 | 100.0 | 0 | 6386 | 23.48 | 0 |
+| Muse-Glimmer-30B-GGUF:Q4_K_XL | routed | 94.9 | 94.3 | 0.0 | 100.0 | 100.0 | 100.0 | 0 | 3467 | 35.73 | 0 |
+| gemma-4-E2B-it-GGUF:Q4_K_XL | full | 78.6 | 81.9 | 16.2 | 100.0 | 100.0 | 93.0 | 0 | 8528 | 1.55 | 0 |
+| gemma-4-E2B-it-GGUF:Q4_K_XL | routed | 72.6 | 75.2 | 24.8 | 100.0 | 100.0 | 92.4 | 0 | 2986 | 1.36 | 0 |
+| gemma-4-E2B-it-GGUF:Q4_K_XL | full | 75.2 | 78.1 | 21.9 | 100.0 | 100.0 | 92.7 | 0 | 8518 | 1.46 | 0 |
+| gemma-4-E2B-it-GGUF:Q4_K_XL | lean | 73.5 | 70.5 | 29.5 | 100.0 | 100.0 | 100.0 | 0 | 5193 | 1.33 | 0 |
+| gemma-4-E2B-it-GGUF:Q4_K_XL | routed | 71.8 | 74.3 | 25.7 | 100.0 | 100.0 | 92.3 | 0 | 2980 | 1.55 | 0 |
+
+## Failures by case (model/cond → what it did)
+
+- **analysis_1** (27/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+- **analysis_2** (27/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called run_analysis — code "present" got null
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called run_analysis — code "present" got null
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: called run_analysis — code "present" got null
+- **remember_1** (25/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **artifact_md** (21/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/full: called search_documents
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called search_documents
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/routed: called export_document
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **readchat_1** (21/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **analysis_3** (20/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called propose_record_set
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_file
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+- **search_1** (19/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **app_new** (19/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_app
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called my_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called read_app
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **recall_1** (17/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **skill_1** (16/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called export_document
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called export_document
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called export_document
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called export_document
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_file
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+- **notify_1** (16/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called read_file
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+- **publish_1** (16/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+- **artifact_table** (15/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **list_create** (15/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_list
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_tasks
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called read_tasks
+- **search_2** (13/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **recordset_1** (13/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called propose_record_set — fileId {"eq": "k17d4m2q8x3n5p6r9s0t"} got "الموظفين.xlsx"
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **export_2** (12/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called read_list
+- **source_2** (12/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: called query_source — sql {"has": "leaves"} got "SELECT * FROM employees WHERE id = 1203"
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called query_source — sql {"has": "leaves"} got "SELECT * FROM employees WHERE id = '1203';"
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **search_3** (12/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/lean: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **template_1** (10/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/full: called read_list
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called read_list
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/routed: no tool call
+- **update_art** (10/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/full: called search_documents
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called search_documents
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called read_chat
+  - gemma-4-E2B-it-GGUF:Q4_K_XL/full: called read_chat
+- **app_read** (9/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called recall
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called query_records
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **skill_2** (7/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: called search_documents
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+- **artifact_slides** (7/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called create_skill
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: called create_skill
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **export_1** (6/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **list_read** (5/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **app_test** (4/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/full: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/lean: no tool call
+- **records_q** (4/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/full: called query_source
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/lean: called search_documents
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/routed: called read_file
+- **source_1** (2/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **records_mine** (2/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **list_update** (1/33 runs failed)
+  - LFM3-1.7B-Uncensored-GGUF:Q6_K/routed: no tool call
+- **none_4** (1/33 runs failed)
+  - Muse-Glimmer-30B-GGUF:Q4_K_XL/full: called search_documents
