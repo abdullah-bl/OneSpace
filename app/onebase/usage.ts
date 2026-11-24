@@ -32,6 +32,13 @@ export const record = internalMutation({
       const turn = id ? await ctx.db.get(id) : null;
       if (turn) userKey = turn.userId;
     }
+    // The answering model's fullest request in a turn: what the chat's context meter shows.
+    if (a.turnId && a.ok && a.counted && (a.role === "main" || a.role === "fast")) {
+      const id = ctx.db.normalizeId("turns", a.turnId);
+      const turn = id ? await ctx.db.get(id) : null;
+      const used = Math.max(0, a.prompt) + Math.max(0, a.completion);
+      if (turn && used > (turn.contextTokens ?? 0)) await ctx.db.patch(turn._id, { contextTokens: used, contextRole: a.role });
+    }
     const day = dayOf(Date.now());
     const model = a.model.slice(0, 200);
     const row = await ctx.db

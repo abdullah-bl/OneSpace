@@ -81,6 +81,21 @@ const OPS: Op[] = [
     },
   },
   {
+    name: "files:upload (upload into space, says if it was already there)",
+    need: "write",
+    run: async (a, sp) => {
+      const t = tok(a);
+      let storageId: string;
+      try {
+        storageId = await s.upload(t!, "new upload via files:upload");
+      } catch (e) {
+        return { ok: false, error: String(e), status: 0 };
+      }
+      return s.call("mutation", "files:upload", { storageId, name: "new2.txt", spaceId: f.spaces[sp] }, t);
+    },
+  },
+  { name: "files:removeDuplicates", need: "write", run: (a, sp) => s.call("mutation", "files:removeDuplicates", { spaceId: f.spaces[sp] }, tok(a)) },
+  {
     name: "files:uploadVersion",
     need: "write",
     run: async (a, sp) => {

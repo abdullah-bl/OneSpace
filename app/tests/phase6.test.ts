@@ -74,9 +74,10 @@ describe("starter agents", () => {
     expect(byKey.analysis.live.dataScope).toBe("all");
     // Every tool any agent lists exists in the code registry, and the registry stays small: the model sees
     // all of an agent's tools at once (no tool retrieval yet, plans/07). 15 → 18 with the list tools (plans/10),
-    // → 21 with the app tools (plans/13), → 25 with propose_record_set (plans/17 §5).
+    // → 21 with the app tools (plans/13), → 25 with propose_record_set (plans/17 §5), → 27 with the
+    // task tools (create_task, update_task). plans/20 is what brings this back down.
     const registry = must(await s.call("query", "agents:toolRegistry", {}, tok("admin"))).map((t: any) => t.name);
-    expect(registry.length).toBeLessThanOrEqual(25);
+    expect(registry.length).toBeLessThanOrEqual(27);
     for (const a of list) for (const t of a.live.allowedTools) expect(registry).toContain(t);
     // Seeding again adds nothing.
     expect(must(await s.call("mutation", "agents:seedStarterAgents", {}, tok("admin")))).toBe(0);

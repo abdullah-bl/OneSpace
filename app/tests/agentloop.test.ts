@@ -139,6 +139,31 @@ describe("risk tiers: my personal space runs at once (with undo); shared and sen
     expect(arts.some((a: any) => a.title === "حساس-TIER3")).toBe(false);
   }, 60_000);
 
+  test("update_list adds a missing column and fills it in one call; without addColumns the error says how; «تراجع» drops the column", async () => {
+    const listId = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.P_mem, title: "منافسات-COL", columns: [{ name: "المشروع", type: "text" }] }, tok("mem")));
+    const rowId = must(await s.call("mutation", "lists:addRow", { listId, cells: { المشروع: "أ" } }, tok("mem")));
+    const run = async (name: string, args: unknown, text: string) => {
+      const agent = await publishedAgent(s, tok("admin"), cfg({ name, allowedTools: ["update_list"], maxSteps: 2, instructions: `CALL_TOOL update_list ${JSON.stringify(args)}` }));
+      const t = must(await s.call("mutation", "chat:createThread", { agentId: agent }, tok("mem")));
+      await ask(s, tok("mem"), t, text);
+      return t;
+    };
+    // The gov demo's dead end: a status for a list with no status column.
+    await run("بلا-عمود", { listId, update: [{ rowId, cells: { الحالة: "مغلقة" } }] }, "حدّث الحالة COL-1");
+    expect(JSON.stringify(chatRequestsWith(ai, "حدّث الحالة COL-1"))).toContain("addColumns");
+    const t = await run("مع-عمود", { listId, addColumns: [{ name: "الحالة", type: "text" }], update: [{ rowId, cells: { الحالة: "تم الانتهاء من التحليل الفني" } }] }, "حدّث الحالة COL-2");
+    const g = must(await s.call("query", "lists:get", { listId }, tok("mem")));
+    const col = g.list.columns.find((c: any) => c.name === "الحالة");
+    expect(g.rows[0].cells[col.key]).toBe("تم الانتهاء من التحليل الفني");
+    const [p] = await proposalsOf(s, tok("mem"), t);
+    expect([p.state, p.auto]).toEqual(["executed", true]);
+    expect(p.display).toContain("أُضيف عمود «الحالة»");
+    must(await s.call("mutation", "chat:undo", { proposalId: p.id }, tok("mem")));
+    const g2 = must(await s.call("query", "lists:get", { listId }, tok("mem")));
+    expect(g2.list.columns.map((c: any) => c.name)).toEqual(["المشروع"]);
+    expect(col.key in g2.rows[0].cells).toBe(false);
+  }, 60_000);
+
   test("a write the person can't do gets no «نفّذ» card: a reader is told, a member still gets the card", async () => {
     const listId = must(await s.call("mutation", "lists:create", { spaceId: f.spaces.S_plain, title: "قائمة-READER" }, tok("mgr")));
     const agent = await publishedAgent(s, tok("admin"), cfg({ name: "مضيف صفوف", allowedTools: ["update_list"], maxSteps: 2, instructions: `CALL_TOOL update_list {"listId":"${listId}","add":[{"العنوان":"صف القارئ"}]}` }));
@@ -254,6 +279,54 @@ describe("the loop: parallel reads, timeline", () => {
     expect(toolMsgs.length).toBe(2);
     expect(toolMsgs[0]).toContain("PERSONAL-CONTENT");
     expect(toolMsgs[1]).toContain("CONTENT-S_plain");
+  }, 30_000);
+});
+
+describe("the loop: tool arguments and calls the model only described (bench/realtools)", () => {
+  const toolMsgsFor = (marker: string) =>
+    chatRequestsWith(ai, marker)
+      .flatMap((r) => r.body.messages.filter((m: any) => m.role === "tool").map((m: any) => String(m.content)))
+      .filter((x, i, a) => a.indexOf(x) === i);
+
+  test("arguments that don't fit the schema are turned back with what to fix; nothing runs", async () => {
+    const id = await publishedAgent(s, tok("admin"), cfg({ name: "وسائط ناقصة", allowedTools: ["read_file"], maxSteps: 2, instructions: 'CALL_TOOL read_file {"pages":"2"}' }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("mem")));
+    await ask(s, tok("mem"), t, "اقرأ ARGS-1");
+    const [msg] = toolMsgsFor("ARGS-1");
+    expect(msg).toContain("لم تُنفَّذ read_file");
+    expect(msg).toContain("الحقل المطلوب fileId ناقص");
+    expect((await lastAnswer(tok("mem"), t)).steps.some((x: any) => x.label === "يقرأ الملف…")).toBe(false);
+  }, 30_000);
+
+  test("a clear slip is repaired and the call runs (a number where text is expected)", async () => {
+    const id = await publishedAgent(s, tok("admin"), cfg({ name: "وسائط تُصلح", allowedTools: ["read_file"], maxSteps: 2, instructions: `CALL_TOOL read_file {"fileId":"${f.files.P_mem}","pages":1}` }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("mem")));
+    await ask(s, tok("mem"), t, "اقرأ ARGS-2");
+    const [msg] = toolMsgsFor("ARGS-2");
+    // The tool itself answered (pages "1" reached it as text; this text file has no pages).
+    expect(msg).not.toContain("لم تُنفَّذ");
+    expect(msg).toContain("في هذه الصفحات من");
+  }, 30_000);
+
+  test("run_analysis without code is turned back before any card is proposed", async () => {
+    const id = await publishedAgent(s, tok("admin"), cfg({ name: "تحليل بلا كود", allowedTools: ["run_analysis"], maxSteps: 2, instructions: `CALL_TOOL run_analysis {"fileIds":["${f.files.P_mem}"]}` }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("mem")));
+    await ask(s, tok("mem"), t, "حلّل ARGS-3");
+    expect(toolMsgsFor("ARGS-3")[0]).toContain("code");
+    expect(await proposalsOf(s, tok("mem"), t)).toEqual([]);
+  }, 30_000);
+
+  test("a tool named but not called: asked once, with tool_choice required, and then it runs", async () => {
+    const id = await publishedAgent(s, tok("admin"), cfg({ name: "يعلن ولا يستدعي", allowedTools: ["read_file"], maxSteps: 3 }));
+    const t = must(await s.call("mutation", "chat:createThread", { agentId: id }, tok("mem")));
+    await ask(s, tok("mem"), t, `اقرأ ANN-1 ANNOUNCE_TOOL read_file {"fileId":"${f.files.P_mem}"}`);
+    const reqs = chatRequestsWith(ai, "ANN-1").filter((r) => r.body.tools?.length);
+    expect(reqs[0]!.body.tool_choice).toBeUndefined();
+    expect(reqs[1]!.body.tool_choice).toBe("required");
+    expect(JSON.stringify(reqs[1]!.body.messages)).toContain("ذكرتَ الأداة read_file ولم تستدعِها");
+    // After the call, the next request is free again.
+    expect(reqs.slice(2).every((r) => r.body.tool_choice === undefined)).toBe(true);
+    expect((await lastAnswer(tok("mem"), t)).steps.some((x: any) => x.label === "يقرأ الملف…" && x.state === "done")).toBe(true);
   }, 30_000);
 });
 

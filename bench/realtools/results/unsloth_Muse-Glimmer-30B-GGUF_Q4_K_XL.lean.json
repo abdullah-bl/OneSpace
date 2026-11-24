@@ -1,0 +1,899 @@
+{
+ "model": "unsloth/Muse-Glimmer-30B-GGUF:Q4_K_XL",
+ "cond": "lean",
+ "summary": {
+  "runs": 39,
+  "errors": 0,
+  "ok": 82.1,
+  "right_tool": 80.0,
+  "no_call_when_needed": 0.0,
+  "abstain_right": 100.0,
+  "schema_valid": 100.0,
+  "args_right": 100.0,
+  "markup_leak": 0,
+  "prompt_tokens_avg": 6386,
+  "secs_avg": 23.48
+ },
+ "rows": [
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 17.59,
+   "prompt_tokens": 6245,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 19.25,
+   "prompt_tokens": 6243,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "بدل الانتداب داخل المملكة"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 11.71,
+   "prompt_tokens": 6248,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "إجراءات الإخلاء الطوارئ"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 16.88,
+   "prompt_tokens": 6244,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 11.53,
+   "prompt_tokens": 6243,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 46.59,
+   "prompt_tokens": 6251,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ],
+    "code": "import pandas as pd\nimport os\n# find file\ninput_dir = '/input'\nfiles = os.listdir(input_dir)\nprint('Files:', files)\n# assume first xlsx\ndf = pd.read_excel(os.path.join(input_dir, files[0]))\nprint('Columns:', df.columns.tolist())\nprint(df.head())\n# count per department\nif 'department' in df.columns:\n    counts = df['department'].value_counts().reset_index()\n    counts.columns = ['الإدارة', 'عدد الموظفين']\nelse:\n    # try Arabic column name\n    # find column containing 'إدارة' or 'department'\n    col = None\n    for c in df.columns:\n        if 'إدارة' in str(c) or 'department' in str(c).lower():\n            col = c\n            break\n    if col:\n        counts = df[col].value_counts().reset_index()\n        counts.columns = ['الإدارة', 'عدد الموظفين']\n    else:\n        counts = pd.DataFrame()\nprint(counts)\n# save counts to csv for later\ncounts.to_csv('/output/counts.csv', index=False, encoding='utf-8-sig')\n# create simple bar chart\nimport matplotlib.pyplot as plt\nplt.figure(figsize=(10,6))\nplt.bar(counts['الإدارة'].astype(str), counts['عدد الموظفين'])\nplt.xlabel('الإدارة')\nplt.ylabel('عدد الموظفين')\nplt.title('عدد الموظفين في كل إدارة')\nplt.xticks(rotation=45, ha='right')\nplt.tight_layout()\nplt.savefig('/output/chart.png')\nprint('Done')"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 37.07,
+   "prompt_tokens": 6252,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ],
+    "code": "import pandas as pd, sys\nfile_path = '/input/k1m2n3p4q5r6s7t8v9w0'\n# try reading first sheet\nxls = pd.ExcelFile(file_path)\nprint(\"Sheets:\", xls.sheet_names)\ndf = pd.read_excel(file_path, sheet_name=0)\nprint(\"Columns:\", df.columns.tolist())\nprint(df.head(10).to_string())\n# try to infer date and amount columns\n# print dtypes\nprint(df.dtypes.to_string())\n"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 34.47,
+   "prompt_tokens": 6245,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ],
+    "code": "import pandas as pd\nimport os\n# list files in input\nfiles = os.listdir('/input')\nprint('Files:', files)\n# read first excel file\ndf = pd.read_excel('/input/' + files[0])\nprint('Columns:', df.columns.tolist())\nprint(df.head())\n"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 21.8,
+   "prompt_tokens": 6242,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "monthly-attendance"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 22.04,
+   "prompt_tokens": 6253,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "lean",
+   "secs": 34.24,
+   "prompt_tokens": 6668,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "رمضان مواعيد الدوام ساعات العمل"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 41.84,
+   "prompt_tokens": 6665,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "title": "أهمية أمن المعلومات للموظفين",
+    "kind": "slides",
+    "content": "# أهمية أمن المعلومات للموظفين\nعرض توعوي للموارد البشرية\n\n---\n\n# لماذا يهمك أمن المعلومات؟\n- حماية بيانات الشركة والعملاء\n- الحفاظ على سمعة المؤسسة وثقة العملاء\n- منع الخسائر المالية والتشغيلية\n- الامتثال للسياسات والقوانين\n\n---\n\n# المخاطر الشائعة\n- التصيد الاحتيالي والبريد المزيف\n- كلمات مرور ضعيفة أو مشتركة\n- فقدان الأجهزة المحمولة\n- مشاركة معلومات حساسة عبر قنوات غير آمنة\n\n---\n\n# مسؤوليات الموظف الأساسية\n- استخدام كلمات مرور قوية وتفعيل المصادقة الثنائية\n- عدم فتح مرفقات أو روابط مشبوهة\n- الإبلاغ الفوري عن أي نشاط غير عادي\n- قفل الشاشة عند ترك المكتب\n\n---\n\n# أفضل الممارسات اليومية\n- تحديث البرامج بانتظام\n- العمل على شبكات آمنة فقط\n- نسخ احتياطي للملفات المهمة\n- التدريب المستمر ورفع الوعي\n\nشكراً لحضوركم\n"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 47.6,
+   "prompt_tokens": 6673,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "title": "جدول المناوبة الأسبوعية",
+    "kind": "table",
+    "table": {
+     "columns": [
+      "يوم الأسبوع",
+      "المسؤول المناوب"
+     ],
+     "rows": [
+      [
+       "الأحد",
+       "أحمد"
+      ],
+      [
+       "الاثنين",
+       "سارة"
+      ],
+      [
+       "الثلاثاء",
+       "خالد"
+      ],
+      [
+       "الأربعاء",
+       "نورة"
+      ],
+      [
+       "الخميس",
+       "فهد"
+      ],
+      [
+       "الجمعة",
+       "أحمد"
+      ],
+      [
+       "السبت",
+       "سارة"
+      ]
+     ]
+    }
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "lean",
+   "secs": 28.13,
+   "prompt_tokens": 6258,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "تقرير الحضور الشهري"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 17.01,
+   "prompt_tokens": 6239,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pdf",
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 27.79,
+   "prompt_tokens": 6667,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "lean",
+   "secs": 24.51,
+   "prompt_tokens": 6244,
+   "text": "",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 26.6,
+   "prompt_tokens": 6669,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "title": "مهام نقل المكتب",
+    "description": "قائمة متابعة مهام نقل المكتب مع المسؤول والموعد والحالة",
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 9.71,
+   "prompt_tokens": 6242,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 10.87,
+   "prompt_tokens": 6247,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "lean",
+   "secs": 12.49,
+   "prompt_tokens": 6238,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "lean",
+   "secs": 19.01,
+   "prompt_tokens": 6242,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 21.25,
+   "prompt_tokens": 6248,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "44821"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 34.38,
+   "prompt_tokens": 6248,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "lean",
+   "secs": 29.96,
+   "prompt_tokens": 6246,
+   "text": "",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t",
+    "name": "الموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 46.75,
+   "prompt_tokens": 6245,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "s5d7f9g1h3j5k7l9z1x3",
+    "sql": "SELECT department, COUNT(*) AS employee_count FROM employees GROUP BY department ORDER BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 39.7,
+   "prompt_tokens": 6248,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "s5d7f9g1h3j5k7l9z1x3",
+    "sql": "SELECT COALESCE(SUM(days),0) AS total_days FROM leaves WHERE employee_id = 1203 AND EXTRACT(YEAR FROM start_date) = EXTRACT(YEAR FROM CURRENT_DATE);"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "lean",
+   "secs": 15.08,
+   "prompt_tokens": 6661,
+   "text": "",
+   "n_calls": 1,
+   "tool": "remember",
+   "parsed": true,
+   "args": {
+    "text": "يفضل التواريخ بالهجري دائماً",
+    "scope": "user",
+    "kind": "preference"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "lean",
+   "secs": 15.01,
+   "prompt_tokens": 6658,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_chat",
+   "parsed": true,
+   "args": {
+    "query": "الخطة"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "lean",
+   "secs": 10.95,
+   "prompt_tokens": 6248,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_chat",
+   "parsed": true,
+   "args": {
+    "at": "start"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "lean",
+   "secs": 44.78,
+   "prompt_tokens": 6679,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "name": "thank-you-letter",
+    "title": "كتابة خطاب شكر",
+    "description": "صياغة خطابات شكر رسمية بمقدمة رسمية، شكر محدد، وختام بالدعاء",
+    "instructions": "طريقة كتابة خطاب شكر رسمي:\n\n1. مقدمة رسمية\n- ابدأ بالتحية الرسمية المناسبة (السيد/السيدة...) مع ذكر المنصب إن وُجد.\n- اذكر سبب الخطاب والمناسبة باختصار وبأسلوب مهذب.\n\n2. شكر محدد\n- عبّر عن الشكر بوضوح وبصيغة مباشرة.\n- حدد الإنجاز أو المساعدة أو اللفتة التي تُشكر عليها تحديداً.\n- اذكر الأثر الإيجابي أو الفائدة التي نتجت عنها، إن أمكن.\n\n3. ختام بالدعاء\n- اختم بعبارة تقدير ودعاء طيب (وفقاً للسياق الثقافي والديني).\n- أغلق بالتحية الختامية الرسمية وتوقيع المرسل مع الاسم والمنصب والتاريخ.\n\nنبرة الخطاب: مهذبة، مختصرة، صادقة، خالية من المبالغة.\nاستخدم لغة فصحى سليمة، ورتّب الفقرات بمسافة بسيطة بينها.",
+    "scope": "user"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "lean",
+   "secs": 36.26,
+   "prompt_tokens": 6672,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 12.22,
+   "prompt_tokens": 6243,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 14.18,
+   "prompt_tokens": 6250,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "lean",
+   "secs": 28.56,
+   "prompt_tokens": 6245,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 3.43,
+   "prompt_tokens": 6662,
+   "text": "الترجمة إلى الإنجليزية:\n\n**\"Thank you for your kind cooperation.\"**\n\nأو يمكن أيضًا:\n\n- \"We appreciate your kind cooperation.\"\n- \"Thank you for your cooperation.\"",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 6.09,
+   "prompt_tokens": 6665,
+   "text": "إليك صياغة قصيرة يمكنك إرسالها:\n\n> أخي/أختي [الاسم]،  \n> أعتذر عن تأخري في الرد، وسأعاود التواصل فور الانتهاء من المهام العاجلة.  \n> شكرًا لتفهمك.\n\nتحب أعدلها رسمية أكثر أو أخف؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 6.45,
+   "prompt_tokens": 6651,
+   "text": "على الرحب والسعة! إذا احتجت أي شيء آخر — ملفات، تقارير، أو صياغة — خبرني.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 11.86,
+   "prompt_tokens": 6664,
+   "text": "بشكل عام، الفرق بين الإجازة الاضطرارية والمرضية يكمن في السبب والغرض من الإجازة:\n\n* **الإجازة المرضية**: تُمنح للموظف عندما يكون مريضًا أو يحتاج إلى رعاية طبية، وتكون مدعومة عادةً بشهادة طبية تثبت الحالة الصحية للموظف.\n* **الإجازة الاضطرارية**: تُمنح في حالات طارئة أو غير متوقعة، مثل وفاة أحد أفراد ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  }
+ ]
+}

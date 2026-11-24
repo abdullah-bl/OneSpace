@@ -1,0 +1,2603 @@
+{
+ "model": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_XL",
+ "cond": "routed",
+ "summary": {
+  "runs": 117,
+  "errors": 0,
+  "ok": 71.8,
+  "right_tool": 74.3,
+  "no_call_when_needed": 25.7,
+  "abstain_right": 100.0,
+  "schema_valid": 100.0,
+  "args_right": 92.3,
+  "markup_leak": 0,
+  "prompt_tokens_avg": 2980,
+  "secs_avg": 1.55
+ },
+ "rows": [
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 1.11,
+   "prompt_tokens": 2945,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 1.07,
+   "prompt_tokens": 2945,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 1.08,
+   "prompt_tokens": 2945,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "routed",
+   "secs": 0.53,
+   "prompt_tokens": 2942,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "routed",
+   "secs": 0.52,
+   "prompt_tokens": 2942,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "routed",
+   "secs": 0.55,
+   "prompt_tokens": 2942,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "routed",
+   "secs": 0.24,
+   "prompt_tokens": 2948,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "routed",
+   "secs": 0.24,
+   "prompt_tokens": 2948,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "routed",
+   "secs": 0.21,
+   "prompt_tokens": 2948,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 0.75,
+   "prompt_tokens": 2942,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 0.74,
+   "prompt_tokens": 2942,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 0.8,
+   "prompt_tokens": 2942,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 0.58,
+   "prompt_tokens": 2943,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 0.56,
+   "prompt_tokens": 2943,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "routed",
+   "secs": 1.05,
+   "prompt_tokens": 2943,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 1.32,
+   "prompt_tokens": 2807,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "code \"present\" got null"
+   ],
+   "ok": false
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 1.31,
+   "prompt_tokens": 2807,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "code \"present\" got null"
+   ],
+   "ok": false
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.83,
+   "prompt_tokens": 2807,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "code \"present\" got null"
+   ],
+   "ok": false
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.56,
+   "prompt_tokens": 2812,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ],
+    "targetSpaceId": "personal"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "code \"present\" got null"
+   ],
+   "ok": false
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.54,
+   "prompt_tokens": 2812,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ],
+    "targetSpaceId": "personal"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "code \"present\" got null"
+   ],
+   "ok": false
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.53,
+   "prompt_tokens": 2812,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ],
+    "targetSpaceId": "personal"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "code \"present\" got null"
+   ],
+   "ok": false
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.87,
+   "prompt_tokens": 2802,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ],
+    "targetSpaceId": "personal"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.45,
+   "prompt_tokens": 2802,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 1.06,
+   "prompt_tokens": 2802,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ],
+    "targetSpaceId": "personal"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 1.31,
+   "prompt_tokens": 3264,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "monthly-attendance"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.96,
+   "prompt_tokens": 3264,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "monthly-attendance"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "routed",
+   "secs": 0.74,
+   "prompt_tokens": 3264,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "monthly-attendance"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "routed",
+   "secs": 0.31,
+   "prompt_tokens": 3275,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "routed",
+   "secs": 0.28,
+   "prompt_tokens": 3275,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "routed",
+   "secs": 0.67,
+   "prompt_tokens": 3275,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "routed",
+   "secs": 2.68,
+   "prompt_tokens": 3501,
+   "text": "هل يمكنك تزويدي بتفاصيل أكثر حول المذكرة الداخلية التي تود كتابتها؟ على سبيل المثال:\n\n1. **لمن هذه المذكرة؟** (جميع الموظفين، قسم معين، إلخ)\n2. **ما هي النقاط الرئيسية التي يجب أن تتضمنها المذكرة؟** (مثل: مواعيد الدوام، الإجازات، إجراءات العمل خلال رمضان، إلخ)\n3. **ما هي النبرة المطلوبة؟** (رسمية، و",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "routed",
+   "secs": 2.79,
+   "prompt_tokens": 3501,
+   "text": "هل يمكنك تزويدي بالتفاصيل التي تريد تضمينها في المذكرة الداخلية؟ على سبيل المثال:\n\n1.  **الجمهور المستهدف:** (جميع الموظفين، قسم معين، إلخ).\n2.  **التفاصيل المحددة للمواعيد:** (ساعات العمل، أوقات الراحة، إلخ).\n3.  **الهدف من المذكرة:** (توضيح الإجراءات، التذكير، إلخ).\n4.  **النبرة المطلوبة:** (رسمية",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "routed",
+   "secs": 2.08,
+   "prompt_tokens": 3501,
+   "text": "هل يمكنك تزويدي بالتفاصيل التي تريد تضمينها في المذكرة الداخلية؟ على سبيل المثال:\n\n1.  **الجمهور المستهدف:** (جميع الموظفين، قسم معين، إلخ).\n2.  **النقاط الرئيسية:** (مواعيد الدوام، الإجازات، الترتيبات الخاصة لرمضان).\n3.  **النبرة المطلوبة:** (رسمية، ودية، إلخ).\n\nبمجرد تزويدي بهذه التفاصيل، سأقوم بص",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "routed",
+   "secs": 6.51,
+   "prompt_tokens": 3501,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: مقدمة - ما هو أمن المعلومات؟\n*   **التعريف:** حماية البيانات والمعلومات من الوصول غير المصرح به، الاستخدام غير المصرح به، الكشف، التعديل، الإفشاء، أو التدمير.\n*   **لماذا هو مهم؟** في عالمنا الرقمي، أصبحت البيانات هي الأصول الأهم للشركات والأفراد.\n*   **الهدف:** ضمان سرية، سلامة، وتوافر المعلومات.\n\n## الشريحة 2: المخاطر التي نواجهها\n*   **التهديدات الإلكترونية:**\n    *   البرمجيات الخبيثة (الفيروسات، برامج الفدية).\n    *   التصيد الاحتيالي (Phishing) وهجمات الهندسة الاجتماعية.\n    *   اختراق الحسابات والوصول غير المصرح به.\n*   **المخاطر البشرية:**\n    *   الأخطاء البشرية (إرسال بيانات حساسة بالخطأ).\n    *   عدم الالتزام بسياسات الأمان.\n\n## الشريحة 3: دور الموظف في الحماية\n*   **الوعي هو خط الدفاع الأول:** يجب أن يكون كل موظف على دراية بالمخاطر المحتملة.\n*   **أفضل الممارسات:**\n    *   استخدام كلمات مرور قوية وتغييرها بانتظام.\n    *   التعرف على رسائل البريد الإلكتروني المشبوهة.\n    *   عدم مشاركة المعلومات السرية خارج القنوات المعتمدة.\n    *   تحديث البرامج والتطبيقات بانتظام.\n\n## الشريحة 4: السياسات والإجراءات الأساسية\n*   **الالتزام بسياسة العمل عن بعد:** (إذا كانت ذات صلة) التأكد من استخدام شبكات آمنة.\n*   **إدارة البيانات:** تصنيف البيانات وتحديد من له صلاحية الوصول إليها.\n*   **الإبلاغ الفوري:** الإبلاغ عن أي نشاط مشبوه أو محاولة اختراق فوراً إلى قسم أمن المعلومات.\n\n## الشريحة 5: الخلاصة والدعوة للعمل\n*   **الخلاصة:** أمن المعلومات مسؤولية مشتركة، وليس فقط قسم تكنولوجيا المعلومات.\n*   **رسالتنا:** كن يقظاً، التزم بالإجراءات، وكن جزءاً من ثقافة أمنية قوية.\n*   **سؤال وجواب.**",
+    "kind": "slides",
+    "sources": [],
+    "title": "عرض تقديمي: أهمية أمن المعلومات للموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "routed",
+   "secs": 5.56,
+   "prompt_tokens": 3501,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: مقدمة - لماذا أمن المعلومات مهم؟\n*   **تعريف أمن المعلومات:** حماية البيانات والمعلومات من الوصول غير المصرح به، التعديل، أو التدمير.\n*   **الأهمية للموظف:** حماية سمعة الشركة، بيانات العملاء، والامتثال للوائح.\n*   **الهدف:** ضمان استمرارية العمليات وحماية الأصول الرقمية.\n\n## الشريحة 2: المخاطر التي نواجهها\n*   **التهديدات الإلكترونية:** التصيد الاحتيالي (Phishing)، البرمجيات الخبيثة (Malware).\n*   **الأخطاء البشرية:** النقر على روابط مشبوهة، مشاركة معلومات حساسة عن طريق الخطأ.\n*   **التبعات:** فقدان البيانات، غرامات قانونية، وتوقف العمليات.\n\n## الشريحة 3: أفضل الممارسات لحماية البيانات\n*   **كلمات مرور قوية:** استخدام كلمات مرور معقدة وتغييرها بانتظام.\n*   **الوعي بالتصيد الاحتيالي:** التحقق من مصداقية أي بريد إلكتروني أو رابط قبل النقر.\n*   **التعامل الآمن مع البيانات:** عدم مشاركة المعلومات الحساسة خارج القنوات المعتمدة.\n\n## الشريحة 4: دورك في بناء ثقافة أمنية\n*   **الالتزام بالسياسات:** فهم وتطبيق سياسات أمن المعلومات المعتمدة.\n*   **الإبلاغ الفوري:** الإبلاغ عن أي نشاط مشبوه أو محاولة اختراق فوراً.\n*   **التدريب المستمر:** المشاركة الفعالة في برامج التوعية الأمنية.\n\n## الشريحة 5: الخلاصة والدعوة للعمل\n*   **ملخص النقاط الرئيسية:** الوعي + الحذر = أمن معلومات قوي.\n*   **رسالتنا:** أمن المعلومات مسؤولية مشتركة.\n*   **الخطوة التالية:** كن واعياً، كن حذراً، كن جزءاً من الحل.",
+    "kind": "slides",
+    "sources": [],
+    "title": "عرض تقديمي: أهمية أمن المعلومات للموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "routed",
+   "secs": 12.6,
+   "prompt_tokens": 3501,
+   "text": "",
+   "n_calls": 5,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "# الشريحة 1: عنوان العرض\n\n## أهمية أمن المعلومات للموظفين\n\n*   **مقدمة:** أمن المعلومات هو مسؤولية مشتركة لضمان حماية أصول الشركة وبياناتها.\n*   **لماذا يهمنا؟** حماية سمعة الشركة، البيانات الحساسة، والامتثال للوائح.\n*   **الهدف:** بناء ثقافة أمنية قوية داخل المؤسسة.\n\nملاحظات:\n*   ابدأ بترحيب سريع.\n*   شدد على أن الأمن ليس مجرد قسم تقني، بل سلوك يومي.",
+    "kind": "slides",
+    "sources": [],
+    "title": "أهمية أمن المعلومات للموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "routed",
+   "secs": 2.43,
+   "prompt_tokens": 3508,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "اليوم",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول المناوب",
+      "type": "select"
+     }
+    ],
+    "description": "جدول لتوزيع المسؤولين المناوبين على أيام الأسبوع.",
+    "rows": [
+     {
+      "اليوم": "الأحد",
+      "المسؤول المناوب": "أحمد"
+     },
+     {
+      "اليوم": "الاثنين",
+      "المسؤول المناوب": "سارة"
+     },
+     {
+      "اليوم": "الثلاثاء",
+      "المسؤول المناوب": "خالد"
+     },
+     {
+      "اليوم": "الأربعاء",
+      "المسؤول المناوب": "نورة"
+     },
+     {
+      "اليوم": "الخميس",
+      "المسؤول المناوب": "فهد"
+     },
+     {
+      "اليوم": "الجمعة",
+      "المسؤول المناوب": "أحمد"
+     },
+     {
+      "اليوم": "السبت",
+      "المسؤول المناوب": "سارة"
+     }
+    ],
+    "title": "جدول المناوبات الأسبوعية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "routed",
+   "secs": 2.42,
+   "prompt_tokens": 3508,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "اليوم",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول المناوب",
+      "type": "select"
+     }
+    ],
+    "description": "جدول لتحديد المسؤول المناوب لكل يوم من أيام الأسبوع.",
+    "rows": [
+     {
+      "اليوم": "الأحد",
+      "المسؤول المناوب": "أحمد"
+     },
+     {
+      "اليوم": "الاثنين",
+      "المسؤول المناوب": "سارة"
+     },
+     {
+      "اليوم": "الثلاثاء",
+      "المسؤول المناوب": "خالد"
+     },
+     {
+      "اليوم": "الأربعاء",
+      "المسؤول المناوب": "نورة"
+     },
+     {
+      "اليوم": "الخميس",
+      "المسؤول المناوب": "فهد"
+     },
+     {
+      "اليوم": "الجمعة",
+      "المسؤول المناوب": "أحمد"
+     },
+     {
+      "اليوم": "السبت",
+      "المسؤول المناوب": "سارة"
+     }
+    ],
+    "title": "جدول المناوبات الأسبوعية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "routed",
+   "secs": 2.79,
+   "prompt_tokens": 3508,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "اليوم",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول المناوب",
+      "type": "select"
+     }
+    ],
+    "description": "جدول يوضح المسؤول المناوب لكل يوم من أيام الأسبوع.",
+    "rows": [
+     {
+      "اليوم": "الأحد",
+      "المسؤول المناوب": "أحمد"
+     },
+     {
+      "اليوم": "الاثنين",
+      "المسؤول المناوب": "سارة"
+     },
+     {
+      "اليوم": "الثلاثاء",
+      "المسؤول المناوب": "خالد"
+     },
+     {
+      "اليوم": "الأربعاء",
+      "المسؤول المناوب": "نورة"
+     },
+     {
+      "اليوم": "الخميس",
+      "المسؤول المناوب": "فهد"
+     },
+     {
+      "اليوم": "الجمعة",
+      "المسؤول المناوب": "أحمد"
+     },
+     {
+      "اليوم": "السبت",
+      "المسؤول المناوب": "سارة"
+     }
+    ],
+    "title": "جدول المناوبات الأسبوعية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "routed",
+   "secs": 1.54,
+   "prompt_tokens": 3117,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "content": "[محتوى تقرير الحضور الشهري الحالي]\n\n**توصيات:**\n* تفعيل البصمة في الفرع.",
+    "note": "تم تعديل تقرير الحضور الشهري وإضافة فقرة توصيات حول تفعيل البصمة في الفرع."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "routed",
+   "secs": 1.5,
+   "prompt_tokens": 3117,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "content": "[محتوى تقرير الحضور الشهري الحالي]\n\n**توصيات:**\n* تفعيل البصمة في الفرع.",
+    "note": "تم تحديث تقرير الحضور الشهري وإضافة فقرة التوصيات المتعلقة بتفعيل البصمة في الفرع."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "routed",
+   "secs": 1.53,
+   "prompt_tokens": 3117,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "content": "[محتوى تقرير الحضور الشهري الحالي]\n\n**توصيات:**\n* تفعيل البصمة في الفرع.",
+    "note": "تم تعديل تقرير الحضور الشهري وإضافة توصية جديدة حول تفعيل البصمة في الفرع."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "routed",
+   "secs": 0.54,
+   "prompt_tokens": 3098,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "format": "pdf"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "routed",
+   "secs": 0.53,
+   "prompt_tokens": 3098,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "format": "pdf"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "routed",
+   "secs": 0.55,
+   "prompt_tokens": 3098,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "format": "pdf"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "routed",
+   "secs": 0.5,
+   "prompt_tokens": 3500,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "docx",
+    "title": "خطاب شكر لفريق الأرشفة"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "routed",
+   "secs": 0.48,
+   "prompt_tokens": 3500,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "docx",
+    "title": "خطاب شكر لفريق الأرشفة"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "routed",
+   "secs": 0.65,
+   "prompt_tokens": 3500,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "docx",
+    "title": "خطاب شكر لفريق الأرشفة"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "routed",
+   "secs": 1.19,
+   "prompt_tokens": 3104,
+   "text": "",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "routed",
+   "secs": 1.51,
+   "prompt_tokens": 3104,
+   "text": "",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "routed",
+   "secs": 1.29,
+   "prompt_tokens": 3104,
+   "text": "",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "routed",
+   "secs": 2.03,
+   "prompt_tokens": 2998,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ],
+    "description": "قائمة لمتابعة مهام نقل المكتب.",
+    "title": "متابعة مهام نقل المكتب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "routed",
+   "secs": 1.98,
+   "prompt_tokens": 2998,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ],
+    "description": "قائمة لمتابعة مهام نقل المكتب.",
+    "title": "متابعة مهام نقل المكتب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "routed",
+   "secs": 1.96,
+   "prompt_tokens": 2998,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ],
+    "description": "قائمة لمتابعة مهام نقل المكتب.",
+    "title": "متابعة مهام نقل المكتب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "routed",
+   "secs": 1.26,
+   "prompt_tokens": 2596,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "routed",
+   "secs": 1.01,
+   "prompt_tokens": 2596,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "routed",
+   "secs": 1.0,
+   "prompt_tokens": 2596,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "routed",
+   "secs": 0.68,
+   "prompt_tokens": 2601,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_list",
+   "parsed": true,
+   "args": {
+    "add": [
+     {
+      "name": "منى السبيعي",
+      "status": "حاضرة"
+     }
+    ],
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "routed",
+   "secs": 0.68,
+   "prompt_tokens": 2601,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_list",
+   "parsed": true,
+   "args": {
+    "add": [
+     {
+      "name": "منى السبيعي",
+      "status": "حاضرة"
+     }
+    ],
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "routed",
+   "secs": 0.68,
+   "prompt_tokens": 2601,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_list",
+   "parsed": true,
+   "args": {
+    "add": [
+     {
+      "name": "منى السبيعي",
+      "status": "حاضرة"
+     }
+    ],
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "routed",
+   "secs": 0.24,
+   "prompt_tokens": 2593,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "routed",
+   "secs": 0.43,
+   "prompt_tokens": 2593,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "routed",
+   "secs": 0.45,
+   "prompt_tokens": 2593,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "routed",
+   "secs": 0.76,
+   "prompt_tokens": 1945,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "routed",
+   "secs": 0.58,
+   "prompt_tokens": 1945,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "routed",
+   "secs": 0.57,
+   "prompt_tokens": 1945,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "routed",
+   "secs": 0.31,
+   "prompt_tokens": 1953,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "routed",
+   "secs": 0.3,
+   "prompt_tokens": 1953,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "routed",
+   "secs": 0.3,
+   "prompt_tokens": 1953,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "routed",
+   "secs": 0.43,
+   "prompt_tokens": 1951,
+   "text": "",
+   "n_calls": 1,
+   "tool": "fill_template",
+   "parsed": true,
+   "args": {
+    "recordId": "r7k2m9",
+    "templateId": "شهادة حضور"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "routed",
+   "secs": 0.41,
+   "prompt_tokens": 1951,
+   "text": "",
+   "n_calls": 1,
+   "tool": "fill_template",
+   "parsed": true,
+   "args": {
+    "recordId": "r7k2m9",
+    "templateId": "شهادة حضور"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "routed",
+   "secs": 0.21,
+   "prompt_tokens": 1951,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "routed",
+   "secs": 0.32,
+   "prompt_tokens": 1947,
+   "text": "ما هو معرّف ملف الإكسل الذي تريد اعتماده كسجل للموظفين؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "routed",
+   "secs": 0.64,
+   "prompt_tokens": 1947,
+   "text": "ما هو معرّف ملف الإكسل الذي تود اعتماده كسجل للموظفين؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "routed",
+   "secs": 0.83,
+   "prompt_tokens": 1947,
+   "text": "ما هو معرّف ملف الإكسل الذي تريد اعتماده كسجل للموظفين؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "routed",
+   "secs": 1.52,
+   "prompt_tokens": 2981,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT department, COUNT(id) FROM employees GROUP BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "routed",
+   "secs": 1.29,
+   "prompt_tokens": 2981,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT department, COUNT(id) FROM employees GROUP BY department;"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "routed",
+   "secs": 1.04,
+   "prompt_tokens": 2981,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT department, COUNT(id) FROM employees GROUP BY department;"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "routed",
+   "secs": 0.7,
+   "prompt_tokens": 2988,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT SUM(days) FROM leaves WHERE employee_id = 1203;"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "routed",
+   "secs": 1.09,
+   "prompt_tokens": 2988,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT SUM(days) FROM leaves WHERE employee_id = 1203 AND YEAR(start_date) = YEAR(CURDATE());"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "routed",
+   "secs": 1.1,
+   "prompt_tokens": 2988,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT SUM(days) FROM leaves WHERE employee_id = 1203 AND YEAR(end_date) = YEAR(CURDATE());"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "routed",
+   "secs": 0.62,
+   "prompt_tokens": 2714,
+   "text": "تم تذكيري بأنك تفضل استخدام التواريخ بالهجري دائماً.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "routed",
+   "secs": 0.91,
+   "prompt_tokens": 2714,
+   "text": "تم تذكيري بأنك تفضل استخدام التواريخ بالهجري دائماً.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "routed",
+   "secs": 0.93,
+   "prompt_tokens": 2714,
+   "text": "تم تذكيري بأنك تفضل استخدام التواريخ بالهجري دائماً.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "routed",
+   "secs": 1.85,
+   "prompt_tokens": 2712,
+   "text": "أحتاج إلى تذكير بما هي \"الخطة اللي اشتغلنا عليها المرة الماضية\" حتى أتمكن من إكمالها لك. هل يمكنك تزويدي ببعض التفاصيل أو اسم الخطة؟\n\nإذا كانت الخطة محفوظة في ذاكرتي، يمكنني محاولة استرجاعها باستخدام أداة `recall`.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "routed",
+   "secs": 1.45,
+   "prompt_tokens": 2712,
+   "text": "لم أفهم بالضبط ما هي \"الخطة اللي اشتغلنا عليها المرة الماضية\". هل يمكنك تذكيري باسم الخطة أو السياق الذي نتحدث عنه حتى أتمكن من المتابعة؟\n\nإذا كنت تقصد شيئًا محفوظًا في ذاكرتي، يرجى تزويدي بمزيد من التفاصيل.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "routed",
+   "secs": 0.63,
+   "prompt_tokens": 2712,
+   "text": "أحتاج إلى تذكير بما هي \"الخطة اللي اشتغلنا عليها المرة الماضية\" حتى أتمكن من إكمالها لك. هل يمكنك تزويدي ببعض التفاصيل أو اسم الخطة؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "routed",
+   "secs": 0.75,
+   "prompt_tokens": 2323,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "routed",
+   "secs": 0.48,
+   "prompt_tokens": 2323,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "routed",
+   "secs": 1.04,
+   "prompt_tokens": 2323,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "routed",
+   "secs": 3.92,
+   "prompt_tokens": 3678,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "description": "صياغة خطاب رسمي يتضمن مقدمة رسمية، شكر محدد، وخاتمة بالدعاء.",
+    "instructions": "1. **المقدمة الرسمية:** ابدأ بتحية رسمية ومناسبة للجهة الموجه إليها الخطاب.\n2. **الشكر المحدد:** اذكر بوضوح سبب الشكر أو الإشادة، مع تحديد الإنجاز أو المساعدة التي تم تقديرها بشكل خاص.\n3. **الختام بالدعاء:** اختتم الخطاب بدعاء صادق بالخير والتوفيق للطرف الآخر.\n4. **الصياغة:** استخدم لغة عربية فصحى ومهذبة ومناسبة للسياق الرسمي.\n5. **المخرج:** قدم نص الخطاب جاهزاً للاستخدام.",
+    "name": "thank-you-letter",
+    "title": "صياغة خطاب شكر رسمي"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "routed",
+   "secs": 6.83,
+   "prompt_tokens": 3678,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "description": "تُستخدم هذه المهارة لصياغة خطابات رسمية تتضمن مقدمة رسمية، شكر محدد، وخاتمة بالدعاء.",
+    "instructions": "عند طلب صياغة خطاب رسمي، اتبع الخطوات التالية:\n1. **المقدمة الرسمية:** ابدأ بتحية رسمية ومناسبة للجهة الموجه إليها الخطاب.\n2. **الشكر المحدد:** اذكر بوضوح سبب الشكر أو الإنجاز الذي يتم شكره عليه، مع إظهار التقدير الحقيقي لهذا الجهد.\n3. **الختام بالدعاء:** اختتم الخطاب بدعاء صادق بالخير والتوفيق للطرف الآخر.\n4. **الصياغة:** قم بصياغة الخطاب باللغة العربية الفصحى، مع الحفاظ على نبرة مهنية وودودة في آن واحد.\n\n**مثال على الهيكل:**\n*   **التحية:** (مثل: سعادة/حضرة السيد/السيدة...)\n*   **الفقرة الأولى (المقدمة):** التعبير عن الهدف من الخطاب أو الإشارة إلى السياق.\n*   **الفقرة الثانية (الشكر):** ذكر الإنجاز أو المساعدة المحددة وشكر الطرف المعني عليها.\n*   **الفقرة الثالثة (الختام):** التعبير عن التطلع للمستقبل والدعاء بالتوفيق.\n*   **التوقيع:** (مثل: مع خالص التقدير، أو تفضلوا بقبول فائق الاحترام).",
+    "name": "thank-you-letter",
+    "title": "صياغة خطاب شكر رسمي"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "routed",
+   "secs": 3.92,
+   "prompt_tokens": 3678,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "description": "صياغة خطاب رسمي يتضمن مقدمة رسمية، شكر محدد، وخاتمة بالدعاء.",
+    "instructions": "1. **المقدمة الرسمية:** ابدأ بتحية رسمية ومناسبة للجهة الموجه إليها الخطاب.\n2. **الشكر المحدد:** اذكر بوضوح سبب الشكر، مع تحديد الإنجاز أو المساعدة التي تم تقديمها (يجب أن يكون الشكر خاصًا ومحددًا).\n3. **الختام بالدعاء:** اختم الخطاب بدعاء صادق بالخير والتوفيق للطرف الآخر.\n4. **الصياغة:** اكتب الخطاب بلغة عربية فصحى ومهذبة، مع الحفاظ على نبرة رسمية وودودة في آن واحد.\n5. **التنسيق:** استخدم تنسيقًا واضحًا للفقرات لضمان سهولة القراءة.",
+    "name": "thank-you-letter",
+    "title": "صياغة خطاب شكر رسمي"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "routed",
+   "secs": 22.79,
+   "prompt_tokens": 4035,
+   "text": "",
+   "n_calls": 1,
+   "tool": "write_app",
+   "parsed": true,
+   "args": {
+    "data": {
+     "additionalProperties": {
+      "columns": [
+       "text"
+      ],
+      "listId": "new_safety_quiz_list_id",
+      "read": "none",
+      "write": "page",
+      "sender": "الموظف"
+     }
+    },
+    "files": {
+     "index.html": "<!DOCTYPE html>\n<html lang=\"ar\" dir=\"rtl\">\n<head>\n    <meta charset=\"UTF-8\">\n    <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n    <title>اختبار السلامة المهنية</title>\n    <style>\n        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background-color: #f4f7f9; color: #333; direction: rtl; text-align: right; padding: 20px; }\n        .quiz-container { max-width: 700px; margin: 0 auto; background: #fff; padding: 30px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1); }\n        h1 { color: #0056b3; border-bottom: 2px solid #eee; padding-bottom: 10px; }\n        .question { margin-bottom: 20px; padding: 15px; border: 1px solid #ddd; border-radius: 8px; background-color: #fafafa; }\n        .question p { font-weight: bold; margin-bottom: 10px; color: #333; }\n        .options label { display: block; margin-bottom: 8px; cursor: pointer; padding: 8px; border-radius: 5px; transition: background-color 0.3s; }\n        .options label:hover { background-color: #e9ecef; }\n        button { background-color: #28a745; color: white; padding: 12px 20px; border: none; border-radius: 5px; cursor: pointer; font-size: 16px; margin-top: 20px; transition: background-color 0.3s; }\n        button:hover { background-color: #218838; }\n        #result { margin-top: 20px; padding: 15px; border-radius: 5px; font-weight: bold; display: none; }\n    </style>\n</head>\n<body>\n    <div class=\"quiz-container\">\n        <h1>اختبار السلامة المهنية</h1>\n        <form id=\"safetyQuizForm\">\n            <!-- Questions will be dynamically inserted here -->\n        </form>\n        <button id=\"submitBtn\">إنهاء الاختبار</button>\n        <div id=\"result\"></div>\n    </div>\n\n    <script>\n        const quizData = [\n            {\n                question: \"ما هو الإجراء الأهم قبل بدء أي عمل يتطلب استخدام معدات حماية شخصية (PPE)؟\",\n                options: [\"التحقق من حالة المعدات فقط\", \"ارتداء معدات الحماية الشخصية المناسبة\", \"تأجيل العمل حتى يتم توفير المعدات\", \"العمل دون معدات\"],\n                correctAnswer: \"ارتداء معدات الحماية الشخصية المناسبة\"\n            },\n            {\n                question: \"في حالة حدوث حريق، ما هو الإجراء الأول الذي يجب اتخاذه؟\",\n                options: [\"محاولة إطفاء الحريق بنفسك فوراً\", \"إخلاء المنطقة فوراً وإبلاغ الطوارئ\", \"الانتظار لمعرفة ما سيحدث\", \"إغلاق الأبواب خلفك\"],\n                correctAnswer: \"إخلاء المنطقة فوراً وإبلاغ الطوارئ\"\n            },\n            {\n                question: \"ما هو الغرض الأساسي من لوحات إشارات السلامة؟\",\n                options: [\"تزيين المكان\", \"توفير معلومات حول المخاطر وإجراءات السلامة\", \"تحديد مسارات الموظفين فقط\", \"تحديد أوقات الراحة\"],\n                correctAnswer: \"توفير معلومات حول المخاطر وإجراءات السلامة\"\n            },\n            {\n                question: \"ما هو الإجراء الصحيح عند التعامل مع مواد كيميائية خطرة؟\",\n                options: [\"التعامل معها دون قفازات\", \"قراءة صحيفة بيانات السلامة (SDS) واتباع الإجراءات المحددة\", \"صبها مباشرة في المجاري\", \"تركها مكشوفة\"],\n                correctAnswer: \"قراءة صحيفة بيانات السلامة (SDS) واتباع الإجراءات المحددة\"\n            },\n            {\n                question: \"ماذا تفعل إذا رأيت زميلاً يخالف إجراءات السلامة؟\",\n                options: [\"تجاهل الأمر\", \"التحدث معه بهدوء لتصحيح الخطأ\", \"إبلاغ المشرف فوراً\", \"المشاركة في المخالفة\"],\n                correctAnswer: \"إبلاغ المشرف فوراً\"\n            }\n        ];\n\n        const form = document.getElementById('safetyQuizForm');\n        const submitBtn = document.getElementById('submitBtn');\n        const resultDiv = document.getElementById('result');\n\n        function renderQuiz() {\n            quizData.forEach((q, index) => {\n                const questionDiv = document.createElement('div');\n                questionDiv.className = 'question';\n                questionDiv.innerHTML = `<p>السؤال ${index + 1}: ${q.question}</p>\n                                            <div class=\"options\">\n                                                ${q.options.map(option => `\n                                                    <label>\n                                                        <input type=\"radio\" name=\"question${index}\" value=\"${option}\"> ${option}\n                                                    </label>\n                                                `).join('')}\n                                            </div>`;\n                questionDiv.innerHTML += `<input type=\"hidden\" name=\"correct${index}\" value=\"${q.correctAnswer}\">`;\n                form.appendChild(questionDiv);\n            });\n        }\n\n        submitBtn.addEventListener('click', () => {\n            let score = 0;\n            const totalQuestions = quizData.length;\n\n            quizData.forEach((q, index) => {\n                const selector = `input[name=\"question${index}\"]:checked`;\n                const selected = form.querySelector(selector);\n                if (selected && selected.value === q.correctAnswer) {\n                    score++;\n                }\n            });\n\n            resultDiv.style.display = 'block';\n            let message = `لقد حصلت على ${score} من ${totalQuestions} درجة.`;\n            if (score === totalQuestions) {\n                message += \" تهانينا! درجاتك ممتازة.\";\n                resultDiv.style.backgroundColor = '#d4edda';\n                resultDiv.style.color = '#155724';\n            } else if (score >= totalQuestions / 2) {\n                message += \" أحسنت، تحتاج إلى مراجعة بعض النقاط.\";\n                resultDiv.style.backgroundColor = '#fff3cd';\n                resultDiv.style.color = '#856404';\n            } else {\n                message += \" يرجى مراجعة مواد السلامة المهنية.\";\n                resultDiv.style.backgroundColor = '#f8d7da';\n                resultDiv.style.color = '#721c24';\n            }\n            resultDiv.textContent = message;\n        });\n\n        renderQuiz();\n    </script>\n</body>\n</html>"
+    },
+    "title": "اختبار السلامة المهنية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "routed",
+   "secs": 3.49,
+   "prompt_tokens": 4035,
+   "text": "أفهم أنك تريد إنشاء اختبار قصير مكون من 5 أسئلة حول السلامة المهنية ليقوم الموظفون بحله، وأن يتم حفظ درجاتهم.\n\nيمكنني إنشاء تطبيق تفاعلي (Quiz) باستخدام أداة `write_app` لتحقيق ذلك. سأقوم بتصميم التطبيق ليكون سهل الاستخدام ومناسباً للغة العربية (من اليمين إلى اليسار).\n\n**الخطوات التي سأتبعها:**\n\n1. ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "routed",
+   "secs": 3.49,
+   "prompt_tokens": 4035,
+   "text": "أفهم أنك تريد إنشاء اختبار قصير مكون من 5 أسئلة حول السلامة المهنية ليقوم الموظفون بحله، وأن يتم حفظ درجاتهم.\n\nيمكنني إنشاء هذا الاختبار باستخدام أداة `write_app`. سأقوم بتصميم التطبيق ليكون تفاعلياً، وسيحفظ النتائج في قائمة (List) يتم إنشاؤها داخل التطبيق.\n\n**الخطوات التي سأتبعها:**\n\n1.  **إنشاء قا",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "routed",
+   "secs": 0.88,
+   "prompt_tokens": 3630,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "routed",
+   "secs": 0.44,
+   "prompt_tokens": 3630,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "routed",
+   "secs": 0.43,
+   "prompt_tokens": 3630,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "routed",
+   "secs": 1.92,
+   "prompt_tokens": 3634,
+   "text": "",
+   "n_calls": 1,
+   "tool": "test_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0",
+    "steps": [
+     {
+      "do": "fill",
+      "selector": "name",
+      "value": "Test User"
+     },
+     {
+      "do": "click",
+      "selector": "submit"
+     },
+     {
+      "do": "expect",
+      "text": "Your level is determined.",
+      "value": "div.result-message"
+     }
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "routed",
+   "secs": 0.91,
+   "prompt_tokens": 3634,
+   "text": "",
+   "n_calls": 1,
+   "tool": "test_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "routed",
+   "secs": 0.51,
+   "prompt_tokens": 3634,
+   "text": "",
+   "n_calls": 1,
+   "tool": "test_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "routed",
+   "secs": 1.01,
+   "prompt_tokens": 2491,
+   "text": "",
+   "n_calls": 1,
+   "tool": "notify_colleague",
+   "parsed": true,
+   "args": {
+    "message": "يرجى مراجعة تقرير الحضور الشهري قبل يوم الخميس.",
+    "people": [
+     "محمد"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "routed",
+   "secs": 0.76,
+   "prompt_tokens": 2491,
+   "text": "",
+   "n_calls": 1,
+   "tool": "notify_colleague",
+   "parsed": true,
+   "args": {
+    "message": "يرجى مراجعة تقرير الحضور الشهري قبل يوم الخميس.",
+    "people": [
+     "محمد"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "routed",
+   "secs": 0.85,
+   "prompt_tokens": 2491,
+   "text": "",
+   "n_calls": 1,
+   "tool": "notify_colleague",
+   "parsed": true,
+   "args": {
+    "message": "يرجى مراجعة تقرير الحضور الشهري قبل يوم الخميس.",
+    "people": [
+     "محمد"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 0.54,
+   "prompt_tokens": 3365,
+   "text": "Thank you for your cooperation.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 0.12,
+   "prompt_tokens": 3365,
+   "text": "Thank you for your cooperation.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 0.12,
+   "prompt_tokens": 3365,
+   "text": "Thank you for your cooperation.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 2.87,
+   "prompt_tokens": 3366,
+   "text": "بالتأكيد، إليك بعض الخيارات لرسالة اعتذار قصيرة، اختر الأنسب حسب علاقتك بالزميل:\n\n**الخيار 1: (رسمي ومهذب)**\n\n> مرحباً [اسم الزميل]، أعتذر بشدة عن تأخري في الرد عليك. كان لدي بعض الأمور العاجلة. أتمنى أن تكون بخير.\n\n**الخيار 2: (ودّي وغير رسمي)**\n\n> آسف جداً على التأخير في الرد! لم أكن متاحاً مؤخراً",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 3.33,
+   "prompt_tokens": 3366,
+   "text": "إليك بعض الخيارات لرسالة اعتذار قصيرة، اختر الأنسب حسب علاقتك بالزميل:\n\n**الخيار 1: رسمي ومهذب**\n\n> مرحباً [اسم الزميل]،\n>\n> أعتذر بشدة عن تأخري في الرد عليك. كان لدي بعض الأمور الطارئة.\n>\n> شكراً لتفهمك.\n>\n> تحياتي،\n> [اسمك]\n\n**الخيار 2: ودي وغير رسمي**\n\n> أهلاً [اسم الزميل]،\n>\n> آسف جداً على التأخ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 2.84,
+   "prompt_tokens": 3366,
+   "text": "إليك بعض الخيارات لرسالة اعتذار قصيرة، اختر الأنسب حسب علاقتك بالزميل:\n\n**الخيار 1: رسمي ومهذب**\n\n> مرحباً [اسم الزميل]، أعتذر بشدة عن تأخري في الرد عليك. كان لدي بعض الأمور العاجلة. شكراً لتفهمك.\n\n**الخيار 2: ودي وغير رسمي**\n\n> أهلاً [اسم الزميل]، آسف جداً على التأخير في الرد. كنت مشغولاً قليلاً. ك",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 0.33,
+   "prompt_tokens": 3352,
+   "text": "على الرحب والسعة! أنا هنا لمساعدتك في أي شيء تحتاجه. 😊",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 0.26,
+   "prompt_tokens": 3352,
+   "text": "على الرحب والسعة! هل هناك أي شيء آخر يمكنني مساعدتك به اليوم؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 0.35,
+   "prompt_tokens": 3352,
+   "text": "على الرحب والسعة! أنا هنا لمساعدتك في أي شيء تحتاجه. كيف يمكنني خدمتك الآن؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 3.89,
+   "prompt_tokens": 3361,
+   "text": "بشكل عام، يختلف الفرق بين الإجازة الاضطرارية والإجازة المرضية في طبيعة سبب الإجازة والإجراءات المتبعة لها:\n\n*   **الإجازة المرضية:**\n    *   **السبب:** تكون بسبب وعكة صحية أو مرض فعلي يمنع الموظف من أداء عمله.\n    *   **الإجراء:** تتطلب عادةً تقديم إثبات طبي (تقرير طبي) من جهة مختصة لتبرير الغياب.\n ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 4.84,
+   "prompt_tokens": 3361,
+   "text": "بشكل عام، يختلف الفرق بين الإجازة الاضطرارية والإجازة المرضية بناءً على **سبب الغياب** و**الأساس القانوني** الذي يتم الاستناد إليه للحصول على الإجازة.\n\nإليك الفروقات الأساسية:\n\n### 1. الإجازة المرضية (Sick Leave)\n*   **السبب:** تكون مخصصة للغياب بسبب **مرض** أو **إصابة** تتطلب راحة وعلاجاً طبياً.\n* ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "routed",
+   "secs": 2.76,
+   "prompt_tokens": 3361,
+   "text": "بشكل عام، يختلف مفهوم الإجازة الاضطرارية عن الإجازة المرضية بناءً على سبب الغياب وطبيعة الحالة:\n\n*   **الإجازة المرضية:** تُمنح للموظف عند تعرضه لوعكة صحية أو مرض يتطلب الراحة والعلاج. عادةً ما تكون مدتها محددة بناءً على تقرير طبي يوضح مدة الغياب المطلوبة للتعافي.\n*   **الإجازة الاضطرارية:** تُمنح ل",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  }
+ ]
+}

@@ -41,6 +41,12 @@ function fileKind(name: string) {
 }
 
 const FILE_TOOLS = ["read_file", "search_documents", "run_analysis", "export_document", "query_records"];
+/**
+ * What reading named files or a space takes: the same test chat.ts applies before answering (an
+ * agent without these refuses with «لا يقرأ الملفات»). Records and export tools don't read files:
+ * «الدرجات والتقارير» (query_records) was routed a question about «مساحتي» and could only refuse.
+ */
+const READ_TOOLS = ["read_file", "search_documents"];
 /** Below this the router's pick is ignored and the default skill answers. */
 const MIN_CONFIDENCE = 0.45;
 /**
@@ -93,7 +99,7 @@ export const candidates = internalQuery({
       if (!a.enabled || !a.live || !(await visibleTo(ctx, turn.userId, a.live))) continue;
       if (pointsAtData) {
         // The question names files/spaces: only skills that can read them, inside their scope.
-        if (!agentTools(a.live).some((t) => FILE_TOOLS.includes(t))) continue;
+        if (!agentTools(a.live).some((t) => READ_TOOLS.includes(t))) continue;
         const scope = await narrowByMentions(ctx, await effectiveScope(ctx, turn.userId as Id<"users">, a.live.dataScope, meta.scope), mentions);
         if (!scope.spaceIds.length) continue;
       } else if (meta.scope.kind !== "all" && agentTools(a.live).some((t) => FILE_TOOLS.includes(t))) {

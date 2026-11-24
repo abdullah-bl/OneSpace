@@ -193,7 +193,8 @@ function Shell({ me }: { me: Me }) {
   else if (head === "space" && a) {
     const space = spaces.find((s) => s._id === a);
     if (!space) screen = <NotAvailable />;
-    else if (b === "new") screen = <ChatScreen key={`new-space-${a}`} threadId={null} spaceId={a} spaces={spaces} go={go} />;
+    // My own space has no chats of its own: a new chat there is the general chat with «مساحتي» mentioned.
+    else if (b === "new") screen = space.kind === "personal" ? <ChatScreen key={`new-space-${a}`} threadId={null} mentionSpace={space} spaces={spaces} go={go} /> : <ChatScreen key={`new-space-${a}`} threadId={null} spaceId={a} spaces={spaces} go={go} />;
     else screen = <SpaceView key={a} space={space} spaces={spaces} tab={b ?? "overview"} go={go} />;
   } else if (head === "tasks") screen = <TasksPage tab="mine" taskId={a ?? null} go={go} spaces={spaces} />;
   else if (head === "schedules") screen = <TasksPage tab="scheduled" taskId={null} go={go} spaces={spaces} />;

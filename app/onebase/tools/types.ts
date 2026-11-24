@@ -51,7 +51,7 @@ export type ToolResult = {
     deleteLists?: string[];
     /** plans/16: team messages the assistant sent (notify_colleague): withdrawn, not deleted. */
     withdrawMessages?: string[];
-    lists?: { listId: string; deleteRows: string[]; restoreRows: { rowId?: string; cells: Record<string, string | number | boolean | null>; order: number }[] };
+    lists?: { listId: string; deleteRows: string[]; restoreRows: { rowId?: string; cells: Record<string, string | number | boolean | null>; order: number }[]; dropColumns?: string[] };
     restore?: { artifactId: string; version: number };
   };
   citations?: Citation[];
@@ -71,6 +71,11 @@ export type AppTool<Args = any> = {
   label: string;
   /** JSON Schema for the arguments (used for constrained decoding). */
   parameters: Record<string, unknown>;
+  /**
+   * Optional: a rule JSON Schema can't say plainly (e.g. "code or skill"), checked with the schema
+   * before the call runs or is proposed (tools/validate.ts). Returns what the model must fix, or null.
+   */
+  checkArgs?(args: Args): string | null;
   /** Write tools: the agent proposes, the user presses "نفّذ" before run() is called. */
   requiresConfirmation?: boolean;
   /** Its output is data for the model, not an answer: after "نفّذ" the agent writes the reply from it. */

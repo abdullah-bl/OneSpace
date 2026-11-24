@@ -172,6 +172,10 @@ describe("a native decision model (llama.cpp /v1/systemone): typed questions, no
         for (const [id, q] of Object.entries<any>(b.questions)) {
           if (id === "needsFiles") answers[id] = { type: "noul", noul: state.includes("FILES") ? 0.9 : 0.1 };
           else if (id === "effort") answers[id] = { type: "choice", choice: state.includes("LIGHT") ? "light" : "normal" };
+          // needsTool: «TOOL» 0.9, «TOOLISH» 0.8 (below the 0.85 threshold), «NO-TOOL-ANSWER» leaves it out.
+          else if (id === "needsTool") {
+            if (!state.includes("NO-TOOL-ANSWER")) answers[id] = { type: "noul", noul: state.includes("TOOLISH") ? 0.8 : state.includes("TOOL") ? 0.9 : 0.1 };
+          }
           else if (id === "verdict") answers[id] = { type: "choice", choice: state.includes("BAD") ? "contradicts" : "supports" };
           else if (id === "all") answers[id] = { type: "noul", noul: state.includes("STEER-ME") ? 0.9 : 0.05 };
           else answers[id] = { type: "noul", noul: String(q.instructions).includes("STEER-ME") ? 0.95 : 0.05 };
@@ -192,9 +196,15 @@ describe("a native decision model (llama.cpp /v1/systemone): typed questions, no
 
   test("routing: needsFiles from a probability, effort from a choice; no search question (rewriteQuery writes it)", async () => {
     calls.length = 0;
-    expect(await routeTurn("ما شروط الإجازة FILES", [], null)).toEqual({ needsFiles: true, query: null, effort: "normal" });
-    expect(await routeTurn("شكراً LIGHT", [], null)).toEqual({ needsFiles: false, query: null, effort: "light" });
+    expect(await routeTurn("ما شروط الإجازة FILES", [], null)).toEqual({ needsFiles: true, query: null, effort: "normal", needsTool: false });
+    expect(await routeTurn("شكراً LIGHT", [], null)).toEqual({ needsFiles: false, query: null, effort: "light", needsTool: false });
     expect(calls.every((c) => c.startsWith("/v1/systemone fake-d1"))).toBe(true);
+  });
+
+  test("needsTool: true only at 0.85 or above; a missing answer is false and keeps the rest of the route", async () => {
+    expect((await routeTurn("صدّر التقرير PDF TOOL", [], null))?.needsTool).toBe(true);
+    expect((await routeTurn("صغ رسالة لزميل TOOLISH", [], null))?.needsTool).toBe(false);
+    expect(await routeTurn("ما شروط الإجازة FILES NO-TOOL-ANSWER", [], null)).toEqual({ needsFiles: true, query: null, effort: "normal", needsTool: false });
   });
 
   test("citations: one choice per pair; the number check still applies", async () => {
@@ -293,6 +303,16 @@ describe("routing", () => {
     expect(searched(await ask(a, tok(fa, "mgr"), t, "اكتب ملخصاً لمحتوى CONTENT-S_every"))).toBeTruthy();
     // the regex would search; the decision says no
     expect(searched(await ask(a, tok(fa, "mgr"), t, "ما رأيك في الطقس R-NOFILES"))).toBeFalsy();
+  }, 30_000);
+
+  test("needsTool: the first generation must call a tool (tool_choice required); later ones are free", async () => {
+    const t = must(await a.call("mutation", "chat:createThread", { spaceId: fa.spaces.S_every }, tok(fa, "mgr")));
+    await ask(a, tok(fa, "mgr"), t, "صدّر الملخص R-TOOL NT-1");
+    await ask(a, tok(fa, "mgr"), t, "ما محتوى الملف NT-2");
+    const gen = (m: string) => ai.requests.filter((r) => r.path === "/v1/chat/completions" && r.body.tools?.length && JSON.stringify(r.body.messages).includes(m));
+    expect(gen("NT-1")[0]!.body.tool_choice).toBe("required");
+    // The next question in the same chat, which the decision says needs no tool.
+    expect(gen("NT-2").at(-1)!.body.tool_choice).toBeUndefined();
   }, 30_000);
 
   test("with history, the decision's search question replaces rewriteQuery (no extra call)", async () => {

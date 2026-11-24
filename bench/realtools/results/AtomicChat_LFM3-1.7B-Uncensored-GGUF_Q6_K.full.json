@@ -1,0 +1,2346 @@
+{
+ "model": "AtomicChat/LFM3-1.7B-Uncensored-GGUF:Q6_K",
+ "cond": "full",
+ "summary": {
+  "runs": 117,
+  "errors": 0,
+  "ok": 56.4,
+  "right_tool": 52.4,
+  "no_call_when_needed": 24.8,
+  "abstain_right": 100.0,
+  "schema_valid": 100.0,
+  "args_right": 98.2,
+  "markup_leak": 1,
+  "prompt_tokens_avg": 8838,
+  "secs_avg": 2.17
+ },
+ "rows": [
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 1.79,
+   "prompt_tokens": 8716,
+   "text": "من سياسة العمل عن بعد: [2]</think>根据 سياسة العمل عن بعد، لم تحدد عدد أيام العمل عن بعد المسموح بها أسبوعياً. هل يمكنك تزويدي بمزيد من التفاصيل أو مراجعة المستند ذي الصلة؟\n\n[2] سياسة العمل عن بعد.pdf",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 1.75,
+   "prompt_tokens": 8716,
+   "text": "من سياسة العمل عن بعد، سأبحث في المستند المخصص لسياسة العمل عن بعد للحصول على هذه المعلومة.</think>",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "العمل عن بعد أسبوع",
+    "spaces": []
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 2.12,
+   "prompt_tokens": 8716,
+   "text": "من سياسة العمل عن بعد، سأبحث في المستند المخصص لسياسة العمل عن بعد (كتيب سياسة العمل عن بعد) لإيجاد مدة العمل عن بعد المسموح بها أسبوعياً.",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "سياسة العمل عن بعد"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "full",
+   "secs": 1.83,
+   "prompt_tokens": 8716,
+   "text": "سؤالك عن \"اللائحة عن بدل الانتداب داخل المملكة\" — هل تقصد سياسة العمل عن بعد أو لائحة بدل الانتداب؟ أرجو توضيح.\n\nإذا كنت تقصد **سياسة العمل عن بعد**، فمحتوى الملف «سياسة العمل عن بعد.pdf» (معرّف: k19a2b3c4d5e6f7g8h9j) هو المصدر الذي يحتوي على هذه المعلومات. هل تريدني أن أقرأها لك؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "full",
+   "secs": 1.95,
+   "prompt_tokens": 8716,
+   "text": "سؤالك عن \"اللائحة عن بدل الانتداب داخل المملكة\" — هل تقصد سياسة العمل عن بعد أو لائحة بدل الانتداب؟ أرجو توضيح.\n\nإذا كنت تقصد **سياسة العمل عن بعد**، فمحتوياتها متوفرة في \"سياسة العمل عن بعد.pdf\" [كلا المصدر المذكور في السياق]. أما بدل الانتداب فيُحدد في مستندات أخرى، أرجو تحديد ما تبحث عنه لأعطيك ا",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "full",
+   "secs": 0.72,
+   "prompt_tokens": 8716,
+   "text": "سأبحث في مستنداتك عن \"اللائحة عن بدل الانتداب داخل المملكة\". استخدام: search_documents.</think>",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "بدل الانتداب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "full",
+   "secs": 0.43,
+   "prompt_tokens": 8719,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "إجراءات الإخلاء وقت الطوارئ"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "full",
+   "secs": 0.64,
+   "prompt_tokens": 8719,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "إجراءات الإخلاء وقت الطوارئ"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "full",
+   "secs": 0.67,
+   "prompt_tokens": 8719,
+   "text": "",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "إجراءات الإخلاء وقت الطوارئ"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 1.44,
+   "prompt_tokens": 8712,
+   "text": "المطلوب هو قراءة ملف \"خطة التدريب\" كاملًا. من قائمة الملفات المتاحة، \"خطة التدريب.docx\" له معرف: k1z9y8x7w6v5t4s3r2q1. سأستخدم أداة read_file مع هذا الملف ID.</think>",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 4.2,
+   "prompt_tokens": 8712,
+   "text": "المطلوب هو قراءة ملف \"خطة التدريب\" كاملًا. من قائمة الملفات المتاحة، \"خطة التدريب.docx\" له معرف: k1z9y8x7w6v5t4s3r2q1. سأستخدم أداة `read_file` مع fileId هذا. لكن \"read_file\" تتطلب fileId، وليس اسم الملف. في السياق، أذكر أن الملف اسمه «خطة التدريب.docx» ومعرّفه k1z9y8x7w6v5t4s3r2q1. عادةً في هذه الم",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 2.8,
+   "prompt_tokens": 8712,
+   "text": "المستخدم يريد قراءة ملف \"خطة التدريب\" بالكامل وخصمه. من بين الملفات المتاحة، هناك \"خطة التدريب.docx\" بمعرّف: k1z9y8x7w6v5t4s3r2q1. سأستخدم أداة `read_file` لقراءة الملف، لكن يجب أن أعرف رقم الملف (fileId). في السياق، الملف هو \"خطة التدريب.docx\" ومعرّفه مذكور. سأستخدم `read_file` مع fileId \"k1z9y8x7w",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 0.61,
+   "prompt_tokens": 8715,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 0.61,
+   "prompt_tokens": 8715,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "full",
+   "secs": 0.62,
+   "prompt_tokens": 8715,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 0.39,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 0.34,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 0.37,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 1.75,
+   "prompt_tokens": 8721,
+   "text": "سأستخدم ملف \"المشتريات 2026.xlsx\" (معرّف: k1m2n3p4q5r6s7t8v9w0) لاستخراج بيانات المشتريات وتحليلها حسب الشهر. أولاً، سأحوّل الملف إلى سجلات (record set) في مساحة الموارد البشرية، ثم أحسب الإجمالي لكل شهر.",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k1m2n3p4q5r6s7t8v9w0"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 2.29,
+   "prompt_tokens": 8721,
+   "text": "سأستخدم ملف \"المشتريات 2026.xlsx\" (معرّف: k1m2n3p4q5r6s7t8v9w0) لحساب إجمالي المشتريات لكل شهر. أولاً، أحتاج إلى تحويل الملف إلى سجلات (record set) ثم تحليل البيانات. سأبدأ باستدعاء `propose_record_set` للملف، ثم `run_analysis` لحساب الإجمالي لكل شهر، وأخيراً سأعرض الجدول.</think>سأبدأ بتحويل ملف ال",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k1m2n3p4q5r6s7t8v9w0",
+    "name": "المشتريات 2026"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 2.15,
+   "prompt_tokens": 8721,
+   "text": "سأستخدم ملف \"المشتريات 2026.xlsx\" (معرّف: k1m2n3p4q5r6s7t8v9w0) لاستخراج بيانات المشتريات وتحليل إجمالي المشتريات لكل شهر. أولاً، سأحوّل الملف إلى سجلات (record set) في مساحة \"الموارد البشرية\" باستخدام أداة `propose_record_set`. ثم سأستخدم `run_analysis` لحساب الإجمالي شهرياً.</think>سأبدأ بتحويل مل",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k1m2n3p4q5r6s7t8v9w0",
+    "name": "المشتريات 2026"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 1.64,
+   "prompt_tokens": 8717,
+   "text": "من خلال ملف «الموظفين.xlsx» (معرّف: k17d4m2q8x3n5p6r9s0t)، يمكنني استرجاع بيانات الموظفين وحساب متوسط الرواتب حسب الإدارات. سأستخدم أداة `query_records` لاستخراج البيانات المطلوبة.</think>سأسترجع بيانات الموظفين من ملف الموظفين لحساب متوسط الرواتب لكل إدارة. [1]\n\n[query_records(recordSetId=\"employee",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 8.13,
+   "prompt_tokens": 8717,
+   "text": "من المحتمل أن يكون الملف \"الموظفين.xlsx\" (معرّف: k17d4m2q8x3n5p6r9s0t) يحتوي على معلومات الرواتب والإدارات. سأستخدم أداة `query_records` مع ملف الموظف أو `propose_record_set` لتحويل الملف إلى سجلات، ثم أحسب متوسط الرواتب حسب الإدارات. أولاً، دعني أقرأ الملف أو أبحث عن البيانات. سأستخدم `query_record",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 2.48,
+   "prompt_tokens": 8717,
+   "text": "سأبحث في ملف الموظفين (الموظفين.xlsx) لتحديد متوسط الرواتب لكل إدارة. سأستخدم أداة `propose_record_set` لتحويل الملف إلى سجلات، ثم `query_records` لاستخراج البيانات. أولاً، أحتاج إلى معرفة ملف الموظفين. من السياق، الملف هو \"الموظفون.xlsx\" بمعرّف: k17d4m2q8x3n5p6r9s0t.\n\nسأبدأ بتمويل الملف كسجل (recor",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t",
+    "name": "الموظفون"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 2.21,
+   "prompt_tokens": 8715,
+   "text": "المستخدم يطلب تقرير الحضور الشهري المعتاد. سأستخدم أداة `export_document` لتحويل \"تقرير الحضور الشهري\" (artifactId=a4t6y8u0i2o4p6a8s0d2) إلى ملف PDF، مع ذكر المصدر المناسب. من المصادر المتاحة، \"تقرير الحضور الشهري\" موجود في \"الموارد البشرية\" كملف artifactId=a4t6y8u0i2o4p6a8s0d2. سأقوم بتحويله بصيغة ",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pdf",
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "title": "تقرير الحضور الشهري"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 1.12,
+   "prompt_tokens": 8715,
+   "text": "المستخدم يطلب تقرير الحضور الشهري المعتاد. سأبحث في المستندات المتاحة عن \"تقرير الحضور الشهري\" أو \"monthly-attendance\" باستخدام أداة query_documents أو search_documents. سأبدأ بالبحث.</think>",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "تقرير الحضور الشهري"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "full",
+   "secs": 7.44,
+   "prompt_tokens": 8715,
+   "text": "المطلوب هو \"تقرير الحضور الشهري المعتاد\" (Monthly Attendance Report). من المصادر المتاحة، يوجد مستند titled «تقرير الحضور الشهري» مع artifactId a4t6y8u0i2o4p6a8s0d2. سأستخدم أداة `export_document` لتحويله إلى ملف PDF أو Word، لكن أولاً أحتاج إلى معرفة ما إذا كان هناك محتوى أو خطوات محددة. سأقوم باست",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pdf",
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "title": "تقرير الحضور الشهري المعتاد"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "full",
+   "secs": 0.87,
+   "prompt_tokens": 8723,
+   "text": "المعلومة المطلوبة: صياغة خطاب رسمي بصيغة الإدارة (من مهارات الموظف، في مهارة /formal-letter). سأستدعي المهارة أولاً.</think>",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "full",
+   "secs": 1.9,
+   "prompt_tokens": 8723,
+   "text": "المعلومة المطلوبة من صياغة خطاب رسمي لإدارة المالية. سأستخدم مهارة \"صياغة خطاب رسمي\" (formal-letter) التي متوفرة في مهاراتي.\n\n[use_skill \"formal-letter\"]</think>```json\n{\n  \"name\": \"formal-letter\",\n  \"instructions\": \"استخدم مهارة الصياغة الخطابية الرسمية لإدارة المالية. في الخطاب، اذكر طلبك بوضوح بت",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "full",
+   "secs": 1.03,
+   "prompt_tokens": 8723,
+   "text": "المعلومة المطلوبة عن صياغة خطاب رسمي لصياغة خطاب رسمي بصيغة الإدارة (من مهارات الموظف) متاحة في المهارة /formal-letter. سأستدعيها أولاً ثم أستخدم أداة /formal-letter.</think>",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "full",
+   "secs": 1.82,
+   "prompt_tokens": 9082,
+   "text": "سأقوم بكتابة المذكرة الداخلية عن مواعيد الدوام في رمضان وحفظها كمستند. أولاً، دعني أبحث في ملفات المساحة لتحديد ما إذا كان هناك سياسة أو مستند相关 إلى مواعيد الدوام في رمضان.\n\nسأستخدم أداة البحث في الملفات للبحث عن \"مواعيد الدوام في رمضان\" أو \"دوام رمضان\".</think>سأبحث في ملفاتك عن سياسة مواعيد الدوام",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "full",
+   "secs": 1.29,
+   "prompt_tokens": 9082,
+   "text": "سأقوم بإنشاء مذكرة داخلية عن مواعيد الدوام في رمضان وحفظها كملف. أولاً، سأبحث عن أي مستندات أو سياسات موجودة تتعلق بمواعيد الدوام في رمضان. سأستخدم أداة البحث في الملفات.</think>سأبحث عن مستند يخص مواعيد الدوام في رمضان.",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "مواعيد الدوام في رمضان"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "full",
+   "secs": 20.82,
+   "prompt_tokens": 9082,
+   "text": "سأقوم بكتابة المذكرة الداخلية عن مواعيد الدوام في رمضان وحفظها كملف. أولاً، سأبحث في ملفات الموارد البشرية عن سياسة الدوام في رمضان. سأستخدم أداة البحث في الملفات.</think>سأستخدم أداة البحث في الملفات للبحث عن سياسة مواعيد الدوام في رمضان. [1]\n\n```sql\nSELECT * FROM employees WHERE department = 'موار",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "full",
+   "secs": 5.81,
+   "prompt_tokens": 9081,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pptx",
+    "title": "عرض تقديمي عن أهمية أمن المعلومات للموظفين",
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: تعريف أمن المعلومات\nأمن المعلومات هو عملية حماية البيانات والمعلومات من التهديدات والوصول غير المصرح به. [1]\n\n## الشريحة 2: المخاطر التي تواجه الموظفين\n- سرقة بيانات الموظف الشخصية\n- اختراق الأنظمة الداخلية\n- فقدان البيانات بسبب هجمات الدوائر المغلقة\n- تلف السجلات الإدارية\n\n## الشريحة 3: دور الموظف في أمن المعلومات\n- الإبلاغ عن الشذوذ في النظام\n- استخدام كلمات المرور القوية\n- الالتزام بسياسة الوصول\n\n## الشريحة 4: إجراءات الوقاية\n- تحديث البرامج بانتظام\n- استخدام VPN للاتصالات الخارجية\n- تفعيل المصادقة الثنائية\n- تدريب الموظفين الدائم\n\n## الشريحة 5: فوائد أمن المعلومات\n- حماية السجلات الإدارية\n- تقليل التكاليف الناتجة عن الاختراقات\n- ثقة الموظفين والموظفين في المؤسسة\n- الامتثال للوائح\n",
+    "sources": [
+     {
+      "type": "file",
+      "id": "k19a2b3c4d5e6f7g8h9j"
+     },
+     {
+      "type": "file",
+      "id": "k1m2n3p4q5r6s7t8v9w0"
+     },
+     {
+      "type": "file",
+      "id": "k1z9y8x7w6v5t4s3r2q1"
+     },
+     {
+      "type": "file",
+      "id": "k17d4m2q8x3n5p6r9s0t"
+     }
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "full",
+   "secs": 3.58,
+   "prompt_tokens": 9081,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pptx",
+    "title": "أهمية أمن المعلومات للموظفين",
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: تعريف أمن المعلومات\nأمن المعلومات هو عملية حماية بيانات الموظفين وأنظمة الشركة من التهديدات والاختراقات.\n\n## الشريحة 2: المخاطر على الشركة\n- خسارة البيانات السرية\n- تعطيل العمليات\n- الإصابات القانونية والمالية\n\n## الشريحة 3: المخاطر على الموظف\n- سرقة بيانات الهوية الشخصية\n- فقدان الوظيفة بسبب الاختراق\n- أضرار صحية من فيروسات العمل\n\n## الشريحة 4: الإجراءات الأساسية\n- استخدام كلمة مرور قوية\n- تحديث الأنظمة بانتظام\n- تفعيل نظام المصادقة الثنائية\n\n## الشريحة 5: دور الإدارة\n- تعزيز ثقافة الوعي بأمن المعلومات\n- توفير التدريب المستمر\n- مراجعة السياسات الدورية\n",
+    "sources": []
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "full",
+   "secs": 3.09,
+   "prompt_tokens": 9081,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pptx",
+    "title": "أهمية أمن المعلومات للموظفين",
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: تعريف أمن المعلومات\nأمن المعلومات هو عملية حماية البيانات والأنظمة والأجهزة من التهديدات والاختراقات.\n\n## الشريحة 2: المخاطر التي تواجه الموظفين\n- سرقة بيانات الموظفين الشخصية\n- فقدان البيانات بسبب الاختراق\n- التعرض للتهديدات الخارجية والداخلية\n\n## الشريحة 3: دور الموظف في أمن المعلومات\n- الإبلاغ عن suspicious activities\n- استخدام كلمات المرور القوية\n- التوثيق وإجراءات الوصول\n\n## الشريحة 4: أدوات وأفضل الممارسات\n- استخدام VPN للاتصال عن بُعد\n- تحديث البرامج بانتظام\n- التشفير للبيانات الحساسة\n\n## الشريحة 5: الخطوات العملية للموظف\n1. تفعيل账号 الأمني\n2. تحديث كلمات المرور\n3. مراجعة سجلات الوصول\n4. الإبلاغ عن الشذوذ\n\n**ملاحظات:** يمكن تعديل المحتوى حسب الحاجة.",
+    "sources": []
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "full",
+   "secs": 3.91,
+   "prompt_tokens": 9086,
+   "text": "سأبحث عن الجدول الذي يحتوي على أيام الأسبوع والمسؤول المناوب لكل يوم. سأستخدم أداة البحث في الملفات أولاً ثم أقرأ البيانات.\n\n[1] البحث في الملفات عن جدول أيام الأسبوع ومنابعه.\n\nسأستخدم `search_documents` للبحث عن \"أيام الأسبوع\" أو \"منابع المناوب\" في الموارد البشرية. لكن الأفضل أن أقرأ القوائم الحية ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "full",
+   "secs": 1.94,
+   "prompt_tokens": 9086,
+   "text": "سأقوم ببناء جدول يحتوي على أيام الأسبوع ومسؤول المناوب لكل يوم لأحمد، سارة، خالد، نورة، وفهد. سأستخدم قائمة حية لتتبع هذه المهام أولاً.\n\n[متابعة توزيع المناوب عندي](#/list/listId) — قائمة \"منوافر المناوب\" أو ما شابه. لكن دعني أصيغها لك الآن:\n\n**قائمة منوافر المناوب**\n\n| اليوم | المسؤول | الحالة |\n|-",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "full",
+   "secs": 7.21,
+   "prompt_tokens": 9086,
+   "text": "سأقوم ببناء جدول يوضح أيام الأسبوع والمسؤول المناوب لكل يوم للأشخاص المذكورين. أولاً، أحتاج إلى العثور على البيانات المتعلقة بأيام الأسبوع ومسؤولي المناوبة. سأبحث في ملفات الموظف أو القوائم الحية.\n\nأولاً، سأقرأ قائمة \"متابعة مشروع الأرشفة\" أو قائمة \"حضور الدورة\" أو ربما ملف \"الموارد البشرية\" الذي يح",
+   "n_calls": 2,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "full",
+   "secs": 1.44,
+   "prompt_tokens": 8728,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "note": "إضافة فقرة توصيات في نهاية التقرير: تفعيل البصمة في الفرع.",
+    "content": "تقرير الحضور الشهري\n\n[محتوى التقرير السابق]\n\nتوصيات:\nيُوصى بتفعيل البصمة الإلكترونية في الفرع لتعزيز تتبع حضور الموظفين وضمان دقة السجلات."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "full",
+   "secs": 1.39,
+   "prompt_tokens": 8728,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "note": "إضافة فقرة توصيات في نهاية التقرير: تفعيل البصمة في الفرع.",
+    "content": "تقرير الحضور الشهري\n\n[محتوى التقرير الأصلي]\n\nتوصيات:\n- يُوصى بتفعيل البصمة الإلكترونية في الفرع لتحسين تتبع حضور الموظفين وضمان دقة السجلات."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "full",
+   "secs": 1.41,
+   "prompt_tokens": 8728,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "note": "إضافة فقرة توصيات في نهاية التقرير: تفعيل البصمة في الفرع.",
+    "content": "# تقرير الحضور الشهري\n\n[المحتوى السابق للتقرير]\n\n## التوصيات\n\nنوصي بتفعيل نظام البصمة الإلكتروني في جميع الفروع لتعزيز دقة تسجيل الحضور وضمان موثوقية السجلات."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "full",
+   "secs": 2.49,
+   "prompt_tokens": 8712,
+   "text": "المطلوب هو تصدير \"تقرير الحضور الشهري\" بصيغة PDF. من المصادر المتاحة، هناك مخرجات موجودة مسبقاً:\n\n- تقرير الحضور الشهري (artifactId=a4t6y8u0i2o4p6a8s0d2، مستند، النسخة 3، في «الموارد البشرية»)\n- صفحة دليل الموظف الجديد (artifactId=a9q7w5e3r1t9y7u5i3o1، صفحة، النسخة 1، في «الموارد البشرية»)\n- اختبار ",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pdf",
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "full",
+   "secs": 2.09,
+   "prompt_tokens": 8712,
+   "text": "المطلوب هو تصدير \"تقرير الحضور الشهري\" بصيغة PDF. من المصادر المتاحة، هناك مخرجات موجودة مسبقاً:\n\n- «تقرير الحضور الشهري» (artifactId=a4t6y8u0i2o4p6a8s0d2، مستند، النسخة 3، في «الموارد البشرية»، من هذه المحادثة)\n\nسأستخدم أداة `export_document` مع معرف المخرجات المذكور وحوّل تنسيقه إلى PDF.</think>",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "pdf",
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "full",
+   "secs": 3.62,
+   "prompt_tokens": 8712,
+   "text": "المطلوب هو تصدير \"تقرير الحضور الشهري\" بصيغة PDF. من المصادر المتاحة، هناك مخرجات موجودة مسبقاً:\n\n- تقرير الحضور الشهري (artifactId=a4t6y8u0i2o4p6a8s0d2، مستند، النسخة 3، في «الموارد البشرية»)\n- صفحة دليل الموظف الجديد (artifactId=a9q7w5e3r1t9y7u5i3o1، صفحة، النسخة 1، في «الموارد البشرية»)\n- اختبار ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "full",
+   "secs": 7.16,
+   "prompt_tokens": 9078,
+   "text": "سأقوم بإنشاء خطاب شكر مهني لفريق الأرشفة على إنجاز المشروع. سأستخدم أداة `export_document` لإنشاء ملف Word (docx) يحتوي على الخطاب.\n\n**محتوى الخطاب:**\n\n```markdown\n# خطاب شكر لفريق الأرشفة\n\n**إلى:** فريق الأرشفة\n**من:** الإدارة\n**الموضوع:** شكر على إنجاز مشروع الأرشفة\n\nتحية طيبة،\n\nنشكر فريق الأرشفة ",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "format": "docx",
+    "title": "خطاب شكر لفريق الأرشفة على إنجاز المشروع",
+    "content": "# خطاب شكر لفريق الأرشفة\n\n**إلى:** فريق الأرشفة\n**من:** الإدارة\n**الموضوع:** شكر على إنجاز المشروع\n\nتحية طيبة،\n\nنشكر فريق الأرشفة على إنجاز المشروع بشكل مميز وبإتقان. إنجازاتكم في تنظيم الملفات وتحديد أولويات الأرشفة قد ساهمت بشكل كبير في تحسين كفاءة العمليات الإدارية.\n\nنأمل أن تستمر هذه الجهود الإيجابية في تحقيق نتائج مستدامة.\n\nشكرنا لكم من قلب الإدارة.\n\n**تاريخ:** [تاريخ اليوم]"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "full",
+   "secs": 1.41,
+   "prompt_tokens": 9078,
+   "text": "سأقوم بإنشاء خطاب شكر مهني لفريق الأرشفة على إنجاز المشروع. سأستخدم صياغة خطاب رسمي (formal letter) من مهارات الموظف، ثم أحولها إلى ملف Word.\n\nأولاً، سأسترجع مهارة \"صياغة خطاب رسمي\" (formal-letter) لتعرف الخطوات:",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "full",
+   "secs": 1.36,
+   "prompt_tokens": 9078,
+   "text": "سؤالك عن ملف وورد (Word) يحتوي على خطاب شكر لفريق الأرشفة على إنجاز المشروع. سأبحث في ملفاتك أولاً عن أي مستند أو خطاب شكر مرتبط بـ \"الأرشفة\" أو \"المشروع\".\n\nسأستخدم أداة البحث في الملفات أولاً:</think>",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "شكر فريق الأرشفة إنجاز المشروع"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "full",
+   "secs": 3.51,
+   "prompt_tokens": 8715,
+   "text": "أحتاج إلىartifactId الخاص بـ \"صفحة دليل الموظف الجديد\" (artifactId=a9q7w5e3r1t9y7u5i3o1) ثم نشره للجمهور أو للـ \"workspace\". من السياق: \"صفحة دليل الموظف الجديد\" هو artifactId موجود في \"المخرجات هنا\". سأستخدم publish_output مع audience \"workspace\" (كل موظف في الجهة) أو \"space\"? السؤال: \"لكل موظفي ال",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "full",
+   "secs": 2.47,
+   "prompt_tokens": 8715,
+   "text": "المطلوب: نشر \"صفحة دليل الموظف الجديد\" (artifactId=a9q7w5e3r1t9y7u5i3o1) لكل موظفي الجهة (workspace أو space). من السياق، \"صفحة دليل الموظف الجديد\" هو artifactId موجود في \"المخرجات هنا\". النشر للـ \"workspace\" (كل الموظف) يعني audience = \"workspace\". لا يوجد form.listId، لذا نستخدم publish_output مع ",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "full",
+   "secs": 4.45,
+   "prompt_tokens": 8715,
+   "text": "المطلوب نشر «صفحة دليل الموظف الجديد» لكل موظفي الجهة. من المصادر المتاحة، artifactId الخاص بصفحة دليل الموظف الجديد هو `a9q7w5e3r1t9y7u5i3o1`. لنشره للـ \"workspace\" (جميع الموظفين) أو \"space\"؟ السؤال يقول \"لكل موظفي الجهة\" أي كل الموظفين في الجهة، أي audience \"workspace\" أو \"space\". عادة \"space\" هو",
+   "n_calls": 1,
+   "tool": "publish_output",
+   "parsed": true,
+   "args": {
+    "artifactId": "a9q7w5e3r1t9y7u5i3o1",
+    "audience": "workspace"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "full",
+   "secs": 12.33,
+   "prompt_tokens": 9081,
+   "text": "سأسترجع قائمة مهامك وتحديدها التي تحتوي على مهام نقل المكتب. سأستخدم أداة `read_list` للبحث عن القائمة ذات العنوان \"متابعة مشروع الأرشفة\" أو \"حضور الدورة\" أو قائمة مهام نقل المكتب. لكن أولاً، دعني أتحقق من القوائم الحية المتاحة. سأبحث عن قائمة مهام نقل المكتب.\n\n[1] سأستخدم `read_list` مع العنوان \"مه",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "full",
+   "secs": 0.26,
+   "prompt_tokens": 9081,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {},
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "full",
+   "secs": 0.35,
+   "prompt_tokens": 9081,
+   "text": "<function=read_list>\n<parameter=title>\nمتابعة نقل المكتب\n</parameter>\n</function>\n</tool_call>",
+   "n_calls": 0,
+   "tool": null,
+   "leak": true,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "full",
+   "secs": 0.79,
+   "prompt_tokens": 8713,
+   "text": "[1] سأسترجع قائمة متابعة مشروع الأرشفة من القوائم الحية.</think>[read_list listId=l3h5j7k9m2n4p6q8r0s1]",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "full",
+   "secs": 1.06,
+   "prompt_tokens": 8713,
+   "text": "[1] للاستفسار عن ما تبقى في متابعة مشروع الأرشفة، سأستخدم قائمة \"متابعة مشروع الأرشفة\" التي توجد في قسم \"الموارد البشرية\". سأقرأ القائمة الآن.</think>",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "full",
+   "secs": 0.89,
+   "prompt_tokens": 8713,
+   "text": "سأستعرض قائمة متابعة مشروع الأرشفة لك. [l3h5j7k9m2n4p6q8r0s1]</think>[read_list](listId=\"l3h5j7k9m2n4p6q8r0s1\")",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "full",
+   "secs": 0.95,
+   "prompt_tokens": 8721,
+   "text": "أحتاج إلى قائمة \"حضور الدورة\" أولاً لتحديد معرفها (listId). سأقرأ القائمة أولاً.</think>",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "full",
+   "secs": 1.67,
+   "prompt_tokens": 8721,
+   "text": "需要先读取「حضور الدورة」القائمة الحية (listId=l8g6f4d2s1a9z7x5c3v2) لمعرفة بنية الأعمدة ورقم الصف الحالي لمنى السبيعي، ثم أضفها كقيمة في عمود \"المرسل\" أو أي عمود مناسب. سأستدعي read_list.</think>",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "full",
+   "secs": 1.03,
+   "prompt_tokens": 8721,
+   "text": "需要先读取现有的「حضور الدورة» قائمة (listId=l8g6f4d2s1a9z7x5c3v2) أو حسب العنوان. سأستخدم read_list مع العنوان.</think>",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "title": "حضور الدورة"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "full",
+   "secs": 0.31,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "full",
+   "secs": 0.39,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "full",
+   "secs": 0.38,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "full",
+   "secs": 0.38,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "full",
+   "secs": 0.38,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "full",
+   "secs": 0.39,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "full",
+   "secs": 0.57,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "full",
+   "secs": 0.51,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "full",
+   "secs": 0.49,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "full",
+   "secs": 2.28,
+   "prompt_tokens": 8720,
+   "text": "المستخدم يطلب تجهيز شهادة حضور للمتدرب صاحب السجل (subjectRef) r7k2m9. سأستخدم دالة `fill_template` مع templateId \"شهادة حضور\" و recordId \"r7k2m9\" (أو array يحتوي على هذا السجل). لكن دعني أتأكد من المعلومات المتاحة: هناك دالة `fill_template` تتطلب `templateId` و optionally `recordIds`. سأستخدم `fill",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "full",
+   "secs": 3.11,
+   "prompt_tokens": 8720,
+   "text": "المستخدم يطلب تجهيز شهادة حضور للمتدرب صاحب السجل (record ID) r7k2m9. سأستخدم أداة `fill_template` مع templateId \"شهادة حضور\" و recordIds التي تحتوي على السجل المحدد. لكن أولاً أحتاج إلى التأكد من وجود هذا السجل في مستندات المستخدم. سأستخدم `query_records` للبحث عن هذا السجل (subjectRef = r7k2m9) في",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "r7k2m9"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "full",
+   "secs": 2.23,
+   "prompt_tokens": 8720,
+   "text": "المستخدم يطلب تجهيز شهادة حضور للمتدرب صاحب السجل (record ID) r7k2m9. سأستخدم أداة `fill_template` مع templateId \"شهادة حضور\" و recordIds containing r7k2m9. لكن أولاً يجب التأكد من وجود هذا السجل في مستندات المستخدم. سأستخدم `query_records` أو `my_records`؟ بما أن السجل معروف (r7k2m9)، يمكنني مباشرة",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "full",
+   "secs": 3.47,
+   "prompt_tokens": 8719,
+   "text": "المطلوب هو تحويل ملف «الموظفين.xlsx» إلى سجل (record set) للموظفين في المساحة (space). من قائمة المصادر المتاحة، ملف «الموظفون.xlsx» له معرّف: k17d4m2q8x3n5p6r9s0t. سأستخدم أداة `propose_record_set` مع ملفId. لا حاجة لـ spaceId لأن الملف قد يكون في مساحة أخرى أو نحتاج لتحديد المساحة. سأعطي اسم الملف",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "الموظفين.xlsx",
+    "name": "سجل الموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [
+    "fileId {\"eq\": \"k17d4m2q8x3n5p6r9s0t\"} got \"الموظفين.xlsx\""
+   ],
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "full",
+   "secs": 1.83,
+   "prompt_tokens": 8719,
+   "text": "使用 `propose_record_set` مع ملف \"الموظفين.xlsx\" (المعرّف: k17d4m2q8x3n5p6r9s0t) لتحويل الملف إلى سجل في المساحة المشتركة. لا حاجة لتحديد `spaceId` لأنه الملف موجود في مساحة معينة أو في مساحة خاصة بالملف. سأستخدم الاسم الافتراضي للملف.</think>```json\n{\n  \"fileId\": \"k17d4m2q8x3n5p6r9s0t\",\n  \"name\": \"ال",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "full",
+   "secs": 2.22,
+   "prompt_tokens": 8719,
+   "text": "أحتاج إلى الملف المذكور. من قائمة الملفات المتاحة، الملف المرتبط بـ \"الموظفين\" هو \"الموظفون.xlsx\" بمعرّف: k17d4m2q8x3n5p6r9s0t. سأستخدم أداة `propose_record_set` لتحويل هذا الملف إلى سجل في المساحة (spaceId غير مذكور، لذا سأفترض أنه في مساحة المستخدم أو سأتركه فارغًا). اسم السجل اختياري. سأقوم بتنفي",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t",
+    "name": "سجل الموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "full",
+   "secs": 1.79,
+   "prompt_tokens": 8714,
+   "text": "سؤالك عن عدد الموظفين في كل إدارة يمكن الإجابة عليه عبر استعلام قاعدة البيانات في نظام الموارد البشرية. سأستخدم أداة `query_source` مع المصدر \"نظام الموارد البشرية\" لأداء استعلام SELECT لاستخراج البيانات.</think>سأستعلم قاعدة بيانات نظام الموارد البشرية للحصول على عدد الموظفين لكل إدارة. [query_sour",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "s5d7f9g1h3j5k7l9z1x3",
+    "sql": "SELECT department, COUNT(id) AS number_of_employees FROM employees GROUP BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "full",
+   "secs": 1.74,
+   "prompt_tokens": 8714,
+   "text": "سؤالك عن عدد الموظفين في كل إدارة يمكن الإجابة عليه عبر استعلام قاعدة البيانات في نظام الموارد البشرية. سأستخدم أداة `query_source` مع المصدر \"نظام الموارد البشرية\" لاستخراج البيانات.</think>سأسترجع البيانات من قاعدة نظام الموارد البشرية.",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "s5d7f9g1h3j5k7l9z1x3",
+    "sql": "SELECT department, COUNT(*) AS number_of_employees FROM employees GROUP BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "full",
+   "secs": 0.99,
+   "prompt_tokens": 8714,
+   "text": "سأستخدم أداة `query_source` مع المصدر \"نظام الموارد البشرية\" لاستخراج بيانات الموظفين حسب الإدارة.</think>",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "s5d7f9g1h3j5k7l9z1x3",
+    "sql": "SELECT id, name, department FROM employees"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "full",
+   "secs": 0.58,
+   "prompt_tokens": 8721,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "1203"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "full",
+   "secs": 0.58,
+   "prompt_tokens": 8721,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "1203"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "full",
+   "secs": 0.6,
+   "prompt_tokens": 8721,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "1203"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "full",
+   "secs": 0.93,
+   "prompt_tokens": 9076,
+   "text": "من الرائع أنك ذكّرتني. سأحفظ تفضيلك: **تفضل باستخدام التواريخ بالشكل الهجري (الهجري) دائماً في ردودي معك.** [تذكّر]",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "full",
+   "secs": 0.95,
+   "prompt_tokens": 9076,
+   "text": "من الأفضل أن أستخدم التاريخ بالشكل الهجري (هـ) دائماً في ردودي. [تذكّر]</think>تذكّر، سأفضل استخدام التواريخ بالشكل الهجري (هـ) في كل ردودي.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "full",
+   "secs": 0.89,
+   "prompt_tokens": 9076,
+   "text": "",
+   "n_calls": 1,
+   "tool": "remember",
+   "parsed": true,
+   "args": {
+    "text": "أفضّل التواريخ بالهجري (Arabic Gregorian) دائماً.",
+    "scope": "user",
+    "kind": "preference"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "full",
+   "secs": 0.81,
+   "prompt_tokens": 9072,
+   "text": "سأسترجع ما ذكرته في المرة الماضية. دعني أبحث في ذاكرتي.</think>",
+   "n_calls": 1,
+   "tool": "recall",
+   "parsed": true,
+   "args": {
+    "query": "الخطة الماضية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "full",
+   "secs": 0.81,
+   "prompt_tokens": 9072,
+   "text": "سأسترجع ما ذكرته في المحادثات السابقة حول الخطة التي اشتغلنا عليها في المرة الماضية.",
+   "n_calls": 1,
+   "tool": "recall",
+   "parsed": true,
+   "args": {
+    "query": "الخطة الماضية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "full",
+   "secs": 1.86,
+   "prompt_tokens": 9072,
+   "text": "سأسترجع ما ذكرته في المحادثات السابقة حول الخطة التي اشتغلنا عليها المرة الماضية. دعني أبحث في ذاكرتي.</think>",
+   "n_calls": 1,
+   "tool": "recall",
+   "parsed": true,
+   "args": {
+    "query": "الخطة الماضية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "full",
+   "secs": 1.91,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_chat",
+   "parsed": true,
+   "args": {
+    "query": "الميزانية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "full",
+   "secs": 2.1,
+   "prompt_tokens": 8720,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_chat",
+   "parsed": true,
+   "args": {
+    "query": "الميزانية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "full",
+   "secs": 2.71,
+   "prompt_tokens": 8720,
+   "text": "لم أجد هذا في المستندات المتاحة لك. هل يمكنك توضيح ما تقصده؟ أو هل تريدني أن أبحث عن الرقم الذي ذكرته لك في أول محادثة حول الميزانية؟</think>لooking for \"الميزانية\" في بداية المحادثة، سأستخدم أداة `read_chat` مع `query: \"الميزانية\"` و `at: start` أو `message` رقم معين. دعني أبحث عن أول ذكر للميزانية",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "full",
+   "secs": 4.35,
+   "prompt_tokens": 9090,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "name": "thank-you-letter",
+    "instructions": "طريقة كتابة خطاب شكر رسمي: استخدم مقدمة رسمية، وذكر شكر محدد، وخاتمة بالدعاء. يُستخدم هذا الخطاب في التعبير عن الشكر على خدمة أو حدث معين. اتبع الخطوات التالية:\n1. اكتب العنوان: \"خطاب شكر رسمي\".\n2. اكتب مقدمة رسمية: ابدأ بـ \"السيد/السيدة [اسم المستلم]، أتحمسُ لاستقبالكم...\" أو تعبير رسمي عن الترحيب.\n3. في Body، اذكر الشكر المحدد: حدد ما شكرت عليه (مثلاً: خدمة، مساعدة، حضور مشروع، إلخ) ووضح أثره.\n4. اكتب خاتمة بالدعاء: أضف جملة دعاء مختصرة أو صلاة شكر ختامية.\n5. راجع: تأكد من اكتمال العناصر الأربعة (مقدمة، شكر محدد، خاتمة بالدعاء) وصحتها لغوياً.\n6. احفظ الخطاب كملف أو كسول للاستخدام المستقبلي.",
+    "title": "خطابات شكر رسمية",
+    "description": "طريقة صياغة خطاب شكر رسمي يتضمن مقدمة رسمية، وشكراً محدداً، وخاتمة بالدعاء.",
+    "scope": "user"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "full",
+   "secs": 2.77,
+   "prompt_tokens": 9090,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "name": "thank-you-letter",
+    "instructions": "طريقة صياغة خطاب رسمي شكر على العمل:\n1. مقدمة رسمية: ابدأ بقوله \"السيد/السيدة [اسم المدير] تحية طيبة\" ثم اذكر العلاقة والسبب في الشكر.\n2. شكر محدد: اذكر نقاط الشكر بالتفصيل (مثلاً: \"شكرًا على opportunity X، وتحديدًا...\").\n3. ختام بالدعاء: أضف جملة دعاء مختصرة في النهاية.\nاستخدم نبرة رسمية وواضحة.",
+    "title": "thank-you-letter",
+    "description": "صياغة خطاب رسمي للشكر على العمل مع مقدمة رسمية، شكر محدد، وختام بالدعاء.",
+    "scope": "user"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "full",
+   "secs": 4.02,
+   "prompt_tokens": 9090,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "name": "thank-you-letter",
+    "instructions": "طريقة صياغة خطاب رسمي شكر على العمل أو الحدث. استخدم هذا المهارة عندما تحتاج إلى كتابة خطاب رسمي يخلط الشكر المحدد والختام بالدعاء. اتبع الخطوات التالية:\n\n1. **العنوان**: اكتب عنواناً رسمياً للخطاب (مثلاً: خطاب شكر رسمي من العامل إلى المدير).\n2. **المقدمة الرسمية**: اكتب مقدمة رسمية توضح الغرض من الخطاب، مع ذكر اسم المرسل ومسمىه الوظيفي.\n3. **شكر محدد**: اذكر نقاط الشكر بالتفصيل (مثال: \"شكرًا على فرص العمل، وتوجيهات التدريب، والظروف الملائمة\").\n4. **الختام بالدعاء**: أضف جملة أو جملتين ختامية بالدعاء، مثل \"نرجو أن تكون أيامكم طويلة ومليئة بالنجاح\".\n5. **التوقيع**: أضف توقيعك واسمك ورقم الهوية أو مسمىك الوظيفي.\n\nاستخدم أسلوب رسمي ومختصر، واكتبه بصيغة رسمية.",
+    "title": "thank-you-letter",
+    "description": "صياغة خطاب شكر رسمي مع مقدمة رسمية وشكر محدد وختام بالدعاء.",
+    "scope": "user"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "full",
+   "secs": 2.06,
+   "prompt_tokens": 9082,
+   "text": "سأستخدم أداة `query_records` للبحث عن سجلات الاختبار (اختبار تحديد المستوى) أو نتائج الاختبارات، ثم أحتاج إلى معرفة مكان وجود ملف \"اختبار تحديد المستوى\" (اختبار تحديد المستوى) أو \"p2k4m6n8b0v2c4x6z8l0\" (تطبيق). لكن أولاً، سأقرأ القوائم الحية أو أسئلة سابقة لمعرفة ما إذا كان هناك سجلات للموظفين. سأبد",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "full",
+   "secs": 5.47,
+   "prompt_tokens": 9082,
+   "text": "سأقوم بحل اختبار السلامة المهنية (5 أسئلة) للموظفين ويحفظ درجاتهم. أولاً، أحتاج إلى معرفة أين يوجد اختبار تحديد المستوى (اختبار تحديد المستوى) في الملف. من السياق، هناك تطبيق \"اختبار تحديد المستوى\" (appId=p2k4m6n8b0v2c4x6z8l0) في «الموارد البشرية». سأستخدم أداة `read_app` لاستعراض التطبيق أو أستخدم ",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "full",
+   "secs": 3.53,
+   "prompt_tokens": 9082,
+   "text": "سأقوم بتحضير اختبار قصير من 5 أسئلة عن السلامة المهنية، وهو مخصص للموظفين، ويحفظ درجاتهم. أولاً، دعني أبحث عن ملف \"اختبار تحديد المستوى\" (اختبار تحديد المستوى) الموجود في \"خطة التدريب.docx\" أو \"المشتريات 2026.xlsx\" أو \"الموارد البشرية\"相关文件. سأستخدم أداة `query_records` أو `my_records` أو `search_doc",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "full",
+   "secs": 0.72,
+   "prompt_tokens": 8713,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "recordSetId": "p2k4m6n8b0v2c4x6z8l0",
+    "filters": {}
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "full",
+   "secs": 0.75,
+   "prompt_tokens": 8713,
+   "text": "سأبحث في اختبار تحديد المستوى (اختبار تحديد المستوى) في مستنداتك. سأستخدم أداة `search_documents` مع الاستعلام المناسب.</think>",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "اختبار تحديد المستوى"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "full",
+   "secs": 4.23,
+   "prompt_tokens": 8713,
+   "text": "سأبحث في اختبار تحديد المستوى (اختبار تحديد المستوى) في مستنداتك. سأستخدم أداة `query_records` مع معرف التطبيق `p2k4m6n8b0v2c4x6z8l0` أو ابحث عن ملف التطبيق مباشرة. لكن أولاً، دعني أتحقق من سجلاتك أو أبحث في مستندات الموارد البشرية.\n\n[1] سأستخدم `search_documents` أو `query_source`؟ الأفضل البحث عن ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "full",
+   "secs": 4.64,
+   "prompt_tokens": 8719,
+   "text": "سأقوم باختبار تطبيق \"اختبار تحديد المستوى\" (اختبار تحديد المستوى) أولاً قبل نشره. أولاً، أحتاج إلى معرف التطبيق (appId) الخاص به. من السياق، \"اختبار تحديد المستوى\" له appId: p2k4m6n8b0v2c4x6z8l0. سأستخدم أداة test_app للتحقق منه.</think>سأقوم الآن باختبار التطبيق (appId: p2k4m6n8b0v2c4x6z8l0) للتحقق",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "full",
+   "secs": 2.79,
+   "prompt_tokens": 8719,
+   "text": "سأقوم باختبار تطبيق \"اختبار تحديد المستوى\" (اختبار تحديد المستوى) قبل نشره. أولاً، أحتاج إلى معرف التطبيق (appId) الخاص به. من السياق، أذكر أن \"اختبار تحديد المستوى\" له appId = p2k4m6n8b0v2c4x6z8l0. سأستخدم أداة test_app للتحقق منه.</think>سأستخدم أداة `test_app` على تطبيق \"اختبار تحديد المستوى\" (ap",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "full",
+   "secs": 2.52,
+   "prompt_tokens": 8719,
+   "text": "سأقوم باختبار تطبيق \"اختبار تحديد المستوى\" (اختبار تحديد المستوى) أولاً قبل نشره. سأستخدم أداة `test_app` مع معرف التطبيق `p2k4m6n8b0v2c4x6z8l0`.\n\nأحتاج إلى الخطوات المطلوبة في التطبيق. دعني أبدأ بالاختبار.</think>سأقوم بإجراء اختبار التطبيق `p2k4m6n8b0v2c4x6z8l0` (اختبار تحديد المستوى) الآن. إليك ا",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "full",
+   "secs": 1.53,
+   "prompt_tokens": 8716,
+   "text": "[1] \"تقرير الحضور الشهري\" (artifactId=a4t6y8u0i2o4p6a8s0d2) - هذا التقرير موجود في \"الموارد البشرية\". سأطلب من محمد مراجعته.\n\nسأستخدم أداة notify_colleague لإخطار محمد بمراجعة تقرير الحضور الشهري قبل الخميس.</think>[notify_colleague]\n- people: [\"محمد\"]\n- message: \"عليك مراجعة تقرير الحضور الشهري قبل",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "full",
+   "secs": 3.06,
+   "prompt_tokens": 8716,
+   "text": "[1] \"تقرير الحضور الشهري\" (artifactId=a4t6y8u0i2o4p6a8s0d2) - مستند، النسخة 3، في «الموارد البشرية». هذا هو التقرير الذي يحتاج إلى المراجعة.\n\nسأطلب من محمد مراجعة تقرير الحضور الشهري. هل تريد أن أرسله إليه؟\n\n[2] \"صفحة دليل الموظف الجديد\" (artifactId=a9q7w5e3r1t9y7u5i3o1) - صفحة، النسخة 1، في «الموار",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "full",
+   "secs": 1.46,
+   "prompt_tokens": 8716,
+   "text": "[1] First, I need to find the \"تقرير الحضور الشهري\" (Monthly Attendance Report) artifact. Let me search for it.\n\nLet me search for the document \"تقرير الحضور الشهري\" and also check my records.</think>",
+   "n_calls": 1,
+   "tool": "search_documents",
+   "parsed": true,
+   "args": {
+    "query": "تقرير الحضور الشهري"
+   },
+   "right_tool": false,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": false
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.36,
+   "prompt_tokens": 9081,
+   "text": "Here is the English translation:\n\n\"Thank you for your excellent cooperation.\"",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.33,
+   "prompt_tokens": 9081,
+   "text": "Here is the English translation:\n\n\"Thank you for your excellent cooperation.\"",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.66,
+   "prompt_tokens": 9081,
+   "text": "Here is the English translation:\n\n\"Thank you for your excellent cooperation.\"\n\nOr more naturally:\n\n\"Thank you for your excellent cooperation.\" / \"We appreciate your excellent cooperation.\"",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 1.22,
+   "prompt_tokens": 9076,
+   "text": "```python\nnotify_colleague(people=[], message=\"رسالة اعتذار قصيرة لزميل عن تأخري في الرد: عفواً، أعتذر عن تأخري في الرد على رسالتك. سأرد عليك في أقرب وقت ممكن.\")\n``` \n\nأو إذا كنت تريد إرسال الرسالة مباشرة إلى زميل محدد، أخبرني باسمه.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 1.21,
+   "prompt_tokens": 9076,
+   "text": "```python\nnotify_colleague(people=[], message=\"رسالة اعتذار قصيرة لزميل عن تأخري في الرد: عشقت إني أردت تأخري في الرد، وأشكرك على صبركم. سأردك في أقرب وقت.\")\n``` \n\nأو إذا كنت تريد إرسال رسالة محددة لأحد الزملاء، أخبرني باسمه.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.82,
+   "prompt_tokens": 9076,
+   "text": "مرحباً زميلك، سلام على العودة إليك. اعتذرك على التأخير في الرد، وأرجو أن تكون قد استلمت رسائلك. شكراً على مرونتك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.63,
+   "prompt_tokens": 9066,
+   "text": "لا مشكلة! إذا كان لديك أي سؤال آخر أو تحتاج مساعدة في ملفاتك أو أي مهمة أخرى، أنا هنا لمساعدتك. 😊",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.67,
+   "prompt_tokens": 9066,
+   "text": "وعليكم السلام! تمامًا. إذا كان لديك أي سؤال آخر أو تحتاج مساعدة في ملفاتك أو أي مهمة، أنا هنا لمساعدتك. 😊",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 0.68,
+   "prompt_tokens": 9066,
+   "text": "على الرحب والسعة! إذا كان لديك أي سؤال آخر أو تحتاج إلى مساعدة في ملفاتك أو أي مهمة أخرى، فأنا هنا لمساعدتك. 😊",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 2.65,
+   "prompt_tokens": 9075,
+   "text": "الفرق بين الإجازة الاضطرارية (الاضطرارية) والمرضية (المرضية) عامًا:\n\n- **الإجازة المرضية (المرضية)**: تُمنح عندما يكون الشخص مريضًا أو يعاني من مرض يمنعه من العمل، وتستمر عادةً حتى انتهى المرض أو حتى استعادته للصحة الكاملة. غالبًا ما تكون مرتبطة بأسباب صحية محددة.\n\n- **الإجازة الاضطرارية (الاضطرارية",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 2.58,
+   "prompt_tokens": 9075,
+   "text": "الفرق بين الإجازة الاضطرارية (الاضطرارية) والمرضية (المرضية) عامًا:\n\n- **الإجازة المرضية (المرضية)**: تُمنح بسبب مرض حقيقي أو حالة صحية، وتستمر طالما أن الشخص لا يتعافى أو يصبح قادرًا على العمل. عادة ما تُطلب من الموظف تقديم شهادة طبي.\n\n- **الإجازة الاضطرارية (الاضطرارية)**: تُمنح بسبب ظروف اضطرارية",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "full",
+   "secs": 2.09,
+   "prompt_tokens": 9075,
+   "text": "الفرق بين الإجازة الاضطرارية (الاضطرارية) والمرضية (المرضية) عامًا:\n\n- **الإجازة المرضية (المرضية)**: تُمنح بسبب مرض أو حالة صحية، وتستمر حتى ينتهي شدة المرض أو يستقر، وتكون عادةً طويلة ومستمرة.\n\n- **الإجازة الاضطرارية (الاضطرارية)**: تُمنح بسبب ظروف غير عادية مثل حوادث العمل، أو إجازات الأعياد، أو ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  }
+ ]
+}

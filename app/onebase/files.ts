@@ -66,35 +66,59 @@ export const generateUploadUrl = mutation({
   },
 });
 
-/** Registers an upload as a new file. Without spaceId it goes to the uploader's personal space. */
+/**
+ * Registers an upload. Without spaceId it goes to the uploader's personal space. The same bytes
+ * already in that space (same sha256, still active) are not stored or indexed again: the existing
+ * file is returned and the new upload's bytes are dropped. Measured on the demo: one PDF attached
+ * in two chats became two files of 321 indexed passages each, and search showed every passage twice.
+ * Another space keeps its own copy (its readers differ).
+ */
+async function addFile(ctx: MutationCtx, me: Awaited<ReturnType<typeof requireActive>>, { storageId, name, spaceId }: { storageId: Id<"_storage">; name: string; spaceId?: Id<"spaces"> }) {
+  const target = spaceId ?? (await personalSpaceId(ctx, me));
+  const { space } = await assertCan(ctx, me.userId, target, "write");
+  const meta = await claimStorage(ctx, storageId);
+  const fileName = cleanName(name);
+  if (meta.sha256) {
+    const same = (await ctx.db.query("files").withIndex("by_space", (q) => q.eq("spaceId", space._id)).collect()).find((f) => f.status === "active" && f.sha256 === meta.sha256);
+    if (same) {
+      await ctx.storage.delete(storageId);
+      await writeAudit(ctx, { userId: me.userId, action: "file.upload_same", resourceType: "file", resourceId: same._id, spaceId: space._id, detail: { fileName, existing: same.name } });
+      return { fileId: same._id, reused: true, name: same.name };
+    }
+  }
+  const now = Date.now();
+  const mime = meta.contentType || "application/octet-stream";
+  const fileId = await ctx.db.insert("files", {
+    spaceId: space._id,
+    storageId,
+    name: fileName,
+    mime,
+    size: meta.size,
+    sha256: meta.sha256 ?? null,
+    version: 1,
+    uploadedBy: me.userId,
+    ingest: "pending",
+    status: "active",
+    updatedAt: now,
+  });
+  await ctx.db.insert("fileVersions", { fileId, version: 1, storageId, name: fileName, mime, size: meta.size, sha256: meta.sha256 ?? null, uploadedBy: me.userId, uploadedAt: now });
+  await writeAudit(ctx, { userId: me.userId, action: "file.upload", resourceType: "file", resourceId: fileId, spaceId: space._id, detail: { fileName, size: meta.size } });
+  await scheduleIngest(ctx, fileId);
+  return { fileId, reused: false, name: fileName };
+}
+
+const uploadArgs = { storageId: v.id("_storage"), name: v.string(), spaceId: v.optional(v.id("spaces")) };
+
+/** Registers an upload; returns the file's id (an identical file already in the space is reused). */
 export const create = mutation({
-  args: { storageId: v.id("_storage"), name: v.string(), spaceId: v.optional(v.id("spaces")) },
-  handler: async (ctx, { storageId, name, spaceId }) => {
-    const me = await requireActive(ctx);
-    const target = spaceId ?? (await personalSpaceId(ctx, me));
-    const { space } = await assertCan(ctx, me.userId, target, "write");
-    const meta = await claimStorage(ctx, storageId);
-    const now = Date.now();
-    const fileName = cleanName(name);
-    const mime = meta.contentType || "application/octet-stream";
-    const fileId = await ctx.db.insert("files", {
-      spaceId: space._id,
-      storageId,
-      name: fileName,
-      mime,
-      size: meta.size,
-      sha256: meta.sha256 ?? null,
-      version: 1,
-      uploadedBy: me.userId,
-      ingest: "pending",
-      status: "active",
-      updatedAt: now,
-    });
-    await ctx.db.insert("fileVersions", { fileId, version: 1, storageId, name: fileName, mime, size: meta.size, sha256: meta.sha256 ?? null, uploadedBy: me.userId, uploadedAt: now });
-    await writeAudit(ctx, { userId: me.userId, action: "file.upload", resourceType: "file", resourceId: fileId, spaceId: space._id, detail: { fileName, size: meta.size } });
-    await scheduleIngest(ctx, fileId);
-    return fileId;
-  },
+  args: uploadArgs,
+  handler: async (ctx, a) => (await addFile(ctx, await requireActive(ctx), a)).fileId,
+});
+
+/** The same, and says whether the file was already there (and under which name), for the screen to tell. */
+export const upload = mutation({
+  args: uploadArgs,
+  handler: async (ctx, a) => await addFile(ctx, await requireActive(ctx), a),
 });
 
 /** Uploads a new version of an existing file; older versions stay downloadable. */
@@ -105,6 +129,11 @@ export const uploadVersion = mutation({
     const file = await loadFile(ctx, fileId);
     await assertCan(ctx, me.userId, file.spaceId, "write");
     const meta = await claimStorage(ctx, storageId);
+    // The same bytes as the current version: no new version, nothing indexed again.
+    if (meta.sha256 && meta.sha256 === file.sha256) {
+      await ctx.storage.delete(storageId);
+      return file.version;
+    }
     const version = file.version + 1;
     const fileName = name ? cleanName(name) : file.name;
     const mime = meta.contentType || "application/octet-stream";
@@ -117,6 +146,34 @@ export const uploadVersion = mutation({
   },
 });
 
+/** For each content (sha256) in a space, its first uploaded active file: the one a duplicate repeats. */
+function firstOfEach(rows: Doc<"files">[]) {
+  const first = new Map<string, Doc<"files">>();
+  for (const f of [...rows].filter((x) => x.status === "active" && x.sha256).sort((a, b) => a._creationTime - b._creationTime)) if (!first.has(f.sha256!)) first.set(f.sha256!, f);
+  return first;
+}
+
+/**
+ * «احذف النسخ المكررة»: deletes every active file in the space whose content repeats an earlier
+ * one, keeping the first. Same rights as deleting a file (write in the space). Returns how many went.
+ */
+export const removeDuplicates = mutation({
+  args: { spaceId: v.id("spaces") },
+  handler: async (ctx, { spaceId }) => {
+    const me = await requireActive(ctx);
+    await assertCan(ctx, me.userId, spaceId, "write");
+    const rows = await ctx.db.query("files").withIndex("by_space", (q) => q.eq("spaceId", spaceId)).collect();
+    const first = firstOfEach(rows);
+    let removed = 0;
+    for (const f of rows) {
+      if (f.status !== "active" || !f.sha256 || first.get(f.sha256)?._id === f._id) continue;
+      await deleteFileRows(ctx, me.userId, f, "duplicate");
+      removed++;
+    }
+    return removed;
+  },
+});
+
 export const list = query({
   args: { spaceId: v.id("spaces") },
   handler: async (ctx, { spaceId }) => {
@@ -125,12 +182,14 @@ export const list = query({
     const rows = await ctx.db.query("files").withIndex("by_space", (q) => q.eq("spaceId", spaceId)).collect();
     const names = new Map<string, string | null>();
     const out = [];
+    const first = firstOfEach(rows);
     for (const f of rows.filter((f) => f.status === "active").sort((a, b) => b.updatedAt - a.updatedAt)) {
       if (!names.has(f.uploadedBy)) {
         const u = await ctx.db.get(f.uploadedBy);
         names.set(f.uploadedBy, u?.name ?? u?.email ?? null);
       }
-      out.push({ _id: f._id, name: f.name, mime: f.mime, size: f.size, version: f.version, updatedAt: f.updatedAt, uploadedByName: names.get(f.uploadedBy) ?? null });
+      const orig = f.sha256 ? first.get(f.sha256) : undefined;
+      out.push({ _id: f._id, name: f.name, mime: f.mime, size: f.size, version: f.version, updatedAt: f.updatedAt, uploadedByName: names.get(f.uploadedBy) ?? null, duplicateOf: orig && orig._id !== f._id ? orig.name : null });
     }
     return out;
   },

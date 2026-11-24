@@ -56,10 +56,12 @@ export function normalizeContent(kind: ArtifactKind, content: unknown): string {
       try {
         t = JSON.parse(content);
       } catch {
-        throw new OneBaseError("الجدول يجب أن يكون {columns, rows}");
+        throw new OneBaseError(content.trim() ? "الجدول لا يُرسل نصاً: أرسله كائناً {columns: [أسماء الأعمدة], rows: [[قيم الصف]، …]}" : "لم يصل محتوى الجدول: أرسل {columns: [أسماء الأعمدة], rows: [[قيم الصف]، …]}");
       }
     }
-    if (!t || !Array.isArray(t.columns) || !Array.isArray(t.rows)) throw new OneBaseError("الجدول يجب أن يكون {columns, rows}");
+    if (!t || typeof t !== "object") throw new OneBaseError("لم يصل محتوى الجدول: أرسل {columns: [أسماء الأعمدة], rows: [[قيم الصف]، …]}");
+    const missing = [!Array.isArray(t.columns) && "columns", !Array.isArray(t.rows) && "rows"].filter(Boolean);
+    if (missing.length) throw new OneBaseError(`الجدول ناقص: ${missing.join(" و")} ${missing.length > 1 ? "مفقودان" : "مفقود أو ليس قائمة"}. الشكل: {columns: [أسماء الأعمدة], rows: [[قيم الصف]، …]}`);
     const columns = t.columns.map((c: unknown) => String(c ?? ""));
     if (columns.length === 0 || columns.length > 200) throw new OneBaseError("عدد أعمدة الجدول غير صالح");
     if (t.rows.length > MAX_TABLE_ROWS) throw new OneBaseError(`الجدول أكبر من ${MAX_TABLE_ROWS} صف`);
@@ -267,7 +269,9 @@ export async function insertArtifact(
   return artifactId;
 }
 
-export type UpdateInput = { artifactId: string; content: unknown; title?: string; note?: string; sources?: SourceRef[]; runId?: string; expectVersion?: number };
+/** A table changed by column, without resending its rows: what a small edit to a table needs. */
+export type TableEdit = { renameColumns?: Record<string, string>; removeColumns?: string[] };
+export type UpdateInput = { artifactId: string; content: unknown; tableEdit?: TableEdit; title?: string; note?: string; sources?: SourceRef[]; runId?: string; expectVersion?: number };
 
 /**
  * plans/18: a write is refused when the output is no longer at the version it was based on. Call it
@@ -289,7 +293,17 @@ export async function updateArtifact(ctx: MutationCtx, actor: Actor, input: Upda
   const { space } = await assertCan(ctx, actor.userId, art.spaceId, "write");
   if (opts.scope && space.kind !== "personal" && !opts.scope.has(space._id)) throw new Denied();
   assertVersion(art, input.expectVersion);
-  const content = normalizeContent(art.kind, input.content);
+  const empty = input.content === undefined || input.content === null || input.content === "";
+  const edit = input.tableEdit && (Object.keys(input.tableEdit.renameColumns ?? {}).length || input.tableEdit.removeColumns?.length) ? input.tableEdit : null;
+  let given = input.content;
+  if (empty || (edit && art.kind === "table")) {
+    const cur = await ctx.db.query("artifactVersions").withIndex("by_artifact_version", (q) => q.eq("artifactId", art._id).eq("version", art.currentVersion)).unique();
+    if (art.kind !== "table" || !cur) throw new OneBaseError("لم يصل المحتوى الجديد: أرسل المحتوى كاملاً في content");
+    const t = JSON.parse(cur.content) as { columns: string[]; rows: unknown[][] };
+    if (!edit && empty) throw new OneBaseError(`لم يصل محتوى الجدول. لإعادة تسمية عمود أو حذفه أرسل renameColumns أو removeColumns فقط؛ ولغير ذلك أرسل table كاملاً {columns, rows} بكل الصفوف (${t.rows.length} صفاً). الأعمدة الآن: ${t.columns.join("، ")}`);
+    if (edit) given = applyTableEdit(empty ? t : (given as any), edit);
+  }
+  const content = normalizeContent(art.kind, given);
   let sources = art.sources;
   let classification = art.classification;
   let originSpaceId = art.originSpaceId;
@@ -312,6 +326,30 @@ export async function updateArtifact(ctx: MutationCtx, actor: Actor, input: Upda
   await ctx.db.patch(art._id, { currentVersion: version, updatedAt: now, title, sources, classification, originSpaceId });
   await writeAudit(ctx, { userId: actor.userId, action: "artifact.update", resourceType: "artifact", resourceId: art._id, spaceId: art.spaceId, detail: { name: title, version, via: opts.via } });
   return { artifactId: art._id, spaceId: art.spaceId, version };
+}
+
+/** Renames and removes columns of a table by name; a name that isn't there is refused with the ones that are. */
+export function applyTableEdit(table: unknown, edit: TableEdit) {
+  let t: any = table;
+  if (typeof t === "string") t = JSON.parse(t);
+  const columns: string[] = (t?.columns ?? []).map(String);
+  const rows: unknown[][] = t?.rows ?? [];
+  const find = (name: string) => {
+    const exact = columns.indexOf(name);
+    const i = exact >= 0 ? exact : columns.findIndex((c) => c.trim() === String(name).trim());
+    if (i < 0) throw new OneBaseError(`لا يوجد عمود «${name}» في الجدول. الأعمدة: ${columns.join("، ")}`);
+    return i;
+  };
+  const out = [...columns];
+  for (const [from, to] of Object.entries(edit.renameColumns ?? {})) {
+    const name = String(to ?? "").trim();
+    if (!name) throw new OneBaseError(`اسم جديد فارغ للعمود «${from}»`);
+    out[find(from)] = name;
+  }
+  const drop = new Set((edit.removeColumns ?? []).map(find));
+  if (drop.size >= columns.length) throw new OneBaseError("لا يبقى في الجدول عمود");
+  const keep = out.map((_, i) => i).filter((i) => !drop.has(i));
+  return { columns: keep.map((i) => out[i]!), rows: rows.map((r) => keep.map((i) => (Array.isArray(r) ? r[i] : null) ?? null)) };
 }
 
 async function loadReadable(ctx: Ctx, userId: Id<"users">, artifactId: string) {
@@ -689,6 +727,7 @@ export const updateForUser = internalMutation({
     scopeSpaceIds: v.array(v.string()),
     artifactId: v.string(),
     content: v.any(),
+    tableEdit: v.optional(v.object({ renameColumns: v.optional(v.record(v.string(), v.string())), removeColumns: v.optional(v.array(v.string())) })),
     title: v.optional(v.string()),
     note: v.optional(v.string()),
     sources: v.optional(v.array(sourceRef)),

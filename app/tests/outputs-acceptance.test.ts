@@ -609,6 +609,21 @@ describe("outputs: placement, versions, transfers, export", () => {
     expect((await tool(s, f.ids.out!, "update_artifact", { artifactId: id, content: "hijack" })).ok).toBe(false);
   });
 
+  test("a table's columns are renamed or dropped without resending its rows; an update with no content says what to send", async () => {
+    const r = must(await tool(s, f.ids.mem!, "create_artifact", { title: "منافسات", kind: "table", table: { columns: ["الاسم", "السعر", "الحالة"], rows: [["أ", 300, 13], ["ب", 300, 82]] } }));
+    const id = r.artifactIds[0];
+    // What the gov demo's model sent seven times: only the id and a note.
+    const bare = await tool(s, f.ids.mem!, "update_artifact", { artifactId: id, note: "إعادة تسمية" });
+    expect(bare.ok).toBe(false);
+    expect(JSON.stringify(bare)).toContain("renameColumns");
+    expect(JSON.stringify(bare)).toContain("الاسم، السعر، الحالة");
+    must(await tool(s, f.ids.mem!, "update_artifact", { artifactId: id, renameColumns: { السعر: "قيمة التقديم" }, removeColumns: ["الحالة"] }));
+    const t = JSON.parse(must(await s.call("mutation", "artifacts:open", { artifactId: id }, T("mem"))).content);
+    expect(t).toEqual({ columns: ["الاسم", "قيمة التقديم"], rows: [["أ", 300], ["ب", 300]] });
+    const wrong = await tool(s, f.ids.mem!, "update_artifact", { artifactId: id, removeColumns: ["غير موجود"] });
+    expect(JSON.stringify(wrong)).toContain("الأعمدة: الاسم، قيمة التقديم");
+  });
+
   test("tables export to CSV (UTF-8 BOM) and XLSX", async () => {
     const r = must(await tool(s, f.ids.mem!, "create_artifact", { title: "درجات", kind: "table", table: { columns: ["الاسم", "الدرجة"], rows: [["سارة", 95], ["علي, \"ب\"", 80]] } }));
     const id = r.artifactIds[0];

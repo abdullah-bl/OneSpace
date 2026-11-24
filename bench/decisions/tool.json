@@ -1,0 +1,593 @@
+{
+ "about": "needsTool gold: the assistant must call a tool (not counting searching the files, which needsFiles covers). From bench/realtools/cases.py (expect) and route.json (single-turn cases, labelled by hand; ambiguous quiz/table/form requests left out).",
+ "cases": [
+  {
+   "id": "rt-search_1",
+   "q": "كم مدة العمل عن بعد المسموحة في الأسبوع حسب السياسة؟",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-search_2",
+   "q": "وش تقول اللائحة عن بدل الانتداب داخل المملكة؟",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-search_3",
+   "q": "هل فيه شي في مستنداتنا عن إجراءات الإخلاء وقت الطوارئ؟",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-read_1",
+   "q": "اقرأ لي ملف خطة التدريب كامل ولخصه",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-read_2",
+   "q": "افتح سياسة العمل عن بعد صفحة 3 إلى 5",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-analysis_1",
+   "q": "من ملف الموظفين، كم موظف في كل إدارة؟ وارسم لي رسم بياني",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-analysis_2",
+   "q": "احسب إجمالي المشتريات لكل شهر من ملف المشتريات 2026 وطلع لي جدول",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-analysis_3",
+   "q": "قارن متوسط الرواتب بين الإدارات في ملف الموظفين",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-skill_1",
+   "q": "سوّ لي تقرير الحضور الشهري المعتاد",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-skill_2",
+   "q": "اكتب خطاب رسمي لإدارة المالية نطلب فيه تمديد موعد تسليم الميزانية أسبوعين",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-artifact_md",
+   "q": "اكتب لي مذكرة داخلية عن مواعيد الدوام في رمضان واحفظها كمستند",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-artifact_slides",
+   "q": "سوّ لي عرض تقديمي من 5 شرائح عن أهمية أمن المعلومات للموظفين",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-artifact_table",
+   "q": "سوّ جدول فيه أيام الأسبوع والمسؤول المناوب لكل يوم: أحمد، سارة، خالد، نورة، فهد",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-update_art",
+   "q": "عدّل تقرير الحضور الشهري وأضف في آخره فقرة توصيات: تفعيل البصمة في الفرع",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-export_1",
+   "q": "صدّر تقرير الحضور الشهري PDF",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-export_2",
+   "q": "أبي ملف وورد فيه خطاب شكر لفريق الأرشفة على إنجاز المشروع",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-publish_1",
+   "q": "انشر صفحة دليل الموظف الجديد لكل موظفي الجهة",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-list_create",
+   "q": "سوّ لي قائمة أتابع فيها مهام نقل المكتب: المهمة، المسؤول، الموعد، الحالة",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-list_read",
+   "q": "وش المتبقي في متابعة مشروع الأرشفة؟",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-list_update",
+   "q": "أضف لقائمة حضور الدورة: منى السبيعي، حاضرة",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-tasks_1",
+   "q": "وش المهام اللي علي هالأسبوع؟",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-records_mine",
+   "q": "وش الدورات اللي أخذتها وشهاداتي؟",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-records_q",
+   "q": "اعرض سجلات المتدربين اللي رقمهم الوظيفي 44821",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-template_1",
+   "q": "جهّز شهادة حضور للمتدرب صاحب السجل r7k2m9",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-recordset_1",
+   "q": "اعتمد ملف الموظفين سجلاً للموظفين في المساحة",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-source_1",
+   "q": "كم عدد الموظفين في كل إدارة حسب نظام الموارد البشرية؟",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-source_2",
+   "q": "كم يوم إجازة أخذ الموظف رقم 1203 هالسنة؟ من النظام",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-remember_1",
+   "q": "تذكّر إني أفضّل التواريخ بالهجري دائماً",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-recall_1",
+   "q": "كمّل على الخطة اللي اشتغلنا عليها المرة الماضية",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-readchat_1",
+   "q": "كم كان الرقم اللي قلته لك بأول المحادثة عن الميزانية؟",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-skill_save",
+   "q": "احفظ طريقة كتابة الخطابات هذي كمهارة اسمها thank-you-letter: مقدمة رسمية، شكر محدد، ختام بالدعاء",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-app_new",
+   "q": "ابن لي اختبار قصير 5 أسئلة عن السلامة المهنية يحله الموظفين وتنحفظ درجاتهم",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-app_read",
+   "q": "وش الأسئلة الموجودة حالياً في اختبار تحديد المستوى؟",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-app_test",
+   "q": "جرّب اختبار تحديد المستوى وتأكد إنه يشتغل قبل ما ننشره",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-notify_1",
+   "q": "خلّ محمد يراجع تقرير الحضور الشهري قبل الخميس",
+   "needsTool": true,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-none_1",
+   "q": "ترجم هذي الجملة للإنجليزي: نشكركم على حسن تعاونكم",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-none_2",
+   "q": "صغ لي رسالة اعتذار قصيرة لزميل عن تأخري في الرد",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-none_3",
+   "q": "شكراً، كذا تمام",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "rt-none_4",
+   "q": "وش الفرق بين الإجازة الاضطرارية والمرضية بشكل عام؟",
+   "needsTool": false,
+   "src": "realtools"
+  },
+  {
+   "id": "ask-01",
+   "q": "ما هي شروط صرف بدل السكن في اللائحة؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-02",
+   "q": "وش يقول النظام عن التأخير عن الدوام؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-03",
+   "q": "كم باقي على موعد تسليم تقرير الربع الثالث؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-04",
+   "q": "متى آخر اجتماع للجنة المشتريات ووش قرروا فيه؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-05",
+   "q": "ابي اعرف كم عدد الموظفين في قسم المالية",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-06",
+   "q": "هل يحق لي إجازة أبوة؟ وكم يوم؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-07",
+   "q": "إيش الإجراءات المتبعة عندنا لطلب سلفة؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-08",
+   "q": "من المسؤول عن اعتماد طلبات الشراء فوق ٥٠ ألف؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-09",
+   "q": "ما نسبة الإنجاز في مشروع تطوير البوابة حسب آخر تقرير؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-10",
+   "q": "وش الفرق بين سياسة العمل عن بعد القديمة والجديدة؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-11",
+   "q": "كم كانت مصروفات التدريب السنة الماضية؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-12",
+   "q": "هل فيه بند يسمح بتمديد فترة التجربة؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-13",
+   "q": "قل لي وش اتفقنا عليه في محضر اجتماع الأحد",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-14",
+   "q": "ما هي معايير تقييم الأداء المعتمدة لدينا؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-15",
+   "q": "كم ساعة عمل إضافي مسموحة بالشهر؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "ask-16",
+   "q": "مين رئيس فريق الجودة حالياً؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-01",
+   "q": "سوّ لي ملخص لتقرير المبيعات الشهري",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-02",
+   "q": "اكتب لي ايميل للموظفين بمواعيد الإجازات الرسمية المعتمدة عندنا",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-03",
+   "q": "جهز لي عرض عن نتائج استبيان رضا الموظفين",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "make-files-05",
+   "q": "اكتب خطاب رسمي للمورد نذكر فيه الغرامة المنصوص عليها في العقد",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-07",
+   "q": "لخص لي محضر اجتماع مجلس الإدارة الأخير",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-08",
+   "q": "اعمل لي مقارنة بين عروض الموردين اللي وصلتنا",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-09",
+   "q": "حضّر لي نقاط للاجتماع بناءً على ملاحظات المراجعة الداخلية",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-10",
+   "q": "ابي تكتب لي رد على شكوى العميل حسب سياسة الاسترجاع",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-11",
+   "q": "أنشئ قائمة بالمهام المتأخرة في خطة المشروع",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "make-files-13",
+   "q": "ترجم بنود عقد الصيانة للإنجليزي",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-files-14",
+   "q": "ارسم لي مخطط لنسب الحضور من سجل الحضور والانصراف",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "make-02",
+   "q": "اكتب قصيدة قصيرة بمناسبة اليوم الوطني",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-03",
+   "q": "ترجم هذي الجملة للإنجليزي: نشكركم على حسن تعاونكم",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-04",
+   "q": "اكتب لي ايميل اعتذار عن حضور اجتماع بكرة",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-05",
+   "q": "جهز لي خطة مذاكرة أسبوعية لمادة الرياضيات",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-06",
+   "q": "صمم لي جدول متابعة عادات يومية",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "make-07",
+   "q": "ابغى رسالة تهنئة لزميل ترقى",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-08",
+   "q": "ودي تكتب لي مقدمة لعرض عن الذكاء الاصطناعي في التعليم",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-09",
+   "q": "أعد صياغة هذه الفقرة بأسلوب رسمي: نبي نخلص الشغل بسرعة عشان العميل زعلان",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-10",
+   "q": "لو تكرمت اكتب سيرة ذاتية مختصرة لمهندس برمجيات خبرته ٥ سنوات",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-11",
+   "q": "أبي أفكار لفعالية ترفيهية للموظفين",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-12",
+   "q": "حط لي قالب لمحضر اجتماع",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-13",
+   "q": "اعطني ١٠ أسئلة مقابلة لوظيفة محاسب",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "make-14",
+   "q": "عطني خطة تسويق لمقهى صغير",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-01",
+   "q": "وش الفرق بين ضريبة القيمة المضافة والضريبة الانتقائية؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-02",
+   "q": "كيف أحسب النسبة المئوية للزيادة؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-03",
+   "q": "ما هي عاصمة أستراليا؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-04",
+   "q": "اشرح لي مفهوم التعلم الآلي ببساطة",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-05",
+   "q": "كم يوم في السنة الكبيسة؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-06",
+   "q": "وش معنى KPI؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-07",
+   "q": "كيف أكتب معادلة VLOOKUP في إكسل؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-08",
+   "q": "ما الفرق بين الإيميل الرسمي وغير الرسمي؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-09",
+   "q": "وش أفضل طريقة لتنظيم الوقت في العمل؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "gen-10",
+   "q": "كم عدد أيام الأسبوع في التقويم الهجري؟",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "light-03",
+   "q": "يعطيك العافية",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "light-04",
+   "q": "السلام عليكم",
+   "needsTool": false,
+   "src": "route"
+  },
+  {
+   "id": "own-01",
+   "q": "سوي لي قائمة بدير مشاريعي فيها",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "own-02",
+   "q": "كم عندي مهام وقوائم ؟",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "own-04",
+   "q": "رتب مهامي حسب الأولوية",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "own-05",
+   "q": "أضف للقائمة مشروع تطوير البوابة والمسؤول خالد",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "own-06",
+   "q": "وش المهام المستعجلة عندي هالأسبوع؟",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "own-07",
+   "q": "سو لي جدول متابعة للمشتريات اللي أتابعها",
+   "needsTool": true,
+   "src": "route"
+  },
+  {
+   "id": "own-08",
+   "q": "وش آخر قرار في محضر اجتماع لجنة المشاريع؟",
+   "needsTool": false,
+   "src": "route"
+  }
+ ]
+}

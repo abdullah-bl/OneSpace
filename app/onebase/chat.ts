@@ -48,6 +48,7 @@ import { asksToRemember, memoryContext, memoryOn, sensitiveOrigin, threadSpaceId
 import { chatMentions, pickSkill, planParts, wantsDeepThought, type Part } from "./router";
 import { levelOf, levelTools, UNLIMITED } from "./lib/levels";
 import type { AppTool, Citation, ToolContext, ToolResult } from "./tools/types";
+import { argProblemText, checkToolArgs, idsIn, repairIds } from "./tools/validate";
 import { exportTarget } from "./tools/export_document";
 import { autoRunEnabled, type Resolution, type Tier } from "./tiers";
 import { deleteArtifactRows, outputIndex, readableArtifact, requireActor, staleText, updateArtifact } from "./artifacts";
@@ -94,6 +95,18 @@ const FINAL_NUDGE_OPEN = "لا مزيد من الأدوات. أجب الآن، �
 /** Write-tool proposals from a scheduled run wait this long for the owner (nobody is watching). */
 const SCHEDULED_PROPOSAL_TTL = 24 * 3600_000;
 const MARKUP_RE = /<tool_call>|<function=|<\/?think>/;
+/**
+ * The model named one of its tools in its answer as something it is about to do («سأستخدم
+ * publish_output…») but made no call: small models do this often (bench/realtools). The name of
+ * the tool it meant, or null.
+ */
+export function announcedTool(text: string, names: Iterable<string>): string | null {
+  for (const n of names) {
+    if (new RegExp(`(^|[^A-Za-z0-9_])${n}([^A-Za-z0-9_]|$)`).test(text)) return n;
+  }
+  return null;
+}
+const ANNOUNCED_NUDGE = (tool: string) => `ذكرتَ الأداة ${tool} ولم تستدعِها. استدعِها الآن بوسائطها (لا تصف الاستدعاء في النص)، أو استدعِ الأداة المناسبة غيرها.`;
 
 /** Removes tool-call/thinking markup a local model sometimes writes into its answer text. */
 const ID_RULE = "معرّفات الملفات (مثل «معرّف: …») للأدوات فقط: لا تكتبها في الإجابة أبداً. استشهد برقم المصدر [1] واذكر الملف باسمه.";
@@ -161,12 +174,31 @@ const summarySectionsV = v.object({ topics: v.string(), facts: v.array(v.string(
  * the model's context when its provider reported one on «افحص» (so a small local model isn't flooded).
  */
 async function historyTokens(ctx: QueryCtx, role: "main" | "fast"): Promise<number> {
+  const context = await modelContext(ctx, role);
+  return context ? Math.max(2000, Math.min(HISTORY_TOKENS, Math.floor(context / 3))) : HISTORY_TOKENS;
+}
+
+/** The context (tokens) of the model a role points at, when its provider reported one on «افحص». */
+async function modelContext(ctx: QueryCtx, role: string): Promise<number | null> {
   const roles = (await ctx.db.query("aiSettings").withIndex("by_key", (q) => q.eq("key", "roles")).unique())?.value as Record<string, { providerId: Id<"aiProviders">; model: string }> | undefined;
   const choice = roles?.[role];
-  if (!choice) return HISTORY_TOKENS;
+  if (!choice) return null;
   const p = await ctx.db.get(choice.providerId);
   const context = p?.modelInfo?.find((m) => m.id === choice.model)?.context;
-  return context && context > 0 ? Math.max(2000, Math.min(HISTORY_TOKENS, Math.floor(context / 3))) : HISTORY_TOKENS;
+  return context && context > 0 ? context : null;
+}
+
+/**
+ * How full the answering model's context was on this chat's latest answer: its largest request
+ * against the model's context. Null when either isn't known (a model the server didn't describe).
+ * Older messages are summarised on their own (plans/15), so a high value comes from what one
+ * answer read (files, tool results), and says when a new chat would answer better.
+ */
+async function contextUse(ctx: QueryCtx, threadId: string): Promise<{ used: number; limit: number } | null> {
+  const last = await ctx.db.query("turns").withIndex("by_thread", (q) => q.eq("threadId", threadId)).order("desc").filter((q) => q.neq(q.field("contextTokens"), undefined)).first();
+  if (!last?.contextTokens) return null;
+  const limit = await modelContext(ctx, last.contextRole ?? "main");
+  return limit ? { used: last.contextTokens, limit } : null;
 }
 const abstainScore = () => Number(process.env.RAG_ABSTAIN_SCORE ?? 0.01);
 /** Open agents: passages below this score are not shown to the model (the question is likely general). */
@@ -411,7 +443,9 @@ export const createThread = mutation({
     let inSpace: Id<"spaces"> | undefined;
     let s: Scope;
     let share = false;
-    if (spaceId) {
+    // My own space has no chats of its own (one personal chat): a request for one is a general chat.
+    const own = spaceId ? (await assertCan(ctx, me.userId, spaceId, "read")).space.kind === "personal" : false;
+    if (spaceId && !own) {
       const { space, role } = await assertCan(ctx, me.userId, spaceId, "read");
       inSpace = space._id;
       s = await scopeInSpace(ctx, me.userId, space._id, scope);
@@ -728,8 +762,19 @@ export const messages = query({
       const t = tid ? await ctx.db.get(tid) : null;
       try {
         if (t) {
-          await assertTaskCan(ctx, me.userId, t.spaceId, "view");
-          task = { _id: t._id, title: t.title };
+          const { space: ts, role } = await assertTaskCan(ctx, me.userId, t.spaceId, "view");
+          // What the chat needs to open on the task, not on an empty page: its brief, date and my part in it.
+          task = {
+            _id: t._id,
+            title: t.title,
+            body: t.body ? t.body.slice(0, 1200) : null,
+            status: t.status,
+            priority: t.priority,
+            due: t.due ?? null,
+            spaceName: ts.name,
+            mine: assigneesOf(t).includes(me.userId) && canBeAssignee(role),
+            manages: taskRoleAllows(role, "manage"),
+          };
         }
       } catch {}
     }
@@ -763,6 +808,7 @@ export const messages = query({
       messages: out,
       earlier: visible.length - windowed.length,
       turn,
+      context: isOwner ? await contextUse(ctx, threadId) : null,
     };
   },
 });
@@ -1929,6 +1975,13 @@ export const runTurn = internalAction({
       let forceFinal = false;
       let overBudget = false;
       let cutRetried = false;
+      // Asked once per answer to make the call it only described (announcedTool).
+      let announceRetried = false;
+      let mustCall = false;
+      let calledAny = false;
+      // The route decision says this request needs a tool (decisions.ts needsTool): the first
+      // generation must make a call, instead of only describing one (bench/realtools).
+      const forceFirstCall = !!route?.needsTool && !parts.length;
       let sandboxRuns = 0;
       for (let step = 0; ; step++) {
         if (await stopped(true)) throw new Error("stopped");
@@ -1950,6 +2003,7 @@ export const runTurn = internalAction({
             role: answerRole,
             messages,
             tools: last ? undefined : specs,
+            toolChoice: !last && (mustCall || (forceFirstCall && step === 0)) ? "required" : undefined,
             maxTokens: answerTokens,
             thinking: think,
             onThinking,
@@ -1982,7 +2036,18 @@ export const runTurn = internalAction({
           forceFinal = true;
           continue;
         }
+        mustCall = false;
+        // It said which tool it would use and stopped: ask once for the call itself.
+        // Only before its first call: an answer written after tools ran may name them in passing.
+        const meant = !res.toolCalls.length && !last && !announceRetried && !calledAny ? announcedTool(res.text, allowed) : null;
+        if (meant) {
+          announceRetried = true;
+          mustCall = true;
+          messages.push({ role: "assistant", content: res.text || "…" }, { role: "user", content: ANNOUNCED_NUDGE(meant) });
+          continue;
+        }
         if (!res.toolCalls.length || last) break;
+        calledAny = true;
         if (!res.toolCalls.every((tc) => PLATFORM_STEP_FREE.has(tc.name))) agentSteps++;
         if (await stopped(true)) throw new Error("stopped");
         messages.push({ role: "assistant", content: res.text || null, tool_calls: res.toolCalls.map((tc) => ({ id: tc.id, type: "function", function: { name: tc.name, arguments: tc.rawArgs || "{}" } })) });
@@ -1992,8 +2057,14 @@ export const runTurn = internalAction({
         // the same step brings from a sensitive space counts (tiers.resolve).
         type Plan = { tc: (typeof res.toolCalls)[number]; tool?: AppTool; kind: "refused" | "proposal" | "auto" | "read" | "write"; content?: string; tier?: Tier };
         const plans: Plan[] = [];
+        // The ids the model was shown (prompt, question, tool results), to put back one it mistyped.
+        const shownIds = idsIn(messages.filter((m) => m.role !== "assistant").map((m) => (typeof m.content === "string" ? m.content : JSON.stringify(m.content))));
         for (const tc of res.toolCalls) {
           const tool = Object.hasOwn(registry, tc.name) ? registry[tc.name] : undefined;
+          if (tool) (tc as { args: unknown }).args = repairIds(tc.args, shownIds).args;
+          // Arguments are checked against the tool's schema (and lightly repaired) before anything else reads them.
+          const argCheck = tool && allowed.has(tool.name) ? checkToolArgs(tool, tc.args) : null;
+          if (argCheck && !argCheck.problems.length) (tc as { args: unknown }).args = argCheck.args;
           if (!tool) {
             plans.push({ tc, kind: "refused", content: `أداة غير معروفة: ${tc.name}` });
             toolRuns.push({ name: tc.name, label: tc.name, args: tc.args, ok: false, summary: "أداة غير معروفة" });
@@ -2001,6 +2072,10 @@ export const runTurn = internalAction({
             // Whatever the model emits, a tool outside the agent's list never runs (and is never proposed).
             plans.push({ tc, tool, kind: "refused", content: `الأداة ${tool.name} غير متاحة لهذا الوكيل ولم تُنفَّذ.` });
             toolRuns.push({ name: tool.name, label: tool.label, args: tc.args, ok: false, summary: "غير متاحة لهذا الوكيل" });
+          } else if (argCheck?.problems.length) {
+            // Arguments that don't fit the tool's schema: turned back at once with what to fix.
+            plans.push({ tc, tool, kind: "refused", content: argProblemText(tool, argCheck.problems) });
+            toolRuns.push({ name: tool.name, label: tool.label, args: null, ok: false, summary: `وسائط غير صالحة: ${argCheck.problems[0]}`.slice(0, 200) });
           } else if (pageScriptProblem(tool.name, tc.args)) {
             // A page that builds itself with its own script would show up empty (outputs run only our
             // table tools): turned back at once with the fix, so the model retries in this answer.

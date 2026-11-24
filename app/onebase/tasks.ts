@@ -19,8 +19,8 @@
 
 import { OneBaseError, v } from "onebase/values";
 import type { Doc, Id } from "./_generated/dataModel";
-import { internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
-import { assertTaskCan, assigneesOf, canBeAssignee, currentSpaceRole, Denied, requireActive, taskRoleAllows, type Actor, type SpaceRole } from "./access";
+import { internalMutation, internalQuery, mutation, query, type MutationCtx, type QueryCtx } from "./_generated/server";
+import { actorFor, assertTaskCan, assigneesOf, canBeAssignee, currentSpaceRole, Denied, requireActive, taskRoleAllows, type Actor, type SpaceRole } from "./access";
 import { writeAudit } from "./audit";
 import { notify, type NotifyKind } from "./notifications";
 import { taskLinkType, taskPriority, taskStatus } from "./schema";
@@ -243,17 +243,19 @@ export const readForTool = internalQuery({
       } catch {
         continue;
       }
+      // Mine, and in a space I manage every task (so «وش وضع مهام الفريق؟» and update_task work there).
+      const manages = taskRoleAllows(access.role, "manage");
       for (const task of await ctx.db.query("tasks").withIndex("by_space", (q) => q.eq("spaceId", access.space._id)).collect())
-        if (assigneesOf(task).includes(a.userId) && (a.includeDone || task.status !== "done")) rows.push({ task, space: access.space.name });
+        if ((manages || assigneesOf(task).includes(a.userId)) && (a.includeDone || task.status !== "done")) rows.push({ task, space: access.space.name });
     }
     if (!rows.length) return a.includeDone ? "لا مهام مسندة إليه في مساحاته." : "لا مهام مفتوحة مسندة إليه في مساحاته.";
     rows.sort((x, y) => Number(x.task.status === "done") - Number(y.task.status === "done") || (x.task.due ?? Infinity) - (y.task.due ?? Infinity));
     const day = (t?: number) => (t ? new Date(t).toISOString().slice(0, 10) : null);
     const lines = rows.slice(0, 60).map(({ task, space }) =>
-      [`- ${task.title}`, STATUS_AR[task.status], `الأولوية ${PRIORITY_AR[task.priority]}`, day(task.due) ? `الاستحقاق ${day(task.due)}` : null, `المساحة «${space}»`].filter(Boolean).join(" · "),
+      [`- ${task.title}`, STATUS_AR[task.status], `الأولوية ${PRIORITY_AR[task.priority]}`, day(task.due) ? `الاستحقاق ${day(task.due)}` : null, `المساحة «${space}»`, assigneesOf(task).includes(a.userId) ? "مسندة إليه" : "في مساحة يديرها", `taskId=${task._id}`].filter(Boolean).join(" · "),
     );
     const open = rows.filter((r) => r.task.status !== "done").length;
-    return `المهام المسندة إليه (${open} مفتوحة${a.includeDone ? `، ${rows.length - open} منجزة` : ""}${rows.length > 60 ? `، تُعرض أول 60` : ""}). اليوم ${day(Date.now())}:\n${lines.join("\n")}`;
+    return `مهامه ومهام المساحات التي يديرها (${open} مفتوحة${a.includeDone ? `، ${rows.length - open} منجزة` : ""}${rows.length > 60 ? `، تُعرض أول 60` : ""}). اليوم ${day(Date.now())}:\n${lines.join("\n")}`;
   },
 });
 
@@ -325,8 +327,14 @@ export const create = mutation({
     due: v.optional(v.number()),
     priority: v.optional(taskPriority),
   },
-  handler: async (ctx, { spaceId, title, body, assigneeIds: picked, assigneeId, due, priority }) => {
-    const me = await requireActive(ctx);
+  handler: async (ctx, a) => await createAs(ctx, await requireActive(ctx), a),
+});
+
+type CreateArgs = { spaceId: Id<"spaces">; title: string; body?: string; assigneeIds?: Id<"users">[]; assigneeId?: Id<"users">; due?: number; priority?: Doc<"tasks">["priority"] };
+
+/** A new task in a shared space, by its manager (the screen and the create_task tool). */
+async function createAs(ctx: MutationCtx, me: Actor, { spaceId, title, body, assigneeIds: picked, assigneeId, due, priority }: CreateArgs) {
+  {
     const { space } = await assertTaskCan(ctx, me.userId, spaceId, "manage");
     const assigneeIds = await requireAssignable(ctx, space, { assigneeIds: picked, assigneeId });
     const now = Date.now();
@@ -348,14 +356,17 @@ export const create = mutation({
     await writeAudit(ctx, { userId: me.userId, action: "task.assign", resourceType: "task", resourceId: taskId, spaceId: space._id, detail: { taskTitle: t, assigneeIds: assigneeIds.join(","), assigneeNames: await namesOf(ctx, assigneeIds), created: true } });
     await notifyMany(ctx, me, space, task, assigneeIds, "task.assigned", `مهمة جديدة: ${t}`, `أسندها إليك ${who(me)} في «${space.name}»`);
     return taskId;
-  },
-});
+  }
+}
 
 /** Manager edits title, body, due date (null clears it) and priority. */
 export const update = mutation({
   args: { taskId: v.id("tasks"), title: v.optional(v.string()), body: v.optional(v.string()), due: v.optional(v.union(v.number(), v.null())), priority: v.optional(taskPriority) },
-  handler: async (ctx, { taskId, title, body, due, priority }) => {
-    const me = await requireActive(ctx);
+  handler: async (ctx, a) => await updateAs(ctx, await requireActive(ctx), a),
+});
+
+async function updateAs(ctx: MutationCtx, me: Actor, { taskId, title, body, due, priority }: { taskId: string; title?: string; body?: string; due?: number | null; priority?: Doc<"tasks">["priority"] }) {
+  {
     const { task } = await taskAccess(ctx, me, taskId, "manage");
     const changes: Partial<Doc<"tasks">> = { updatedAt: Date.now() };
     if (title !== undefined) changes.title = cleanTitle(title);
@@ -363,8 +374,8 @@ export const update = mutation({
     if (due !== undefined) changes.due = due ?? undefined;
     if (priority !== undefined) changes.priority = priority;
     await ctx.db.patch(task._id, changes);
-  },
-});
+  }
+}
 
 /**
  * Manager sets the task's assignees (the whole list; managers or members of the same space). Only
@@ -372,8 +383,11 @@ export const update = mutation({
  */
 export const assign = mutation({
   args: { taskId: v.id("tasks"), ...assigneeArgs },
-  handler: async (ctx, { taskId, assigneeIds: picked, assigneeId }) => {
-    const me = await requireActive(ctx);
+  handler: async (ctx, a) => await assignAs(ctx, await requireActive(ctx), a),
+});
+
+async function assignAs(ctx: MutationCtx, me: Actor, { taskId, assigneeIds: picked, assigneeId }: { taskId: string; assigneeIds?: Id<"users">[]; assigneeId?: Id<"users"> }) {
+  {
     const { task, space } = await taskAccess(ctx, me, taskId, "manage");
     const assigneeIds = await requireAssignable(ctx, space, { assigneeIds: picked, assigneeId });
     const before = assigneesOf(task);
@@ -397,13 +411,16 @@ export const assign = mutation({
       },
     });
     await notifyMany(ctx, me, space, task, added, "task.assigned", `أُسندت إليك مهمة: ${task.title}`, `أسندها إليك ${who(me)} في «${space.name}»`);
-  },
-});
+  }
+}
 
 export const setStatus = mutation({
   args: { taskId: v.id("tasks"), status: taskStatus },
-  handler: async (ctx, { taskId, status }) => {
-    const me = await requireActive(ctx);
+  handler: async (ctx, a) => await setStatusAs(ctx, await requireActive(ctx), a),
+});
+
+async function setStatusAs(ctx: MutationCtx, me: Actor, { taskId, status }: { taskId: string; status: Status }) {
+  {
     const { task, space, canManage, isAssignee } = await taskAccess(ctx, me, taskId);
     if (task.status === status) return;
     if (!nextStatuses(task.status, isAssignee, canManage).includes(status)) {
@@ -423,8 +440,8 @@ export const setStatus = mutation({
     } else if (task.status === "review" && status === "inProgress") {
       await notifyMany(ctx, me, space, task, assigneesOf(task), "task.returned", `أُعيدت إليك المهمة للتعديل: ${task.title}`, `أعادها ${who(me)}`);
     }
-  },
-});
+  }
+}
 
 async function requireAttach(ctx: MutationCtx, me: Actor, taskId: string) {
   const access = await taskAccess(ctx, me, taskId);
@@ -436,8 +453,11 @@ async function requireAttach(ctx: MutationCtx, me: Actor, taskId: string) {
 /** Attaches a file or an artifact that lives in the task's own space. */
 export const addLink = mutation({
   args: { taskId: v.id("tasks"), type: taskLinkType, id: v.string() },
-  handler: async (ctx, { taskId, type, id }) => {
-    const me = await requireActive(ctx);
+  handler: async (ctx, a) => await addLinkAs(ctx, await requireActive(ctx), a),
+});
+
+async function addLinkAs(ctx: MutationCtx, me: Actor, { taskId, type, id }: { taskId: string; type: LinkType; id: string }) {
+  {
     const { task } = await requireAttach(ctx, me, taskId);
     const target = await linkTarget(ctx, type, id);
     // Another space's file gets exactly the answer a missing one gets: nothing to probe.
@@ -445,8 +465,8 @@ export const addLink = mutation({
     if (task.links.some((l) => l.type === type && l.id === id)) return;
     if (task.links.length >= 100) throw new OneBaseError("عدد المرفقات أكثر من المسموح");
     await ctx.db.patch(task._id, { links: [...task.links, { type, id, addedBy: me.userId, addedAt: Date.now() }], updatedAt: Date.now() });
-  },
-});
+  }
+}
 
 export const removeLink = mutation({
   args: { taskId: v.id("tasks"), type: taskLinkType, id: v.string() },
@@ -476,8 +496,11 @@ export const comment = mutation({
   // mentions: user ids picked from mentions:people. Only people who can view the task are
   // notified and get a "الإشارات" row; anyone else is ignored silently (mentions.ts).
   args: { taskId: v.id("tasks"), body: v.string(), mentions: v.optional(v.array(v.string())) },
-  handler: async (ctx, { taskId, body, mentions }) => {
-    const me = await requireActive(ctx);
+  handler: async (ctx, a) => await commentAs(ctx, await requireActive(ctx), a),
+});
+
+async function commentAs(ctx: MutationCtx, me: Actor, { taskId, body, mentions }: { taskId: string; body: string; mentions?: string[] }) {
+  {
     const { task, space } = await taskAccess(ctx, me, taskId, "comment");
     const text = cleanBody(body, COMMENT_MAX);
     if (!text) throw new OneBaseError("التعليق فارغ");
@@ -496,8 +519,8 @@ export const comment = mutation({
     const others = [...assigneesOf(task), ...(await managersOf(ctx, space._id))].filter((u) => !mentioned.has(u));
     await notifyMany(ctx, me, space, task, others, "task.comment", `تعليق من ${who(me)} على: ${task.title}`, preview);
     return id;
-  },
-});
+  }
+}
 
 /** Manager deletes a task and its comments. */
 export const remove = mutation({
@@ -509,5 +532,245 @@ export const remove = mutation({
     for (const c of comments) await ctx.db.delete(c._id);
     await ctx.db.delete(task._id);
     await writeAudit(ctx, { userId: me.userId, action: "task.delete", resourceType: "task", resourceId: task._id, spaceId: space._id, detail: { taskTitle: task.title, status: task.status } });
+  },
+});
+
+// ---- the assistant's task tools (create_task, update_task) -------------------------------------
+//
+// The assistant creates, assigns and moves tasks with the same functions as the screens (createAs,
+// assignAs, setStatusAs, commentAs, addLinkAs), so it can do exactly what the person can and no
+// more. Every call notifies other people, so it always waits for «نفّذ» (tiers.ts). Spaces, people
+// and tasks are named as the person says them; checkTaskCall turns names into ids, or says what
+// matched or what's there, before any card is shown. The same check runs again when it executes.
+
+const norm = (x: string) =>
+  x
+    .normalize("NFKC")
+    .replace(/[\u064B-\u0652\u0640]/g, "")
+    .replace(/[أإآ]/g, "ا")
+    .replace(/ة/g, "ه")
+    .replace(/ى/g, "ي")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+/** One item by id, exact name, then a unique partial name; otherwise what to choose from. */
+function pickOne<T>(items: T[], want: string, id: (t: T) => string, name: (t: T) => string, what: string): T {
+  const w = norm(want);
+  const hit = items.find((t) => id(t) === want.trim()) ?? items.find((t) => norm(name(t)) === w);
+  if (hit) return hit;
+  const partial = w.length >= 2 ? items.filter((t) => norm(name(t)).includes(w) || w.includes(norm(name(t)))) : [];
+  if (partial.length === 1) return partial[0]!;
+  const list = (xs: T[]) => xs.slice(0, 8).map((t) => `«${name(t)}»`).join("، ");
+  if (partial.length > 1) throw new OneBaseError(`«${want}» يطابق أكثر من ${what}: ${list(partial)}. حدّد واحداً`);
+  throw new OneBaseError(items.length ? `لا يوجد ${what} باسم «${want}». الموجود: ${list(items)}` : `لا يوجد ${what} متاح`);
+}
+
+const PRIORITIES = ["low", "normal", "high", "urgent"] as const;
+const STATUSES = ["new", "inProgress", "review", "done"] as const;
+
+/** «2026-12-01» → that day (noon in Riyadh, so it's the same date in every time zone the app shows). */
+function parseDue(d: unknown): number | null | undefined {
+  if (d === undefined || d === "") return undefined;
+  if (d === null) return null;
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(d).trim());
+  if (!m) throw new OneBaseError("الموعد: التاريخ بصيغة YYYY-MM-DD");
+  const t = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 9);
+  if (Number.isNaN(t)) throw new OneBaseError("الموعد: التاريخ غير صالح");
+  return t;
+}
+
+/** People a task in this space can go to (its managers and members), with their names. */
+async function assignable(ctx: Ctx, space: Doc<"spaces">) {
+  const rows = await ctx.db.query("spaceMembers").withIndex("by_space_user", (q) => q.eq("spaceId", space._id)).collect();
+  const out: { userId: Id<"users">; name: string }[] = [];
+  for (const r of rows) {
+    if (!canBeAssignee(await currentSpaceRole(ctx, r.userId, space))) continue;
+    const u = await ctx.db.get(r.userId);
+    if (u) out.push({ userId: r.userId, name: u.name ?? u.email ?? "" });
+  }
+  return out;
+}
+
+async function peopleIn(ctx: Ctx, space: Doc<"spaces">, names: unknown): Promise<{ userId: Id<"users">; name: string }[]> {
+  const want = (Array.isArray(names) ? names : [names]).map((x) => String(x ?? "").trim()).filter(Boolean);
+  if (!want.length) throw new OneBaseError("اذكر اسم مسؤول واحد على الأقل");
+  const pool = await assignable(ctx, space);
+  const out = new Map<string, { userId: Id<"users">; name: string }>();
+  for (const w of want) {
+    const p = pickOne(pool, w, (x) => x.userId, (x) => x.name, `عضو في «${space.name}»`);
+    out.set(p.userId, p);
+  }
+  return [...out.values()];
+}
+
+/** The shared spaces in the turn's scope where this person manages tasks. */
+async function managedSpaces(ctx: Ctx, me: Actor, scopeSpaceIds: string[]) {
+  const out: Doc<"spaces">[] = [];
+  for (const sid of scopeSpaceIds) {
+    try {
+      const { space } = await assertTaskCan(ctx, me.userId, sid, "manage");
+      out.push(space);
+    } catch {}
+  }
+  return out;
+}
+
+/** Tasks in the turn's scope this person can see (any role in their space). */
+async function visibleTasks(ctx: Ctx, me: Actor, scopeSpaceIds: string[]) {
+  const out: { task: Doc<"tasks">; space: Doc<"spaces"> }[] = [];
+  for (const sid of scopeSpaceIds) {
+    let space: Doc<"spaces">;
+    try {
+      space = (await assertTaskCan(ctx, me.userId, sid, "view")).space;
+    } catch {
+      continue;
+    }
+    for (const task of await ctx.db.query("tasks").withIndex("by_space", (q) => q.eq("spaceId", space._id)).collect()) out.push({ task, space });
+  }
+  return out;
+}
+
+type ToolCall = { userId: Id<"users">; tool: string; args: any; scopeSpaceIds: string[]; chatSpaceId?: string | null };
+export type TaskPlan =
+  | { kind: "create"; space: Doc<"spaces">; title: string; body?: string; people: { userId: Id<"users">; name: string }[]; due?: number; priority: Doc<"tasks">["priority"]; lines: string[] }
+  | {
+      kind: "update";
+      space: Doc<"spaces">;
+      task: Doc<"tasks">;
+      status?: Status;
+      comment?: string;
+      people?: { userId: Id<"users">; name: string }[];
+      due?: number | null;
+      priority?: Doc<"tasks">["priority"];
+      attach: { type: LinkType; id: string; name: string }[];
+      lines: string[];
+    };
+
+const day = (t: number) => new Date(t).toISOString().slice(0, 10);
+
+/**
+ * What a create_task / update_task call would do, checked as the person: names resolved, rights
+ * and the status flow enforced. Throws a OneBaseError that says how to fix the call.
+ */
+export async function checkTaskCall(ctx: Ctx, c: ToolCall): Promise<TaskPlan> {
+  const me = await actorFor(ctx, c.userId);
+  if (!me) throw new Denied();
+  const a = c.args ?? {};
+  if (c.tool === "create_task") {
+    const spaces = await managedSpaces(ctx, me, c.scopeSpaceIds);
+    if (!spaces.length) throw new OneBaseError("لا تدير أي مساحة مشتركة هنا؛ المهام ينشئها ويسندها مدير المساحة");
+    const space = a.space
+      ? pickOne(spaces, String(a.space), (x) => x._id, (x) => x.name, "مساحة تديرها")
+      : spaces.find((x) => x._id === c.chatSpaceId) ?? (spaces.length === 1 ? spaces[0]! : null);
+    if (!space) throw new OneBaseError(`في أي مساحة؟ اذكر space، من التي تديرها: ${spaces.map((x) => `«${x.name}»`).join("، ")}`);
+    const title = cleanTitle(String(a.title ?? ""));
+    const people = await peopleIn(ctx, space, a.assignees);
+    if (people.length > MAX_ASSIGNEES) throw new OneBaseError(`لا تُسند المهمة لأكثر من ${MAX_ASSIGNEES} شخصاً`);
+    const due = parseDue(a.due) ?? undefined;
+    const priority = PRIORITIES.includes(a.priority) ? (a.priority as Doc<"tasks">["priority"]) : "normal";
+    const lines = [`في «${space.name}»`, `إلى: ${people.map((p) => p.name).join("، ")}`, ...(due ? [`الموعد: ${day(due)}`] : []), `الأولوية: ${PRIORITY_AR[priority]}`];
+    return { kind: "create", space, title, body: cleanBody(a.description === undefined ? undefined : String(a.description)), people, due, priority, lines };
+  }
+  if (c.tool === "update_task") {
+    const tasks = await visibleTasks(ctx, me, c.scopeSpaceIds);
+    const hit = pickOne(tasks, String(a.task ?? ""), (x) => x.task._id, (x) => x.task.title, "مهمة تراها");
+    const { task, space, canManage, isAssignee, role } = await taskAccess(ctx, me, hit.task._id);
+    const lines: string[] = [`المهمة: ${task.title} (${STATUS_AR[task.status]})`];
+    const plan: Extract<TaskPlan, { kind: "update" }> = { kind: "update", space, task, attach: [], lines };
+    const manageOnly = (what: string) => {
+      if (!canManage) throw new OneBaseError(`${what} لمدير المساحة فقط`);
+    };
+    if (a.status !== undefined && a.status !== task.status) {
+      if (!STATUSES.includes(a.status)) throw new OneBaseError(`الحالة واحدة من: ${STATUSES.join("، ")}`);
+      const allowed = nextStatuses(task.status, isAssignee, canManage);
+      if (!allowed.includes(a.status)) throw new OneBaseError(allowed.length ? `من «${STATUS_AR[task.status]}» تنتقل فقط إلى: ${allowed.map((x) => `${x} (${STATUS_AR[x]})`).join("، ")}` : "لا تملك تغيير حالة هذه المهمة");
+      plan.status = a.status;
+      lines.push(`الحالة: ${STATUS_AR[task.status]} ← ${STATUS_AR[a.status as Status]}`);
+    }
+    if (a.assignees !== undefined) {
+      manageOnly("إسناد المهمة");
+      plan.people = await peopleIn(ctx, space, a.assignees);
+      lines.push(`المسؤولون: ${plan.people.map((p) => p.name).join("، ")}`);
+    }
+    if (a.due !== undefined) {
+      manageOnly("تغيير الموعد");
+      plan.due = parseDue(a.due) ?? null;
+      lines.push(plan.due ? `الموعد: ${day(plan.due)}` : "بلا موعد");
+    }
+    if (a.priority !== undefined) {
+      manageOnly("تغيير الأولوية");
+      if (!PRIORITIES.includes(a.priority)) throw new OneBaseError(`الأولوية واحدة من: ${PRIORITIES.join("، ")}`);
+      plan.priority = a.priority;
+      lines.push(`الأولوية: ${PRIORITY_AR[a.priority as Doc<"tasks">["priority"]]}`);
+    }
+    if (a.comment !== undefined && String(a.comment).trim()) {
+      if (!taskRoleAllows(role, "comment")) throw new OneBaseError("دورك في المساحة لا يسمح بالتعليق");
+      plan.comment = cleanBody(String(a.comment), COMMENT_MAX);
+      lines.push(`تعليق: ${plan.comment!.slice(0, 200)}`);
+    }
+    for (const l of Array.isArray(a.attach) ? a.attach : []) {
+      if (!isAssignee && !canManage) throw new OneBaseError("يرفق المسؤول عن المهمة أو مدير المساحة فقط");
+      if (task.status === "done") throw new OneBaseError("المهمة مغلقة؛ يعيد المدير فتحها أولاً");
+      const type: LinkType = l?.type === "file" ? "file" : "artifact";
+      const target = await linkTarget(ctx, type, String(l?.id ?? ""));
+      if (!target || target.spaceId !== task.spaceId) throw new OneBaseError(`المرفق غير موجود في «${space.name}»؛ يُرفق ما في مساحة المهمة نفسها فقط`);
+      plan.attach.push({ type, id: String(l.id), name: target.name });
+      lines.push(`مرفق: ${target.name}`);
+    }
+    if (lines.length === 1) throw new OneBaseError("لم يُطلب أي تغيير: أرسل status أو comment أو assignees أو due أو priority أو attach");
+    return plan;
+  }
+  throw new OneBaseError("أداة مهام غير معروفة");
+}
+
+const toolCallArgs = { userId: v.id("users"), tool: v.string(), args: v.any(), scopeSpaceIds: v.array(v.string()), chatSpaceId: v.optional(v.union(v.string(), v.null())) };
+
+/** What the card shows before «نفّذ»: the task, the space, the people and the changes in words. */
+export const describeForTool = internalQuery({
+  args: toolCallArgs,
+  handler: async (ctx, c): Promise<{ title: string; lines: string[] } | { error: string }> => {
+    try {
+      const p = await checkTaskCall(ctx, c);
+      return { title: p.kind === "create" ? p.title : p.task.title, lines: p.lines };
+    } catch (e) {
+      return { error: e instanceof OneBaseError ? e.message : "تعذّر التحقق" };
+    }
+  },
+});
+
+/** Runs a confirmed call: checked again as the person, then the screens' own functions. All or nothing. */
+export const runForTool = internalMutation({
+  args: toolCallArgs,
+  handler: async (ctx, c): Promise<{ taskId: string; title: string; spaceId: string; spaceName: string; done: string[] }> => {
+    const me = await actorFor(ctx, c.userId);
+    if (!me) throw new Denied();
+    const p = await checkTaskCall(ctx, c);
+    if (p.kind === "create") {
+      const taskId = await createAs(ctx, me, { spaceId: p.space._id, title: p.title, body: p.body, assigneeIds: p.people.map((x) => x.userId), due: p.due, priority: p.priority });
+      return { taskId, title: p.title, spaceId: p.space._id, spaceName: p.space.name, done: [`أُنشئت وأُسندت إلى ${p.people.map((x) => x.name).join("، ")}`] };
+    }
+    const done: string[] = [];
+    const id = p.task._id;
+    if (p.people) {
+      await assignAs(ctx, me, { taskId: id, assigneeIds: p.people.map((x) => x.userId) });
+      done.push(`أُسندت إلى ${p.people.map((x) => x.name).join("، ")}`);
+    }
+    if (p.due !== undefined || p.priority !== undefined) {
+      await updateAs(ctx, me, { taskId: id, ...(p.due !== undefined ? { due: p.due } : {}), ...(p.priority ? { priority: p.priority } : {}) });
+      done.push("حُدّثت التفاصيل");
+    }
+    for (const l of p.attach) await addLinkAs(ctx, me, { taskId: id, type: l.type, id: l.id });
+    if (p.attach.length) done.push(`أُرفق ${p.attach.map((l) => `«${l.name}»`).join("، ")}`);
+    if (p.comment) {
+      await commentAs(ctx, me, { taskId: id, body: p.comment });
+      done.push("أُضيف التعليق");
+    }
+    // Last: a status change may close the task, after which nothing can be attached.
+    if (p.status) {
+      await setStatusAs(ctx, me, { taskId: id, status: p.status });
+      done.push(`الحالة الآن «${STATUS_AR[p.status]}»`);
+    }
+    return { taskId: id, title: p.task.title, spaceId: p.space._id, spaceName: p.space.name, done };
   },
 });

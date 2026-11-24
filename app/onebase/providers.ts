@@ -18,10 +18,11 @@ import { requireAdmin, requireUserId, actorFor } from "./access";
 import { decideFromEnv, embedConfigFromDb, embeddingSignature, ensureEmbeddingIndex, envEmbed, envTargets, GEMMA_PREFIXES, INDEX_DIMENSIONS, setAiOverrides, type DecisionSwitches, type Overrides, type RoleName } from "./ai";
 import { writeAudit } from "./audit";
 import { scheduleIngest } from "./ingest";
+import { isTooLong, PROBE_SIZES, probeLimit } from "./lib/inputLimit";
 import { detectFlavor, explainModelError, fitsRole, FLAVOR_LABEL, readModels, TINY_PNG, type Flavor, type ModelInfo, type ServerRole } from "./lib/modelServers";
 
 const ROLES: RoleName[] = ["main", "fast", "vision", "decide"];
-type RoleChoice = { providerId: Id<"aiProviders">; model: string };
+type RoleChoice = { providerId: Id<"aiProviders">; model: string; maxInputChars?: number };
 type EmbedChoice = RoleChoice & { sendDimensions?: boolean; queryPrefix?: string; docPrefix?: string };
 type Roles = Partial<Record<RoleName, RoleChoice>> & { embed?: EmbedChoice };
 
@@ -154,7 +155,7 @@ async function embedStatus(ctx: { db: any }, roles: Roles) {
 }
 
 /** Saves a role's choice (providerId null = the environment); the caller checked the admin. */
-async function applyRole(ctx: MutationCtx, userId: Id<"users">, role: RoleName, providerId: string | null, model?: string) {
+async function applyRole(ctx: MutationCtx, userId: Id<"users">, role: RoleName, providerId: string | null, model?: string, maxInputChars?: number) {
   const roles = await readRoles(ctx);
   if (providerId === null) delete roles[role];
   else {
@@ -165,7 +166,7 @@ async function applyRole(ctx: MutationCtx, userId: Id<"users">, role: RoleName, 
     const m = (model ?? "").trim();
     if (!m) throw new OneBaseError("اختر نموذجاً");
     if (p.models.length && !p.models.includes(m)) throw new OneBaseError("النموذج غير موجود لدى المزوّد؛ افحص المزوّد مجدداً");
-    roles[role] = { providerId: p._id, model: m };
+    roles[role] = { providerId: p._id, model: m, ...(maxInputChars ? { maxInputChars } : {}) };
   }
   const row = await ctx.db.query("aiSettings").withIndex("by_key", (q) => q.eq("key", "roles")).unique();
   if (row) await ctx.db.patch(row._id, { value: roles, updatedAt: Date.now() });
@@ -185,11 +186,11 @@ export const setRole = mutation({
 });
 
 export const saveTriedRole = internalMutation({
-  args: { userId: v.id("users"), role: roleV, providerId: v.string(), model: v.string() },
+  args: { userId: v.id("users"), role: roleV, providerId: v.string(), model: v.string(), maxInputChars: v.optional(v.number()) },
   handler: async (ctx, a) => {
     const actor = await actorFor(ctx, a.userId);
     if (actor?.role !== "admin") throw new OneBaseError("هذا الإجراء لمدير مساحة العمل فقط");
-    await applyRole(ctx, a.userId, a.role, a.providerId, a.model);
+    await applyRole(ctx, a.userId, a.role, a.providerId, a.model, a.maxInputChars);
   },
 });
 
@@ -243,6 +244,26 @@ async function tryModel(p: Server, role: Exclude<ServerRole, "embed">, model: st
   return explainModelError({ role, flavor: p.flavor, model, status: r.status === 200 ? 500 : r.status, body: r.status === 200 ? "الرد ليس بالشكل المتوقع" : r.body, timeout: r.timeout });
 }
 
+/**
+ * The longest input (characters) a model took in a probe of growing inputs, or undefined when it
+ * took the largest (no limit we'd reach). Never below the smallest step: the run-time halving
+ * handles a model that takes even less.
+ */
+function savedLimit(best: number): number | undefined {
+  if (best >= PROBE_SIZES[PROBE_SIZES.length - 1]!) return undefined;
+  return Math.max(best, Math.floor(PROBE_SIZES[0]! / 2));
+}
+
+async function decideLimit(p: Server, model: string, typed: boolean): Promise<number | undefined> {
+  const best = await probeLimit(async (text) => {
+    const r = typed
+      ? await call(p, "/systemone", { model, state: { text }, questions: { ok: { type: "noul", instructions: "هل هذا نص عربي؟" } } }, 60_000)
+      : await call(p, "/chat/completions", { model, messages: [{ role: "user", content: `${text}\n\nقل: نعم` }], max_tokens: 4, temperature: 0 }, 60_000);
+    return { ok: r.status === 200, tooLong: isTooLong(r.status, r.body) };
+  });
+  return savedLimit(best);
+}
+
 /** «جرّب واحفظ»: tries the model for the role, and saves it only if it worked. */
 export const tryRole = action({
   args: { role: roleV, providerId: v.string(), model: v.string() },
@@ -251,9 +272,12 @@ export const tryRole = action({
     const p = await ctx.runQuery(internal.providers.forCheck, { userId, providerId: providerId as Id<"aiProviders"> });
     const m = model.trim();
     if (!m) throw new OneBaseError("اختر نموذجاً");
-    const error = await tryModel(p, role, m, p.modelInfo.find((x) => x.id === m));
+    const info = p.modelInfo.find((x) => x.id === m);
+    const error = await tryModel(p, role, m, info);
     if (error) throw new OneBaseError(`لم ينجح التجريب: ${error}`);
-    await ctx.runMutation(internal.providers.saveTriedRole, { userId, role, providerId, model: m });
+    // The decision model gets files' text: how much one request may carry (lib/inputLimit.ts).
+    const maxInputChars = role === "decide" ? await decideLimit(p, m, (info?.kinds ?? []).includes("decide")) : undefined;
+    await ctx.runMutation(internal.providers.saveTriedRole, { userId, role, providerId, model: m, ...(maxInputChars ? { maxInputChars } : {}) });
     setAiOverrides(await ctx.runQuery(internal.providers.resolved, {}));
     return null;
   },
@@ -273,7 +297,7 @@ export const resolved = internalQuery({
       const c = roles[r];
       if (!c) continue;
       const p = await ctx.db.get(c.providerId);
-      if (p?.enabled) out[r] = { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey, provider: p.name };
+      if (p?.enabled) out[r] = { baseUrl: p.baseUrl, model: c.model, apiKey: p.apiKey, provider: p.name, ...(c.maxInputChars ? { maxInputChars: c.maxInputChars } : {}) };
     }
     return out;
   },
@@ -336,7 +360,7 @@ export const check = action({
 // ---------------------------------------------------------------- the embedding model
 
 export const saveEmbedRole = internalMutation({
-  args: { userId: v.id("users"), choice: v.union(v.null(), v.object({ providerId: v.id("aiProviders"), model: v.string(), sendDimensions: v.boolean(), queryPrefix: v.string(), docPrefix: v.string() })) },
+  args: { userId: v.id("users"), choice: v.union(v.null(), v.object({ providerId: v.id("aiProviders"), model: v.string(), sendDimensions: v.boolean(), queryPrefix: v.string(), docPrefix: v.string(), maxInputChars: v.optional(v.number()) })) },
   handler: async (ctx, { userId, choice }) => {
     const actor = await actorFor(ctx, userId);
     if (actor?.role !== "admin") throw new OneBaseError("هذا الإجراء لمدير مساحة العمل فقط");
@@ -387,7 +411,13 @@ export const setEmbedding = action({
       else throw new OneBaseError(`أبعاد هذا النموذج ${first.size}، والفهرس مبني على ${INDEX_DIMENSIONS}. اختر نموذجاً بأبعاد ${INDEX_DIMENSIONS} (أو يدعم تقليصها).`);
     } else if ("error" in first) throw new OneBaseError(`لم ينجح التجريب: ${first.error}`);
     const prefixes = /embeddinggemma/i.test(m) ? GEMMA_PREFIXES : { queryPrefix: "", docPrefix: "" };
-    const needsReindex = await ctx.runMutation(internal.providers.saveEmbedRole, { userId, choice: { providerId: id, model: m, sendDimensions, ...prefixes } });
+    // How long a text the server embeds in one go (lib/inputLimit.ts): chunks are cut to it.
+    const best = await probeLimit(async (text) => {
+      const r = await call({ baseUrl: p.baseUrl, apiKey: p.apiKey, flavor: p.flavor }, "/embeddings", { model: m, input: [prefixes.docPrefix.replace("{title}", "none") + text], ...(sendDimensions ? { dimensions: INDEX_DIMENSIONS } : {}) }, 60_000);
+      return { ok: r.status === 200 && Array.isArray(r.json?.data?.[0]?.embedding), tooLong: isTooLong(r.status, r.body) };
+    });
+    const maxInputChars = savedLimit(best);
+    const needsReindex = await ctx.runMutation(internal.providers.saveEmbedRole, { userId, choice: { providerId: id, model: m, sendDimensions, ...prefixes, ...(maxInputChars ? { maxInputChars } : {}) } });
     setAiOverrides(await ctx.runQuery(internal.providers.resolved, {}));
     return { needsReindex };
   },

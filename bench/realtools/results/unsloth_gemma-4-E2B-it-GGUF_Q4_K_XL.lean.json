@@ -1,0 +1,2424 @@
+{
+ "model": "unsloth/gemma-4-E2B-it-GGUF:Q4_K_XL",
+ "cond": "lean",
+ "summary": {
+  "runs": 117,
+  "errors": 0,
+  "ok": 73.5,
+  "right_tool": 70.5,
+  "no_call_when_needed": 29.5,
+  "abstain_right": 100.0,
+  "schema_valid": 100.0,
+  "args_right": 100.0,
+  "markup_leak": 0,
+  "prompt_tokens_avg": 5193,
+  "secs_avg": 1.33
+ },
+ "rows": [
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 0.8,
+   "prompt_tokens": 5061,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 0.82,
+   "prompt_tokens": 5061,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_1",
+   "group": "files",
+   "expect": [
+    "search_documents",
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 0.81,
+   "prompt_tokens": 5061,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 0.79,
+   "prompt_tokens": 5058,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 0.87,
+   "prompt_tokens": 5058,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_2",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 0.79,
+   "prompt_tokens": 5058,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 0.26,
+   "prompt_tokens": 5064,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 0.28,
+   "prompt_tokens": 5064,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "search_3",
+   "group": "files",
+   "expect": [
+    "search_documents"
+   ],
+   "cond": "lean",
+   "secs": 0.25,
+   "prompt_tokens": 5064,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 1.06,
+   "prompt_tokens": 5058,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 1.03,
+   "prompt_tokens": 5058,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_1",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 1.09,
+   "prompt_tokens": 5058,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k1z9y8x7w6v5t4s3r2q1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 0.59,
+   "prompt_tokens": 5059,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 0.57,
+   "prompt_tokens": 5059,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "read_2",
+   "group": "files",
+   "expect": [
+    "read_file"
+   ],
+   "cond": "lean",
+   "secs": 0.59,
+   "prompt_tokens": 5059,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_file",
+   "parsed": true,
+   "args": {
+    "fileId": "k19a2b3c4d5e6f7g8h9j",
+    "pages": "3-5"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 1.43,
+   "prompt_tokens": 5065,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "code": "import pandas as pd\n\n# Load the employees file\ndf = pd.read_excel(\"الموظفون.xlsx\")\n\n# Count employees in each department\ndepartment_counts = df['department'].value_counts()\n\nprint(\"عدد الموظفين في كل إدارة:\")\nprint(department_counts.to_markdown(numalign=\"left\", stralign=\"left\"))",
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 1.42,
+   "prompt_tokens": 5065,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "code": "import pandas as pd\n\n# Load the file\ndf = pd.read_excel(\"الموظفون.xlsx\")\n\n# Count employees in each department\ndepartment_counts = df['department'].value_counts()\n\nprint(\"عدد الموظفين في كل إدارة:\")\nprint(department_counts.to_markdown(numalign=\"left\", stralign=\"left\"))",
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_1",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 1.44,
+   "prompt_tokens": 5065,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "code": "import pandas as pd\n\n# Load the employees file\ndf = pd.read_excel(\"الموظفون.xlsx\")\n\n# Count employees in each department\ndepartment_counts = df['department'].value_counts().reset_index()\ndepartment_counts.columns = ['Department', 'Count']\n\nprint(department_counts.to_markdown(index=False))",
+    "fileIds": [
+     "k17d4m2q8x3n5p6r9s0t"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 3.87,
+   "prompt_tokens": 5070,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "code": "import pandas as pd\n\n# Load the file\ndf = pd.read_excel(\"Mشتريات 2026.xlsx\")\n\n# Assuming there is a 'Date' column and a 'Amount' column for calculation.\n# If the actual column names are different, this will need adjustment based on the file structure.\n# For this example, I will assume 'Date' and 'Amount' exist.\n# If the file structure is different, please provide the column names.\n\n# Convert 'Date' to datetime objects if it's not already\nif 'Date' in df.columns:\n    df['Date'] = pd.to_datetime(df['Date'])\nelse:\n    print(\"Error: 'Date' column not found in the file.\")\n    exit()\n\n# Extract month\ndf['Month'] = df['Date'].dt.to_period('M')\n\n# Calculate total spending per month\nmonthly_spending = df.groupby('Month')['Amount'].sum().reset_index()\nmonthly_spending.rename(columns={'Amount': 'Total Spending'}, inplace=True)\n\n# Convert Period to string for cleaner output if needed, or keep as Period object\nmonthly_spending['Month'] = monthly_spending['Month'].astype(str)\n\nprint(monthly_spending.to_markdown(index=False))",
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 3.42,
+   "prompt_tokens": 5070,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "code": "import pandas as pd\n\n# Load the file\ndf = pd.read_excel(\"Mشتريات 2026.xlsx\")\n\n# Assuming there is a 'Date' column and a 'Amount' column for calculation.\n# If the column names are different, this part will need adjustment based on the actual file structure.\n# For demonstration, let's assume 'Date' and 'Amount' exist.\ntry:\n    df['Date'] = pd.to_datetime(df['Date'])\n    df['Month'] = df['Date'].dt.to_period('M')\n    monthly_sales = df.groupby('Month')['Amount'].sum().reset_index()\n    monthly_sales['Month'] = monthly_sales['Month'].astype(str)\n    print(monthly_sales.to_markdown(index=False))\nexcept KeyError as e:\n    print(f\"Error: One of the expected columns ('Date' or 'Amount') was not found in the file. Please check the column names. Error: {e}\")\nexcept Exception as e:\n    print(f\"An unexpected error occurred: {e}\")",
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_2",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 3.65,
+   "prompt_tokens": 5070,
+   "text": "",
+   "n_calls": 1,
+   "tool": "run_analysis",
+   "parsed": true,
+   "args": {
+    "code": "import pandas as pd\n\n# Load the file\ndf = pd.read_excel(\"Mشتريات 2026.xlsx\")\n\n# Assuming there is a 'Date' column and a 'Amount' column for calculation.\n# Adjust column names if necessary based on the actual Excel structure.\n# For this example, I will assume columns named 'Date' and 'Amount'.\n# If the actual column names are different, this code will need adjustment.\ntry:\n    df['Date'] = pd.to_datetime(df['Date'])\n    df['Month'] = df['Date'].dt.to_period('M')\n    monthly_sales = df.groupby('Month')['Amount'].sum().reset_index()\n    monthly_sales['Month'] = monthly_sales['Month'].astype(str)\n    print(monthly_sales.to_markdown(index=False))\nexcept KeyError as e:\n    print(f\"Error: One of the expected columns ('Date' or 'Amount') was not found in the file. Please check the column names in 'Mشتريات 2026.xlsx'. Error details: {e}\")\nexcept Exception as e:\n    print(f\"An unexpected error occurred: {e}\")",
+    "fileIds": [
+     "k1m2n3p4q5r6s7t8v9w0"
+    ]
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 0.26,
+   "prompt_tokens": 5060,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 0.22,
+   "prompt_tokens": 5060,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "analysis_3",
+   "group": "analysis",
+   "expect": [
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 0.29,
+   "prompt_tokens": 5060,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 0.2,
+   "prompt_tokens": 5057,
+   "text": "/monthly-attendance",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 0.17,
+   "prompt_tokens": 5057,
+   "text": "/monthly-attendance",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_1",
+   "group": "skills",
+   "expect": [
+    "use_skill",
+    "run_analysis"
+   ],
+   "cond": "lean",
+   "secs": 0.14,
+   "prompt_tokens": 5057,
+   "text": "/monthly-attendance",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 0.32,
+   "prompt_tokens": 5068,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 0.31,
+   "prompt_tokens": 5068,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_2",
+   "group": "skills",
+   "expect": [
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 0.88,
+   "prompt_tokens": 5068,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "lean",
+   "secs": 7.82,
+   "prompt_tokens": 5457,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "مذكرة داخلية حول مواعيد الدوام في رمضان\n\n**إلى:** جميع الموظفين\n**من:** الإدارة\n**التاريخ:** [أدخل التاريخ]\n**الموضوع:** تنظيم مواعيد العمل خلال شهر رمضان المبارك\n\nتحية طيبة وبعد،\n\nإشارة إلى شهر رمضان المبارك، نود التذكير بضرورة التنسيق والتنظيم لضمان استمرارية سير العمل بكفاءة مع مراعاة الظروف الخاصة للموظفين.\n\n**1. مواعيد العمل المقترحة:**\n*   **المرونة في ساعات العمل:** سيتم اعتماد نظام مرن لساعات العمل خلال أيام العمل الرسمية، مع إتاحة الفرصة للموظفين للتنسيق مع رؤسائهم المباشرين لضمان تغطية المهام المطلوبة.\n*   **أوقات الصلاة:** سيتم تخصيص فترات راحة إضافية خلال أوقات الصلاة لضمان التزام الموظفين بعباداتهم.\n*   **العمل عن بعد (إذا كان مسموحاً):** سيتم تفعيل سياسة العمل عن بعد للموظفين الذين تتطلب طبيعة عملهم ذلك، وذلك وفقاً لسياسة العمل عن بعد المعتمدة [2].\n\n**2. التزامات الموظفين:**\n*   الالتزام بأوقات الحضور والانصراف المتفق عليها مع القسم.\n*   ضمان إنجاز المهام الموكلة إليه في الوقت المحدد، مع إعطاء الأولوية للمهام العاجلة.\n*   التواصل الفعال مع الزملاء والمدراء لتجنب أي تعارض في سير العمل.\n\n**3. ملاحظات هامة:**\n*   يجب على جميع الأقسام وضع جداول عمل خاصة بها تتوافق مع هذه التوجيهات.\n*   سيتم مراجعة هذه الترتيبات بشكل دوري لضمان تحقيق التوازن بين متطلبات العمل والظروف الروحانية.\n\nنأمل من الجميع التعاون والتفهم لضمان فترة رمضانية ميسرة ومنتجة للجميع.\n\nمع خالص التقدير،\nالإدارة",
+    "kind": "markdown",
+    "sources": [
+     {
+      "id": "k19a2b3c4d5e6f7g8h9j",
+      "type": "file"
+     }
+    ],
+    "title": "مذكرة داخلية عن مواعيد الدوام في رمضان"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "lean",
+   "secs": 3.29,
+   "prompt_tokens": 5457,
+   "text": "هل يمكنك تزويدي بالتفاصيل التي تريد تضمينها في المذكرة الداخلية؟ على سبيل المثال:\n\n1.  **ما هي مواعيد الدوام المحددة في رمضان؟** (مثل ساعات العمل، أو أي تعديلات أخرى).\n2.  **من هو الجمهور المستهدف للمذكرة؟** (جميع الموظفين، قسم معين، إلخ).\n3.  **ما هي النقاط الرئيسية التي يجب ذكرها؟** (مثل الإجازات،",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "artifact_md",
+   "group": "outputs",
+   "expect": [
+    "create_artifact"
+   ],
+   "cond": "lean",
+   "secs": 4.89,
+   "prompt_tokens": 5457,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "**مذكرة داخلية: مواعيد الدوام في شهر رمضان**\n\n**إلى:** جميع الموظفين\n**من:** الإدارة\n**التاريخ:** [أدخل التاريخ هنا]\n**الموضوع:** تنظيم مواعيد العمل خلال شهر رمضان المبارك\n\nتحية طيبة وبعد،\n\nتود الإدارة تذكير جميع الموظفين بضرورة الالتزام بالجدول الزمني المحدد للدوام خلال شهر رمضان المبارك، وذلك لضمان استمرارية سير العمل وتقديم أفضل خدمة للعملاء.\n\n**التعليمات:**\n\n1.  **مواعيد الدوام:** سيتم تحديد مواعيد الدوام الرسمية لشهر رمضان بناءً على التنسيق بين الإدارات، وسيتم إرسال الجدول الزمني التفصيلي لكل قسم في وقت لاحق.\n2.  **المرونة:** نأمل من الجميع إظهار المرونة والتعاون لضمان تغطية المهام الحرجة. سيتم النظر في أي طلبات استثناءات بناءً على الضرورة القصوى والموافقة المسبقة من المدير المباشر.\n3.  **التواصل:** يُرجى التواصل مع مدير القسم المختص للاستفسار عن الجدول الزمني الخاص بكم.\n\nنثمن تفهمكم وتعاونكم لضمان سير العمل بكفاءة خلال هذا الشهر الفضيل.\n\nمع خالص التقدير،\n\nالإدارة",
+    "kind": "markdown",
+    "title": "مذكرة داخلية: مواعيد الدوام في شهر رمضان"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 6.58,
+   "prompt_tokens": 5457,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: مقدمة - ما هو أمن المعلومات؟\n*   **التعريف:** حماية البيانات والمعلومات من الوصول غير المصرح به، الاستخدام غير المصرح به، الكشف، التعديل، الإفشاء، أو التدمير.\n*   **لماذا هو مهم؟** في بيئة العمل الحديثة، أصبحت البيانات هي الأصول الأكثر قيمة للشركة.\n\n## الشريحة 2: المخاطر التي تواجهنا\n*   **التهديدات الإلكترونية:**\n    *   البرمجيات الخبيثة والفيروسات.\n    *   هجمات التصيد الاحتيالي (Phishing).\n    *   محاولات الوصول غير المصرح به.\n*   **المخاطر البشرية:**\n    *   الخطأ البشري في مشاركة البيانات الحساسة.\n    *   ضعف كلمات المرور.\n\n## الشريحة 3: تأثير اختراق أمن المعلومات\n*   **على مستوى الشركة:**\n    *   خسائر مالية مباشرة (تكاليف الاستجابة، الغرامات).\n    *   فقدان السمعة والثقة من العملاء والشركاء.\n    *   تعطيل العمليات التشغيلية.\n*   **على مستوى الموظف:**\n    *   المساءلة القانونية والإدارية.\n    *   الإضرار بسمعة الموظف المهنية.\n\n## الشريحة 4: دور الموظف في الحماية (خط الدفاع الأول)\n*   **الوعي والمشاركة:**\n    *   التعرف على رسائل التصيد الاحتيالي.\n    *   عدم مشاركة بيانات الاعتماد (كلمات المرور).\n*   **الممارسات الآمنة:**\n    *   استخدام كلمات مرور قوية وتغييرها بانتظام.\n    *   تحديث البرامج والتطبيقات باستمرار.\n    *   الإبلاغ الفوري عن أي نشاط مشبوه.\n\n## الشريحة 5: ملخص وخلاصة\n*   **الرسالة الأساسية:** أمن المعلومات مسؤولية مشتركة.\n*   **الخلاصة:** الوعي + الإجراءات الصحيحة = بيئة عمل آمنة ومستدامة.\n*   **دعوة للعمل:** كن حارسًا لأمن معلوماتك وأمن شركتك.",
+    "kind": "slides",
+    "title": "عرض تقديمي: أهمية أمن المعلومات للموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 5.82,
+   "prompt_tokens": 5457,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: مقدمة - ما هو أمن المعلومات؟\n*   **التعريف:** حماية البيانات والمعلومات من الوصول غير المصرح به، الاستخدام غير المصرح به، الكشف، التعديل، الإفشاء، أو التدمير.\n*   **لماذا يهمنا؟** كل موظف هو خط الدفاع الأول عن أصول الشركة.\n\n## الشريحة 2: المخاطر التي نواجهها\n*   **التهديدات الإلكترونية:** التصيد الاحتيالي (Phishing)، البرمجيات الخبيثة (Malware).\n*   **الأخطاء البشرية:** النقر على روابط مشبوهة، مشاركة معلومات حساسة عبر قنوات غير آمنة.\n*   **التبعات:** فقدان البيانات، خسائر مالية، الإضرار بسمعة الشركة.\n\n## الشريحة 3: دورك كخط دفاع أول\n*   **الوعي هو المفتاح:** كن يقظاً تجاه الرسائل والروابط المشبوهة.\n*   **كلمات المرور القوية:** استخدم كلمات مرور فريدة ومعقدة ولا تشاركها أبداً.\n*   **التحديث المستمر:** تأكد دائماً من تحديث برامجك وأنظمة العمل.\n\n## الشريحة 4: سياسات وإجراءات أساسية\n*   **التعامل الآمن مع البيانات:** لا تحفظ معلومات حساسة على أجهزة شخصية غير مصرح بها.\n*   **الامتثال للسياسات:** الالتزام بسياسات استخدام تكنولوجيا المعلومات وأمن البيانات.\n*   **الإبلاغ الفوري:** أبلغ فوراً أي نشاط مشبوه أو محاولة اختراق لأمن المعلومات.\n\n## الشريحة 5: الخلاصة والدعوة للعمل\n*   **الخلاصة:** أمن المعلومات مسؤولية مشتركة تضمن استمرارية عملنا ونجاحنا.\n*   **دعوة للعمل:** كن واعياً، كن حذراً، وكن جزءاً من ثقافة أمنية قوية.\n*   **شكراً لكم.**",
+    "kind": "slides",
+    "title": "أهمية أمن المعلومات للموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_slides",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 7.36,
+   "prompt_tokens": 5457,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "# أهمية أمن المعلومات للموظفين\n\n## الشريحة 1: مقدمة - ما هو أمن المعلومات؟\n*   **التعريف:** حماية البيانات والمعلومات من الوصول غير المصرح به، الاستخدام غير المصرح به، الكشف، التعديل، الإفشاء، أو التدمير.\n*   **لماذا هو مهم؟** في عالمنا الرقمي، أصبحت البيانات هي الأصول الأكثر قيمة للشركات.\n\n## الشريحة 2: المخاطر التي نواجهها\n*   **التهديدات الإلكترونية:**\n    *   البرمجيات الخبيثة والفيروسات.\n    *   هجمات التصيد الاحتيالي (Phishing).\n    *   اختراق الحسابات الشخصية والعمل.\n*   **المخاطر البشرية:**\n    *   الخطأ البشري في مشاركة المعلومات الحساسة.\n    *   عدم الالتزام بسياسات الأمان.\n\n## الشريحة 3: تأثير اختراق أمن المعلومات\n*   **على مستوى الشركة:**\n    *   خسائر مالية مباشرة (غرامات، تكاليف استعادة النظام).\n    *   توقف العمليات التشغيلية.\n    *   تضرر السمعة والثقة مع العملاء.\n*   **على مستوى الموظف:**\n    *   المساءلة القانونية والإدارية.\n    *   الإضرار بسمعة الموظف المهنية.\n\n## الشريحة 4: دور الموظف في الحماية (خط الدفاع الأول)\n*   **الوعي والمشاركة:**\n    *   التعرف على رسائل التصيد الاحتيالي والشك فيها.\n    *   استخدام كلمات مرور قوية وتغييرها بانتظام.\n    *   عدم مشاركة بيانات الاعتماد (Credentials).\n*   **الالتزام بالسياسات:**\n    *   اتباع إجراءات التعامل الآمن مع البيانات.\n    *   الإبلاغ الفوري عن أي نشاط مشبوه.\n\n## الشريحة 5: الخلاصة والدعوة للعمل\n*   **الرسالة الأساسية:** أمن المعلومات مسؤولية مشتركة.\n*   **الخطوات التالية:**\n    1.  كن واعياً ومشككاً.\n    2.  التزم بالإجراءات الأمنية.\n    3.  شارك في بناء ثقافة أمنية قوية.\n*   **سؤال وجواب**",
+    "kind": "slides",
+    "title": "أهمية أمن المعلومات للموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 1.17,
+   "prompt_tokens": 5464,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "| اليوم | المسؤول المناوب |\n| :--- | :--- |\n| الأحد | أحمد |\n| الإثنين | سارة |\n| الثلاثاء | خالد |\n| الأربعاء | نورة |\n| الخميس | فهد |\n| الجمعة | أحمد |",
+    "kind": "table",
+    "title": "جدول المناوبات الأسبوعية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 1.17,
+   "prompt_tokens": 5464,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "| اليوم | المسؤول المناوب |\n| :--- | :--- |\n| الأحد | أحمد |\n| الإثنين | سارة |\n| الثلاثاء | خالد |\n| الأربعاء | نورة |\n| الخميس | فهد |\n| الجمعة | أحمد |",
+    "kind": "table",
+    "title": "جدول المناوبات الأسبوعية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "artifact_table",
+   "group": "outputs",
+   "expect": [
+    "create_artifact",
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 1.2,
+   "prompt_tokens": 5464,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_artifact",
+   "parsed": true,
+   "args": {
+    "content": "| اليوم | المسؤول المناوب |\n| :--- | :--- |\n| الأحد | أحمد |\n| الإثنين | سارة |\n| الثلاثاء | خالد |\n| الأربعاء | نورة |\n| الخميس | فهد |\n| الجمعة | أحمد |",
+    "kind": "table",
+    "title": "جدول المناوبات الأسبوعية"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "lean",
+   "secs": 1.66,
+   "prompt_tokens": 5073,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "content": "[محتوى تقرير الحضور الشهري الحالي]\n\n**توصيات:**\nتفعيل البصمة في الفرع.",
+    "note": "تم إضافة فقرة توصيات حول تفعيل البصمة في الفرع."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "lean",
+   "secs": 1.7,
+   "prompt_tokens": 5073,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "content": "[محتوى تقرير الحضور الشهري الحالي]\n**توصيات:**\n* تفعيل البصمة في الفرع",
+    "note": "تم إضافة فقرة توصيات جديدة حول تفعيل البصمة في الفرع."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "update_art",
+   "group": "outputs",
+   "expect": [
+    "update_artifact"
+   ],
+   "cond": "lean",
+   "secs": 1.15,
+   "prompt_tokens": 5073,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_artifact",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "content": "[محتوى تقرير الحضور الشهري الحالي]\n**توصيات:**\n* تفعيل البصمة في الفرع.",
+    "note": "تم إضافة فقرة توصيات جديدة حول تفعيل البصمة في الفرع."
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 0.55,
+   "prompt_tokens": 5054,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "format": "pdf"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 0.68,
+   "prompt_tokens": 5054,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "format": "pdf",
+    "title": "تقرير الحضور الشهري"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_1",
+   "group": "outputs",
+   "expect": [
+    "export_document"
+   ],
+   "cond": "lean",
+   "secs": 0.73,
+   "prompt_tokens": 5054,
+   "text": "",
+   "n_calls": 1,
+   "tool": "export_document",
+   "parsed": true,
+   "args": {
+    "artifactId": "a4t6y8u0i2o4p6a8s0d2",
+    "format": "pdf",
+    "title": "تقرير الحضور الشهري"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 0.32,
+   "prompt_tokens": 5456,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 0.31,
+   "prompt_tokens": 5456,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "export_2",
+   "group": "outputs",
+   "expect": [
+    "export_document",
+    "create_artifact",
+    "use_skill"
+   ],
+   "cond": "lean",
+   "secs": 0.34,
+   "prompt_tokens": 5456,
+   "text": "",
+   "n_calls": 1,
+   "tool": "use_skill",
+   "parsed": true,
+   "args": {
+    "name": "/formal-letter"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "lean",
+   "secs": 0.84,
+   "prompt_tokens": 5060,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "lean",
+   "secs": 0.82,
+   "prompt_tokens": 5060,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "publish_1",
+   "group": "outputs",
+   "expect": [
+    "publish_output"
+   ],
+   "cond": "lean",
+   "secs": 1.36,
+   "prompt_tokens": 5060,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 2.37,
+   "prompt_tokens": 5459,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ],
+    "description": "قائمة لمتابعة مهام نقل المكتب",
+    "title": "متابعة مهام نقل المكتب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 2.36,
+   "prompt_tokens": 5459,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ],
+    "description": "قائمة لمتابعة مهام نقل المكتب.",
+    "title": "متابعة مهام نقل المكتب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_create",
+   "group": "lists",
+   "expect": [
+    "create_list"
+   ],
+   "cond": "lean",
+   "secs": 1.8,
+   "prompt_tokens": 5459,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_list",
+   "parsed": true,
+   "args": {
+    "columns": [
+     {
+      "name": "المهمة",
+      "type": "text"
+     },
+     {
+      "name": "المسؤول",
+      "type": "person"
+     },
+     {
+      "name": "الموعد",
+      "type": "date"
+     },
+     {
+      "name": "الحالة",
+      "type": "status"
+     }
+    ],
+    "description": "قائمة لمتابعة مهام نقل المكتب",
+    "title": "متابعة مهام نقل المكتب"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 1.55,
+   "prompt_tokens": 5057,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 1.55,
+   "prompt_tokens": 5057,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_read",
+   "group": "lists",
+   "expect": [
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 1.51,
+   "prompt_tokens": 5057,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_list",
+   "parsed": true,
+   "args": {
+    "listId": "l3h5j7k9m2n4p6q8r0s1"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 1.27,
+   "prompt_tokens": 5062,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_list",
+   "parsed": true,
+   "args": {
+    "add": [
+     {
+      "employee_name": "منى السبيعي",
+      "status": "حاضرة"
+     }
+    ],
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 1.38,
+   "prompt_tokens": 5062,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_list",
+   "parsed": true,
+   "args": {
+    "add": [
+     {
+      "employee_id": "منى السبيعي",
+      "type": "string",
+      "value": "حاضرة"
+     }
+    ],
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "list_update",
+   "group": "lists",
+   "expect": [
+    "update_list",
+    "read_list"
+   ],
+   "cond": "lean",
+   "secs": 1.4,
+   "prompt_tokens": 5062,
+   "text": "",
+   "n_calls": 1,
+   "tool": "update_list",
+   "parsed": true,
+   "args": {
+    "add": [
+     {
+      "employee_id": "منى السبيعي",
+      "type": "text",
+      "value": "حاضرة"
+     }
+    ],
+    "listId": "l8g6f4d2s1a9z7x5c3v2"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "lean",
+   "secs": 0.28,
+   "prompt_tokens": 5054,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "lean",
+   "secs": 0.28,
+   "prompt_tokens": 5054,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "tasks_1",
+   "group": "lists",
+   "expect": [
+    "read_tasks"
+   ],
+   "cond": "lean",
+   "secs": 0.27,
+   "prompt_tokens": 5054,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_tasks",
+   "parsed": true,
+   "args": {
+    "includeDone": false
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "lean",
+   "secs": 0.23,
+   "prompt_tokens": 5057,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "lean",
+   "secs": 0.23,
+   "prompt_tokens": 5057,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_mine",
+   "group": "records",
+   "expect": [
+    "my_records"
+   ],
+   "cond": "lean",
+   "secs": 0.21,
+   "prompt_tokens": 5057,
+   "text": "",
+   "n_calls": 1,
+   "tool": "my_records",
+   "parsed": true,
+   "args": {},
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 0.37,
+   "prompt_tokens": 5065,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 0.35,
+   "prompt_tokens": 5065,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "records_q",
+   "group": "records",
+   "expect": [
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 0.36,
+   "prompt_tokens": 5065,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_records",
+   "parsed": true,
+   "args": {
+    "subjectRef": "44821"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 0.48,
+   "prompt_tokens": 5063,
+   "text": "",
+   "n_calls": 1,
+   "tool": "fill_template",
+   "parsed": true,
+   "args": {
+    "recordId": "r7k2m9",
+    "templateId": "شهادة حضور"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 0.46,
+   "prompt_tokens": 5063,
+   "text": "",
+   "n_calls": 1,
+   "tool": "fill_template",
+   "parsed": true,
+   "args": {
+    "recordId": "r7k2m9",
+    "templateId": "شهادة حضور"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "template_1",
+   "group": "records",
+   "expect": [
+    "fill_template",
+    "query_records"
+   ],
+   "cond": "lean",
+   "secs": 0.46,
+   "prompt_tokens": 5063,
+   "text": "",
+   "n_calls": 1,
+   "tool": "fill_template",
+   "parsed": true,
+   "args": {
+    "recordId": "r7k2m9",
+    "templateId": "شهادة حضور"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "lean",
+   "secs": 0.65,
+   "prompt_tokens": 5059,
+   "text": "",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t",
+    "name": "سجل الموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "lean",
+   "secs": 0.66,
+   "prompt_tokens": 5059,
+   "text": "",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t",
+    "name": "سجل الموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "recordset_1",
+   "group": "records",
+   "expect": [
+    "propose_record_set"
+   ],
+   "cond": "lean",
+   "secs": 0.62,
+   "prompt_tokens": 5059,
+   "text": "",
+   "n_calls": 1,
+   "tool": "propose_record_set",
+   "parsed": true,
+   "args": {
+    "fileId": "k17d4m2q8x3n5p6r9s0t",
+    "name": "سجل الموظفين"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 0.55,
+   "prompt_tokens": 5060,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT department, COUNT(id) FROM employees GROUP BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 0.52,
+   "prompt_tokens": 5060,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT department, COUNT(id) FROM employees GROUP BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_1",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 0.55,
+   "prompt_tokens": 5060,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT department, COUNT(id) FROM employees GROUP BY department"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 0.73,
+   "prompt_tokens": 5067,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT SUM(days) FROM leaves WHERE employee_id = 1203 AND YEAR(start_date) = YEAR(CURDATE());"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 0.74,
+   "prompt_tokens": 5067,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT SUM(days) FROM leaves WHERE employee_id = 1203 AND YEAR(start_date) = YEAR(CURDATE());"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "source_2",
+   "group": "source",
+   "expect": [
+    "query_source"
+   ],
+   "cond": "lean",
+   "secs": 0.74,
+   "prompt_tokens": 5067,
+   "text": "",
+   "n_calls": 1,
+   "tool": "query_source",
+   "parsed": true,
+   "args": {
+    "source": "نظام الموارد البشرية",
+    "sql": "SELECT SUM(days) FROM leaves WHERE employee_id = 1203 AND YEAR(start_date) = YEAR(CURDATE());"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "lean",
+   "secs": 0.94,
+   "prompt_tokens": 5453,
+   "text": "تم تذكيرك بأن تفضل التواريخ بالهجري دائماً.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "lean",
+   "secs": 0.91,
+   "prompt_tokens": 5453,
+   "text": "تم تذكيرك بأن تفضل استخدام التواريخ الهجرية دائماً.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "remember_1",
+   "group": "memory",
+   "expect": [
+    "remember"
+   ],
+   "cond": "lean",
+   "secs": 1.27,
+   "prompt_tokens": 5453,
+   "text": "سأقوم بتذكيرك بأن تفضل استخدام التواريخ الهجرية دائماً. هل تود أن أضيف هذه المعلومة إلى ذاكرتي للمساعدة في الردود المستقبلية؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "lean",
+   "secs": 1.57,
+   "prompt_tokens": 5451,
+   "text": "لأتمكن من إكمال الخطة، أحتاج إلى معرفة **ما هي الخطة التي تشير إليها** بالضبط.\n\nهل تقصد:\n\n1.  **خطة تدريب** (من ملف \"خطة التدريب.docx\")؟\n2.  **متابعة مشروع الأرشفة** (من القائمة الحية \"متابعة مشروع الأرشفة\")؟\n3.  **شيء آخر** تم العمل عليه في محادثات سابقة؟\n\nيرجى تزويدي بمزيد من التفاصيل حتى أتمكن من",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "lean",
+   "secs": 1.55,
+   "prompt_tokens": 5451,
+   "text": "لأتمكن من إكمال الخطة التي عملنا عليها المرة الماضية، أحتاج إلى بعض التوضيح.\n\nهل يمكنك تذكيري بـ:\n\n1. **ما هي الخطة التي تقصدها تحديداً؟** (هل هي خطة تدريب، خطة مشروع، خطة عمل، إلخ؟)\n2. **ما هو اسم هذه الخطة أو مرجعها؟** (هل هي موجودة في ملفاتك أو في قائمة حية؟)\n\nبمجرد تزويدي بهذه التفاصيل، سأتمكن م",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "recall_1",
+   "group": "memory",
+   "expect": [
+    "recall",
+    "read_chat"
+   ],
+   "cond": "lean",
+   "secs": 2.39,
+   "prompt_tokens": 5451,
+   "text": "لأتمكن من إكمال الخطة التي عملنا عليها المرة الماضية، أحتاج إلى بعض التوضيح.\n\nهل يمكنك تذكيري بـ:\n\n1. **ما هي الخطة التي تقصدها بالضبط؟** (هل هي خطة تدريب، خطة مشروع، خطة عمل، إلخ؟)\n2. **ما هو اسم هذه الخطة أو ما هو الهدف منها؟**\n3. **هل يمكنك تزويدي بأي معلومات سابقة عنها** (مثل اسم الملف أو رقم ال",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "lean",
+   "secs": 0.8,
+   "prompt_tokens": 5062,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "lean",
+   "secs": 0.87,
+   "prompt_tokens": 5062,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "readchat_1",
+   "group": "memory",
+   "expect": [
+    "read_chat",
+    "recall"
+   ],
+   "cond": "lean",
+   "secs": 0.27,
+   "prompt_tokens": 5062,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "lean",
+   "secs": 1.79,
+   "prompt_tokens": 5471,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "description": "صياغة خطاب رسمي يتضمن مقدمة رسمية، شكر محدد، وخاتمة بالدعاء.",
+    "instructions": "1. ابدأ بمقدمة رسمية مناسبة للجهة المرسل إليها.\n2. اكتب جزء الشكر بوضوح وتحديد للمناسبة أو الفعل الذي تشكر عليه.\n3. اختتم الخطاب بدعاء لطيف ومناسب للسياق.\n4. استخدم لغة عربية فصحى ومهذبة طوال الخطاب.",
+    "name": "thank-you-letter",
+    "title": "صياغة خطاب شكر رسمي"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "lean",
+   "secs": 1.67,
+   "prompt_tokens": 5471,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "description": "صياغة خطاب رسمي يتضمن مقدمة رسمية، شكر محدد، وخاتمة بالدعاء.",
+    "instructions": "1. ابدأ بمقدمة رسمية مناسبة للجهة المرسل إليها.\n2. اكتب جزء الشكر بوضوح ومحدد للمناسبة أو الفعل الذي تشكره عليه.\n3. اختتم الخطاب بدعاء صادق ومناسب للسياق.\n4. استخدم لغة عربية فصحى ورسمية.",
+    "name": "thank-you-letter",
+    "title": "Thank-You Letter Template"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "skill_save",
+   "group": "skills",
+   "expect": [
+    "create_skill"
+   ],
+   "cond": "lean",
+   "secs": 1.6,
+   "prompt_tokens": 5471,
+   "text": "",
+   "n_calls": 1,
+   "tool": "create_skill",
+   "parsed": true,
+   "args": {
+    "description": "صياغة خطاب رسمي يتضمن مقدمة رسمية، شكر محدد، وخاتمة بالدعاء.",
+    "instructions": "1. ابدأ بمقدمة رسمية مناسبة للجهة الموجه إليها الخطاب.\n2. اكتب جزء الشكر بوضوح وتحديد لما يتم شكره عليه.\n3. اختتم الخطاب بدعاء مناسب ومهذب.\n4. استخدم لغة عربية فصحى ورسمية.",
+    "name": "thank-you-letter",
+    "title": "Thank-You Letter Template"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "lean",
+   "secs": 0.5,
+   "prompt_tokens": 5463,
+   "text": "",
+   "n_calls": 1,
+   "tool": "write_app",
+   "parsed": true,
+   "args": {
+    "data": {},
+    "files": {},
+    "title": "اختبار السلامة المهنية القصير"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "lean",
+   "secs": 0.46,
+   "prompt_tokens": 5463,
+   "text": "",
+   "n_calls": 1,
+   "tool": "write_app",
+   "parsed": true,
+   "args": {
+    "data": {},
+    "files": {},
+    "title": "اختبار السلامة المهنية القصير"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_new",
+   "group": "apps",
+   "expect": [
+    "create_list",
+    "write_app"
+   ],
+   "cond": "lean",
+   "secs": 0.4,
+   "prompt_tokens": 5463,
+   "text": "",
+   "n_calls": 1,
+   "tool": "write_app",
+   "parsed": true,
+   "args": {
+    "data": {},
+    "title": "اختبار السلامة المهنية القصير"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 1.54,
+   "prompt_tokens": 5058,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 1.54,
+   "prompt_tokens": 5058,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_read",
+   "group": "apps",
+   "expect": [
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 1.5,
+   "prompt_tokens": 5058,
+   "text": "",
+   "n_calls": 1,
+   "tool": "read_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 1.06,
+   "prompt_tokens": 5062,
+   "text": "",
+   "n_calls": 1,
+   "tool": "test_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 1.03,
+   "prompt_tokens": 5062,
+   "text": "",
+   "n_calls": 1,
+   "tool": "test_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "app_test",
+   "group": "apps",
+   "expect": [
+    "test_app",
+    "read_app"
+   ],
+   "cond": "lean",
+   "secs": 1.06,
+   "prompt_tokens": 5062,
+   "text": "",
+   "n_calls": 1,
+   "tool": "test_app",
+   "parsed": true,
+   "args": {
+    "appId": "p2k4m6n8b0v2c4x6z8l0"
+   },
+   "right_tool": true,
+   "schema_errors": [],
+   "check_errors": [],
+   "ok": true
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "lean",
+   "secs": 0.81,
+   "prompt_tokens": 5058,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "lean",
+   "secs": 0.81,
+   "prompt_tokens": 5058,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "notify_1",
+   "group": "team",
+   "expect": [
+    "notify_colleague"
+   ],
+   "cond": "lean",
+   "secs": 0.82,
+   "prompt_tokens": 5058,
+   "text": "لم أجد هذا في المستندات المتاحة لك.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": false,
+   "ok": false
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 0.71,
+   "prompt_tokens": 5456,
+   "text": "Thank you for your cooperation.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 0.78,
+   "prompt_tokens": 5456,
+   "text": "Thank you for your cooperation.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_1",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 0.85,
+   "prompt_tokens": 5456,
+   "text": "Thank you for your cooperation.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 3.47,
+   "prompt_tokens": 5457,
+   "text": "إليك بعض الخيارات لرسالة اعتذار قصيرة، يمكنك اختيار الأنسب حسب درجة رسمية علاقتك بزميلك:\n\n**الخيار 1: ودي وغير رسمي (مناسب لزملاء العمل المقربين)**\n\n> مرحباً [اسم الزميل]، أعتذر بشدة عن التأخير في الرد. كنت مشغولاً قليلاً. أتمنى أن تكون بخير!\n\n**الخيار 2: احترافي ومختصر (مناسب لمعظم المواقف)**\n\n> عز",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 2.94,
+   "prompt_tokens": 5457,
+   "text": "إليك بعض الخيارات لرسالة اعتذار قصيرة، يمكنك اختيار الأنسب حسب علاقتك بالزميل:\n\n**الخيار 1: (رسمي ومهذب)**\n\n> \"عزيزي [اسم الزميل]، أعتذر بشدة عن تأخري في الرد عليك. كان لدي بعض الأمور الطارئة. شكراً لتفهمك.\"\n\n**الخيار 2: (ودّي وغير رسمي)**\n\n> \"مرحباً [اسم الزميل]، آسف جداً على التأخير في الرد. كنت م",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_2",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 2.95,
+   "prompt_tokens": 5457,
+   "text": "إليك بعض الخيارات لرسالة اعتذار قصيرة، اختر الأنسب حسب علاقتك بزميلك:\n\n**الخيار 1: رسمي ومهذب**\n\n> \"عزيزي [اسم الزميل]، أعتذر بشدة عن تأخري في الرد. كان لدي بعض الأمور الطارئة. شكراً لتفهمك.\"\n\n**الخيار 2: ودي وغير رسمي**\n\n> \"مرحباً [اسم الزميل]، آسف جداً على التأخير في الرد. كنت مشغولاً قليلاً. كيف ",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 0.35,
+   "prompt_tokens": 5443,
+   "text": "على الرحب والسعة! هل هناك أي شيء آخر يمكنني مساعدتك به اليوم؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 0.36,
+   "prompt_tokens": 5443,
+   "text": "على الرحب والسعة! هل هناك أي شيء آخر يمكنني مساعدتك به اليوم؟",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_3",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 0.51,
+   "prompt_tokens": 5443,
+   "text": "على الرحب والسعة! إذا كان لديك أي أسئلة أخرى أو تحتاج إلى مساعدة في أي شيء، فلا تتردد في الطلب.",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 4.06,
+   "prompt_tokens": 5452,
+   "text": "بشكل عام، يختلف مفهوم الإجازة الاضطرارية عن الإجازة المرضية بناءً على سبب الغياب ونوع الإثبات المطلوب.\n\nإليك الفروقات الأساسية:\n\n*   **الإجازة المرضية:**\n    *   **السبب:** تكون بسبب وعكة صحية أو مرض فعلي يمنع الموظف من أداء عمله.\n    *   **الإثبات:** تتطلب عادةً تقديم تقرير طبي أو شهادة طبية من جهة",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 2.85,
+   "prompt_tokens": 5452,
+   "text": "بشكل عام، يختلف مفهوم الإجازة الاضطرارية عن الإجازة المرضية بناءً على سبب الغياب:\n\n*   **الإجازة المرضية:** تُمنح للموظف عندما يكون غير قادر على الحضور للعمل بسبب **مرض** أو إصابة تتطلب الراحة والعلاج. عادةً ما تتطلب هذه الإجازة تقديم إثبات طبي (تقرير طبي) من جهة مختصة.\n*   **الإجازة الاضطرارية:** ت",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  },
+  {
+   "id": "none_4",
+   "group": "none",
+   "expect": [],
+   "cond": "lean",
+   "secs": 4.89,
+   "prompt_tokens": 5452,
+   "text": "بشكل عام، يختلف الفرق بين الإجازة الاضطرارية والإجازة المرضية في طبيعة السبب والأساس القانوني والتغطية التأمينية.\n\nإليك ملخص عام:\n\n### 1. الإجازة المرضية (Sick Leave)\n*   **السبب:** تكون بسبب وعكة صحية أو مرض فعلي (جسدي أو نفسي) يتطلب الراحة والعلاج.\n*   **الأساس:** تستند إلى حالة طبية موثقة (مثل تق",
+   "n_calls": 0,
+   "tool": null,
+   "leak": false,
+   "right_tool": true,
+   "ok": true
+  }
+ ]
+}

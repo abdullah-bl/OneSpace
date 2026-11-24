@@ -63,7 +63,8 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
   const hasTasks = space.kind === "shared" && ["manager", "member", "reader"].includes(space.myRole);
   const shared = space.kind === "shared";
   const tabs: Tab[] = [
-    { id: "overview", label: "المحادثات", show: true },
+    // My own space has no chats of its own (they're all in «المحادثات»): its first tab is its home.
+    { id: "overview", label: space.kind === "personal" ? "الرئيسية" : "المحادثات", show: true },
     { id: "files", label: "الملفات", show: true },
     { id: "tasks", label: "المهام", show: hasTasks },
     { id: "lists", label: "القوائم", show: true },
@@ -100,7 +101,7 @@ export function SpaceView({ space, spaces, tab, go }: { space: SpaceInfo; spaces
         </div>
         {current !== "overview" && (
           <button className="btn-primary" onClick={() => startChatWith({ spaceId: space._id })}>
-            <Icon name="plus" /> محادثة في المساحة
+            <Icon name="plus" /> {space.kind === "personal" ? "محادثة جديدة" : "محادثة في المساحة"}
           </button>
         )}
       </header>
@@ -189,8 +190,22 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           </div>
         )}
 
+        {space.kind === "personal" && (
+          <p className="mt-6 flex items-start gap-2 text-sm leading-6 text-muted">
+            <Icon name="chat" size={15} className="mt-1 shrink-0" />
+            <span>
+              ما تسأله من هنا يبدأ محادثة عادية تبحث في «مساحتي» فقط، وتقدر تزيل «مساحتي» من صندوق الكتابة لتبحث في كل مساحاتك. تجد محادثاتك كلها في{" "}
+              <a href="#/chats" className="text-primary hover:underline">
+                المحادثات
+              </a>
+              .
+            </span>
+          </p>
+        )}
+        {(space.kind === "shared" || !!threads?.length) && (
+        <>
         <div className="mt-8 flex items-baseline gap-2">
-          <h2 className="section-title">محادثاتك هنا</h2>
+          <h2 className="section-title">{space.kind === "personal" ? "محادثات سابقة في هذه المساحة" : "محادثاتك هنا"}</h2>
           {threads && <span className="meta num">{threads.length}</span>}
           <span className="meta ms-auto inline-flex items-center gap-1">
             {space.kind === "shared" ? (
@@ -233,6 +248,8 @@ function Overview({ space, hasTasks, go }: { space: SpaceInfo; hasTasks: boolean
           <button className="btn-ghost mt-2 text-sm text-muted" onClick={() => setAllChats(!allChats)}>
             {allChats ? "أقل" : `عرض الكل (${threads.length})`}
           </button>
+        )}
+        </>
         )}
       </section>
 
@@ -380,10 +397,12 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
   const files = useQuery(api.files.list, { spaceId: space._id as any });
   const ingest = useQuery(api.ingest.statuses, { spaceId: space._id as any });
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
-  const create = useMutation(api.files.create);
+  const upload = useMutation(api.files.upload);
   const uploadVersion = useMutation(api.files.uploadVersion);
+  const [notice, setNotice] = useState("");
   const requestDownload = useMutation(api.files.requestDownload);
   const remove = useMutation(api.files.remove);
+  const removeDuplicates = useMutation(api.files.removeDuplicates);
   const [busy, setBusy] = useState("");
   const [error, setError] = useState("");
   const [transfer, setTransfer] = useState<{ fileId: string; name: string } | null>(null);
@@ -419,6 +438,27 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
             رفع ملفات
           </button>
           {busy && <span className="text-xs text-muted">جارٍ التنفيذ…</span>}
+          {(() => {
+            // Copies of a file already here (same content): one button removes them, keeping the first.
+            const dups = (files ?? []).filter((f: any) => f.duplicateOf).length;
+            return dups > 0 ? (
+              <button
+                className="btn-secondary ms-auto"
+                disabled={!!busy}
+                onClick={() =>
+                  void ask(`حذف ${dups === 1 ? "نسخة مكررة واحدة" : dups === 2 ? "نسختين مكررتين" : `${dups} نسخ مكررة`}؟`, {
+                    danger: true,
+                    confirmLabel: "احذف المكرر",
+                    detail: "يبقى أول ملف رُفع من كل محتوى، وتُحذف النسخ المطابقة له تماماً. لا يمكن التراجع.",
+                  }).then((ok) => {
+                    if (ok) void run("dedupe", async () => setNotice(`حُذفت ${await removeDuplicates({ spaceId: space._id as any })} نسخة مكررة`));
+                  })
+                }
+              >
+                احذف النسخ المكررة ({dups})
+              </button>
+            ) : null;
+          })()}
           <input
             ref={input}
             type="file"
@@ -427,11 +467,22 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
             onChange={(e) => {
               const list = [...(e.target.files ?? [])];
               e.target.value = "";
+              setNotice("");
               void run("upload", async () => {
+                const told: string[] = [];
                 for (const file of list) {
                   const storageId = await uploadBytes(() => generateUploadUrl({}), file);
-                  await create({ storageId: storageId as any, name: file.name, spaceId: space._id as any });
+                  // Same name, maybe new content: a new version keeps one file in the list (the old one stays in its history).
+                  const named = (files ?? []).find((f: any) => f.name === file.name);
+                  if (named && (await ask(`يوجد في المساحة ملف باسم «${file.name}». تحفظه نسخة جديدة منه؟`, { confirmLabel: "نسخة جديدة", detail: "النسخة السابقة تبقى في سجل نسخ الملف. اختر «إلغاء» لتضيفه ملفاً منفصلاً." }))) {
+                    const r = await uploadVersion({ fileId: named._id as any, storageId: storageId as any });
+                    if (r === named.version) told.push(`«${file.name}» لم يتغيّر عن نسخته الحالية`);
+                    continue;
+                  }
+                  const r = await upload({ storageId: storageId as any, name: file.name, spaceId: space._id as any });
+                  if (r.reused) told.push(r.name === file.name ? `«${file.name}» موجود في المساحة، فلم يُرفع مرة ثانية` : `«${file.name}» موجود في المساحة باسم «${r.name}»، فلم يُرفع مرة ثانية`);
                 }
+                setNotice(told.join("، "));
               });
             }}
           />
@@ -453,6 +504,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
         </div>
       )}
       {error && <p className="rounded-lg bg-negative-soft p-2 text-sm text-negative">{error}</p>}
+      {notice && <p className="rounded-lg bg-sunken p-2 text-sm text-muted" role="status">{notice}.</p>}
       {/* No overflow-hidden: each row's ⋯ menu must be able to open past the card. */}
       <div className="card">
         <table className="w-full">
@@ -503,7 +555,7 @@ function FilesPanel({ space, spaces }: { space: SpaceInfo; spaces: SpaceInfo[] }
 }
 
 function FileRow(props: {
-  f: { _id: string; name: string; size: number; version: number; updatedAt: number; uploadedByName: string | null; mime: string };
+  f: { _id: string; name: string; size: number; version: number; updatedAt: number; uploadedByName: string | null; mime: string; duplicateOf?: string | null };
   ingest?: { state: string; label: string; error: string | null; note: string | null; ocr: boolean; steering?: string | null };
   space: SpaceInfo;
   showVersions: boolean;
@@ -540,6 +592,11 @@ function FileRow(props: {
               </button>
               <div className="mt-0.5 flex flex-wrap items-center gap-1.5 text-xs text-muted">
                 <IngestBadge fileId={f._id} ingest={props.ingest} canWrite={space.canWrite} />
+                {f.duplicateOf && (
+                  <span className="badge-warning" title={`نفس محتوى «${f.duplicateOf}» بالضبط`}>
+                    مكرر
+                  </span>
+                )}
                 {f.version > 1 && (
                   <button className="badge hover:bg-active" onClick={props.onToggleVersions} title="النسخ السابقة">
                     النسخة {f.version}

@@ -5,6 +5,8 @@ type Args = {
   artifactId: string;
   content?: string;
   table?: { columns: string[]; rows: (string | number | boolean | null)[][] };
+  renameColumns?: Record<string, string>;
+  removeColumns?: string[];
   title?: string;
   note?: string;
   sources?: { type: "file" | "recordSet" | "artifact"; id: string }[];
@@ -14,8 +16,15 @@ type Args = {
 export const update_artifact: AppTool<Args> = {
   name: "update_artifact",
   label: "يحدّث المخرج…",
-  description: "Save a new version of an existing output (same kind). Give the full new content, or `table` for tables. Previous versions are kept.",
+  description:
+    "Save a new version of an existing output (same kind). Give the full new content, or `table` for tables (all rows, not only the changed ones). " +
+    "To rename or drop table columns, send only renameColumns ({old: new}) and/or removeColumns — the rows are kept. Previous versions are kept.",
   requiresConfirmation: true,
+  // Seven calls in a row with only artifactId and a note (gov demo, 2026-11-24): turned back here, with the ways out.
+  checkArgs: (a) =>
+    a?.table || (typeof a?.content === "string" && a.content.trim()) || (a?.renameColumns && Object.keys(a.renameColumns).length) || a?.removeColumns?.length
+      ? null
+      : "لم يصل المحتوى الجديد: لجدول أرسل table كاملاً {columns, rows} بكل الصفوف، أو renameColumns / removeColumns فقط لتسمية عمود أو حذفه؛ ولغير الجدول أرسل content كاملاً",
   edits: (args) => (args?.artifactId ? String(args.artifactId) : null),
   parameters: {
     type: "object",
@@ -33,6 +42,8 @@ export const update_artifact: AppTool<Args> = {
           rows: { type: "array", items: { type: "array", items: { type: ["string", "number", "boolean", "null"] } } },
         },
       },
+      renameColumns: { type: "object", additionalProperties: { type: "string" }, description: "Table only: {current column name: new name}." },
+      removeColumns: { type: "array", items: { type: "string" }, description: "Table only: column names to drop." },
       title: { type: "string", maxLength: 200 },
       note: { type: "string", maxLength: 500, description: "What changed." },
       sources: {
@@ -48,6 +59,7 @@ export const update_artifact: AppTool<Args> = {
       scopeSpaceIds: t.scopeSpaceIds,
       artifactId: String(args.artifactId ?? ""),
       content: args.table ?? args.content ?? "",
+      ...(args.renameColumns || args.removeColumns ? { tableEdit: { ...(args.renameColumns ? { renameColumns: Object.fromEntries(Object.entries(args.renameColumns).map(([k, v]) => [k, String(v)])) } : {}), ...(Array.isArray(args.removeColumns) ? { removeColumns: args.removeColumns.map(String) } : {}) } } : {}),
       title: args.title,
       note: args.note,
       sources,

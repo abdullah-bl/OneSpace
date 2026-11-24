@@ -10,7 +10,7 @@
 
 import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
-import { ArtifactDock, OutputChip } from "./ArtifactPanel";
+import { ArtifactDock, GoneChip, OutputChip, OutputGone } from "./ArtifactPanel";
 import { leaveUnsaved } from "./unsaved";
 import { Menu, Popover, PopoverItem, ask, askText, tell } from "./ui";
 import { openSkillDraft } from "./SkillsView";
@@ -18,6 +18,8 @@ import { Icon, type IconName } from "./icons";
 import { api, errorText, uploadBytes, type SpaceInfo } from "./lib";
 import { CITE_CHECK, renderAnswer } from "./markdown";
 import { SummaryDivider, type ChatSummaryInfo } from "./ChatSummary";
+import { HomeCards } from "./HomeCards";
+import { TaskStart, taskDrafts, type TaskInfo } from "./TaskStart";
 import { HandoffLine, TeamMessage, type TeamTo } from "./TeamMessage";
 
 export type Scope = { kind: "all" | "space" | "file"; id?: string; label?: string };
@@ -105,7 +107,7 @@ function useStarters(spaceId: string | undefined): Starter[] {
 /** How many more messages «عرض رسائل أقدم» brings. */
 const OLDER_STEP = 500;
 
-export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string | null; spaceId?: string | null; spaces: SpaceInfo[]; go: (path: string) => void }) {
+export function ChatScreen({ threadId, spaceId, mentionSpace, spaces, go }: { threadId: string | null; spaceId?: string | null; mentionSpace?: SpaceInfo; spaces: SpaceInfo[]; go: (path: string) => void }) {
   // plans/18: a long chat opens on its newest messages. Asking for older ones is a new query, so
   // the messages already on screen stay until it answers.
   const [limit, setLimit] = useState<number | null>(null);
@@ -122,6 +124,10 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   const [draft] = useState(() => {
     const d = !threadId ? pendingDraft : null;
     pendingDraft = null;
+    // A new chat from my own space: the general chat, starting narrowed to it (the chip can be removed).
+    if (!threadId && mentionSpace && !d?.mentions.some((m) => m.kind === "file" || (m.kind === "space" && m.id === mentionSpace._id))) {
+      return { ...(d ?? {}), mentions: [{ kind: "space" as const, id: mentionSpace._id, name: mentionSpace.kind === "personal" ? "مساحتي" : mentionSpace.name }, ...(d?.mentions ?? [])] };
+    }
     return d;
   });
   const [draftAgent, setDraftAgent] = useState<string | null>(null);
@@ -200,6 +206,11 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
   };
 
   const empty = !threadId;
+  // A task's chat before its first question: the task on top, a request from it in the box (plans: «اعمل عليها مع المساعد»).
+  const [picked, setPicked] = useState(0);
+  const taskInfo = (data as { task?: TaskInfo | null } | undefined)?.task;
+  const startTask = !!threadId && !!taskInfo && "body" in taskInfo && messages.length === 0 && !turn ? (taskInfo as TaskInfo) : null;
+  const taskDraft = startTask ? taskDrafts(startTask)[picked] : undefined;
   const me = useQuery(api.account.me, empty ? {} : "skip");
   const title = empty ? (space ? `محادثة جديدة في ${space.kind === "personal" ? "مساحتي" : space.name}` : me === undefined ? "\u00a0" : greeting(me?.name)) : (data?.title ?? "…");
 
@@ -298,6 +309,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             )}
             {/* The summary reaches only older messages than these: its line opens the list. */}
             {threadId && data?.summary && !messages.some((m) => m.id === data.summary!.afterId) && <SummaryDivider threadId={threadId} summary={data.summary as ChatSummaryInfo} canWrite={!!data.canWrite} />}
+            {startTask && <TaskStart task={startTask} picked={picked} onPick={setPicked} />}
             {messages.map((m) => (
               <Fragment key={m.id}>
                 <MessageView m={m} canWrite={data?.canWrite ?? true} busy={working} isLast={m.id === lastAssistant && !working} onRetry={() => threadId && retry({ threadId }).catch((e) => setError(errorText(e)))} onReask={(id) => threadId && setAgent({ threadId, agentId: id as any }).then(() => retry({ threadId })).catch((e) => setError(errorText(e)))} onOpenArtifact={openArtifact} />
@@ -306,6 +318,8 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
             ))}
             {turn && threadId && <TurnStatus threadId={threadId} turn={turn} onRetry={() => retry({ threadId }).catch((e) => setError(errorText(e)))} />}
             {empty && <Composer key="new" spaces={spaces} space={space} agentId={agentId} onAgent={changeAgent} effort={effort} onEffort={setEffort} working={false} onSubmit={submit} initial={draft} starters go={go} shared={!!canShareNew && newShared} />}
+            {/* The home screen: what's waiting and what I worked on, under the question box. */}
+            {empty && !space && !mentionSpace && <HomeCards onOpenArtifact={openArtifact} />}
           </div>
         </div>
         {!empty && (
@@ -317,7 +331,7 @@ export function ChatScreen({ threadId, spaceId, spaces, go }: { threadId: string
                   <Icon name="eye" size={15} /> دورك في المساحة قارئ: تقرأ المحادثة ولا تسأل فيها.
                 </p>
               ) : (
-              <Composer key={threadId} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} shared={!!data?.shared} />
+              <Composer key={taskDraft ? `${threadId}:task:${picked}` : threadId} initial={taskDraft ? { mentions: [], text: taskDraft.text } : undefined} spaces={spaces} space={space} agentId={agentId} onAgent={data?.test ? undefined : changeAgent} effort={effort} onEffort={setEffort} working={working} onStop={() => threadId && void stopTurn({ threadId }).catch((e) => setError(errorText(e)))} onSubmit={submit} shared={!!data?.shared} context={data?.context} newChatHref={data?.spaceId ? `#/space/${data.spaceId}/new` : "#/new"} />
               )}
             </div>
           </div>
@@ -445,6 +459,10 @@ function Composer(props: {
   starters?: boolean;
   shared?: boolean; // a shared space chat (plans/14): its members read it, so @person links to it
   go?: (path: string) => void;
+  /** How full the answering model's context was on the last answer (chat:messages). */
+  context?: { used: number; limit: number } | null;
+  /** Where «محادثة جديدة» goes from the context meter. */
+  newChatHref?: string;
 }) {
   // Mentioned files and spaces live in the chips above the text, not in the text itself.
   const [text, setText] = useState(props.initial?.text ?? "");
@@ -470,7 +488,8 @@ function Composer(props: {
   const ta = useRef<HTMLTextAreaElement>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
-  const createFile = useMutation(api.files.create);
+  const uploadFile = useMutation(api.files.upload);
+  const [uploadNote, setUploadNote] = useState("");
   const personal = props.spaces.find((s) => s.kind === "personal");
   const uploadTarget = props.space?.canWrite ? props.space : personal;
   const ingest = useQuery(api.ingest.statuses, uploads.length && uploadTarget ? { spaceId: uploadTarget._id as any } : "skip");
@@ -580,12 +599,17 @@ function Composer(props: {
   const attach = async (files: File[]) => {
     if (!uploadTarget) return;
     setUploadError("");
+    setUploadNote("");
     for (const file of files) {
       try {
         const storageId = await uploadBytes(() => generateUploadUrl({}), file);
-        const fileId = (await createFile({ storageId: storageId as any, name: file.name, spaceId: uploadTarget._id as any })) as string;
-        const m: Mention = { kind: "file", id: fileId, name: file.name, spaceId: uploadTarget._id };
-        setUploads((u) => [...u, { fileId, spaceId: uploadTarget._id, name: file.name }]);
+        // The same file already in that space is attached as it is: not stored or indexed again.
+        const r = await uploadFile({ storageId: storageId as any, name: file.name, spaceId: uploadTarget._id as any });
+        const fileId = r.fileId as string;
+        if (r.reused) setUploadNote(`«${r.name}» موجود في ${uploadTarget.kind === "personal" ? "مساحتي" : `«${uploadTarget.name}»`}، فأُرفق الموجود ولم يُرفع مرة ثانية.`);
+        if (mentions.some((m) => m.kind === "file" && m.id === fileId)) continue;
+        const m: Mention = { kind: "file", id: fileId, name: r.name, spaceId: uploadTarget._id };
+        if (!r.reused) setUploads((u) => [...u, { fileId, spaceId: uploadTarget._id, name: file.name }]);
         setMentions((ms) => [...ms, m]);
       } catch (err) {
         setUploadError(errorText(err));
@@ -765,6 +789,7 @@ function Composer(props: {
           {/* The agent is chosen per question; a picker shows only on a chat pinned to one (to unpin it). */}
           {props.onAgent && props.agentId && <AgentPicker value={props.agentId} onChange={props.onAgent} />}
           <span className="ms-auto text-xs text-muted">{pending.length ? "ينتظر تجهيز الملف…" : left !== null && left <= 10 ? (left > 0 ? `باقي ${left} من أسئلة اليوم` : `بلغت حدّ اليوم في مستوى «${level!.name}»`) : ""}</span>
+          {props.context && <ContextMeter used={props.context.used} limit={props.context.limit} newChatHref={props.newChatHref} />}
           {props.working && props.onStop ? (
             <button className="btn-secondary w-9 animate-pop rounded-lg px-0" aria-label="إيقاف" title="إيقاف الإجابة" onClick={props.onStop}>
               <Icon name="stop" size={16} />
@@ -777,6 +802,7 @@ function Composer(props: {
         </div>
       </div>
       {uploadError && <p className="mt-2 text-sm text-negative">{uploadError}</p>}
+      {uploadNote && <p className="mt-2 text-sm text-muted" role="status">{uploadNote}</p>}
       {props.starters && <Starters spaceId={props.space?._id} onPick={(s) => {
         if (s.threadId) return props.go?.(`/chat/${s.threadId}`);
         const t = s.text ?? "";
@@ -831,6 +857,37 @@ const EFFORTS: { value: Effort; label: string; hint: string }[] = [
   { value: "fast", label: "سريع", hint: "يجيب مباشرة دون تفكير مسبق" },
   { value: "deep", label: "تفكير عميق", hint: "يفكّر قبل كل إجابة: أدق للتحليل والمقارنة، وأبطأ" },
 ];
+/**
+ * How full the assistant's working memory was on the last answer. Hidden while there's room (under
+ * half): an employee needs it only when it changes what they should do. Older messages are
+ * summarised on their own, so it never blocks; near the top it suggests a new chat, because the
+ * summary keeps the gist, not every detail.
+ */
+function ContextMeter({ used, limit, newChatHref }: { used: number; limit: number; newChatHref?: string }) {
+  const pct = Math.min(100, Math.round((used / limit) * 100));
+  if (pct < 50) return null;
+  const high = pct >= 80;
+  const r = 7;
+  const c = 2 * Math.PI * r;
+  const tip = high
+    ? `امتلأت ذاكرة المساعد بنسبة ${pct}٪ في آخر رد. يواصل المساعد ويلخّص الأقدم تلقائياً، لكن الملخص يحفظ الفكرة لا كل التفاصيل. لإجابات أدق في موضوع جديد ابدأ محادثة جديدة.`
+    : `امتلأت ذاكرة المساعد بنسبة ${pct}٪ في آخر رد. يلخّص الأقدم تلقائياً حين تمتلئ.`;
+  return (
+    <span className={`flex items-center gap-1.5 text-xs ${high ? "text-warning" : "text-muted"}`} title={tip} role="status" aria-label={tip}>
+      <svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true" className="-rotate-90">
+        <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeOpacity="0.2" strokeWidth="2" />
+        <circle cx="9" cy="9" r={r} fill="none" stroke="currentColor" strokeWidth="2" strokeDasharray={c} strokeDashoffset={c * (1 - pct / 100)} strokeLinecap="round" />
+      </svg>
+      <span className="num">{pct}٪</span>
+      {high && newChatHref && (
+        <a className="rounded px-1.5 py-0.5 hover:bg-warning-soft" href={newChatHref}>
+          محادثة جديدة
+        </a>
+      )}
+    </span>
+  );
+}
+
 function savedEffort(): Effort {
   try {
     const v = localStorage.getItem("onespace.effort");
@@ -1016,9 +1073,13 @@ function MessageView({ m, isLast, canWrite, busy, onRetry, onReask, onOpenArtifa
       />
       {m.proposals?.length > 0 && (
         <div className="space-y-2">
-          {m.proposals.map((p) => (
-            <ProposalCard key={p.id} p={p} onOpenArtifact={onOpenArtifact} />
-          ))}
+          {/* What waits on the person keeps its own card and buttons; what already ran is one card. */}
+          {m.proposals
+            .filter((p) => p.state === "pending" || p.state === "running")
+            .map((p) => (
+              <ProposalCard key={p.id} p={p} onOpenArtifact={onOpenArtifact} />
+            ))}
+          <DoneActions ps={m.proposals.filter((p) => p.state !== "pending" && p.state !== "running")} onOpenArtifact={onOpenArtifact} />
         </div>
       )}
       {showSources && (
@@ -1184,6 +1245,23 @@ function proposalSummary(p: Proposal): string[] {
     out.push("تذهب لمدير المساحة ليعتمدها ويصدرها.");
     return out;
   }
+  if (p.tool === "update_list") {
+    if (Array.isArray(a.addColumns) && a.addColumns.length) out.push(`أعمدة جديدة: ${a.addColumns.map((c: any) => c?.name).filter(Boolean).join("، ")}`);
+    if (Array.isArray(a.add) && a.add.length) out.push(`صفوف جديدة: ${a.add.length}`);
+    if (Array.isArray(a.update) && a.update.length) out.push(`صفوف تتغيّر: ${a.update.length}`);
+    if (Array.isArray(a.remove) && a.remove.length) out.push(`صفوف تُحذف: ${a.remove.length}`);
+    return out;
+  }
+  if (p.tool === "update_artifact") {
+    const ren = a.renameColumns && typeof a.renameColumns === "object" ? Object.entries(a.renameColumns) : [];
+    if (ren.length) out.push(...ren.map(([f, t]) => `«${f}» ← «${t}»`));
+    if (Array.isArray(a.removeColumns) && a.removeColumns.length) out.push(`يُحذف عمود: ${a.removeColumns.join("، ")}`);
+  }
+  if (p.tool === "create_task" || p.tool === "update_task") {
+    const sm = a.summary;
+    if (sm?.error) return [`تعذّر: ${sm.error}`];
+    return Array.isArray(sm?.lines) ? sm.lines.filter((l: string) => !l.startsWith("المهمة:")) : out;
+  }
   if (p.tool === "write_app") {
     const files = a.files && typeof a.files === "object" ? Object.keys(a.files) : [];
     if (files.length) out.push(`الملفات: ${files.join("، ")}`);
@@ -1233,7 +1311,7 @@ const Ltr = ({ children }: { children: ReactNode }) => (
   </bdi>
 );
 
-const ACTION_VIEW: Record<string, { icon: IconName; title: (a: any) => ReactNode; effect?: (a: any) => ReactNode; confirm: string; shown?: string[] }> = {
+const ACTION_VIEW: Record<string, { icon: IconName; title: (a: any) => ReactNode; effect?: (a: any) => ReactNode; confirm: string; shown?: string[]; labels?: Record<string, string> }> = {
   create_skill: {
     icon: "bulb",
     title: (a) => <>مهارة جديدة: {a.title || a.name}</>,
@@ -1258,6 +1336,8 @@ const ACTION_VIEW: Record<string, { icon: IconName; title: (a: any) => ReactNode
   propose_record_set: { icon: "table", title: (a) => `سجل جديد من ملف${a.name ? `: ${a.name}` : ""}`, effect: () => "يُنشأ السجل بكل أعمدة الملف ويُستورد الملف نسخةً أولى. يُعدَّل لاحقاً من تبويب «السجلات».", confirm: "أنشئ السجل" },
   run_analysis: { icon: "code", title: () => "تشغيل تحليل", effect: () => "يعمل الكود في بيئة معزولة على الملفات المذكورة فقط.", confirm: "شغّل" },
   publish_output: { icon: "globe", title: (a) => `نشر صفحة${a.title ? `: ${a.title}` : ""}`, confirm: "انشر", shown: ["title"] },
+  create_task: { icon: "tasks", title: (a) => `مهمة جديدة${a.title ? `: ${a.title}` : ""}`, effect: () => "تُنشأ في المساحة ويصل المسؤولين إشعار بها.", confirm: "أنشئ المهمة", shown: ["title"], labels: { description: "الوصف" } },
+  update_task: { icon: "tasks", title: (a) => `تحديث مهمة${a.summary?.title ? `: ${a.summary.title}` : ""}`, effect: () => "يصل المعنيين بالمهمة إشعار بالتغيير.", confirm: "حدّث المهمة", shown: ["comment"] },
 };
 
 /** Field names as the person reads them; ids and internal fields are left to «البيانات الخام». */
@@ -1268,15 +1348,17 @@ const ARG_LABEL: Record<string, string> = {
   instructions: "التعليمات",
   text: "النص",
   content: "المحتوى",
+  comment: "التعليق",
   code: "الكود",
   note: "ملاحظة",
 };
 const HIDDEN_ARG = /(^|_)(id|ids)$|Id$|Ids$|^scope$|^kind$|^runIds$/;
 
 /** The readable preview of an action: short fields inline, long text rendered and folded. */
-function ActionArgs({ args, skip = [] }: { args: any; skip?: string[] }) {
+function ActionArgs({ args, skip = [], labels }: { args: any; skip?: string[]; labels?: Record<string, string> }) {
   const [raw, setRaw] = useState(false);
-  const fields = Object.entries(args ?? {}).filter(([k, v]) => ARG_LABEL[k] && !skip.includes(k) && typeof v === "string" && v.trim() && !HIDDEN_ARG.test(k)) as [string, string][];
+  const label = (k: string) => labels?.[k] ?? ARG_LABEL[k];
+  const fields = Object.entries(args ?? {}).filter(([k, v]) => label(k) && !skip.includes(k) && typeof v === "string" && v.trim() && !HIDDEN_ARG.test(k)) as [string, string][];
   const short = fields.filter(([k, v]) => v.length <= 160 && !v.includes("\n") && k !== "code");
   const long = fields.filter((f) => !short.includes(f));
   return (
@@ -1285,7 +1367,7 @@ function ActionArgs({ args, skip = [] }: { args: any; skip?: string[] }) {
         <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
           {short.map(([k, v]) => (
             <Fragment key={k}>
-              <dt className="text-muted">{ARG_LABEL[k]}</dt>
+              <dt className="text-muted">{label(k)}</dt>
               <dd className="text-ink" dir="auto">
                 {/^[\x20-\x7e]+$/.test(v) ? <Ltr>{v}</Ltr> : v}
               </dd>
@@ -1295,7 +1377,7 @@ function ActionArgs({ args, skip = [] }: { args: any; skip?: string[] }) {
       )}
       {long.map(([k, v]) => (
         <div key={k}>
-          <p className="mb-1 text-xs text-muted">{ARG_LABEL[k]}</p>
+          <p className="mb-1 text-xs text-muted">{label(k)}</p>
           {k === "code" ? (
             <pre className="max-h-64 overflow-auto rounded-md bg-sunken p-3 font-mono text-[11px] leading-5" dir="ltr">
               {v}
@@ -1387,12 +1469,12 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
       </div>
       {open && (
         <div className="px-3 pb-1">
-          <ActionArgs args={p.args} skip={view?.shown} />
+          <ActionArgs args={p.args} skip={view?.shown} labels={view?.labels} />
         </div>
       )}
       <div className="px-3 pb-3">
         {p.state === "executed" && p.display ? (
-          <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/list\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
+          <p className="mt-1 text-sm text-ink">{p.display.replace(/\s*#\/(list|tasks)\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "")}</p>
         ) : p.result &&
           (p.state === "executed" ? (
             <details className="mt-1 text-xs text-muted">
@@ -1428,6 +1510,11 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
             <OutputChip key={id} artifactId={id} onOpen={onOpenArtifact} />
           ))}
           {p.state === "executed" && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />}
+          {p.state === "executed" && /#\/tasks\/\w+$/.test(p.display ?? "") && (
+            <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/tasks\/\w+$/)![0]}>
+              <Icon name="tasks" size={14} /> افتح المهمة
+            </a>
+          )}
           {p.state === "executed" && /#\/list\/\w+$/.test(p.display ?? "") && (
             <a className="btn-secondary h-8" href={(p.display ?? "").match(/#\/list\/\w+$/)![0]}>
               <Icon name="table" size={14} /> افتح القائمة
@@ -1438,6 +1525,195 @@ function ProposalCard({ p, onOpenArtifact }: { p: Proposal; onOpenArtifact: (id:
         {kept.length > 0 && <p className="mt-1 text-xs text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
       </div>
     </div>
+  );
+}
+
+/**
+ * Everything one answer already did, as one card: a row per kind of action (three analysis runs are
+ * one row «×3»), each with its result line, its links and «تراجع». The details (what was sent, the
+ * output) open per row. A single action is the same card with one row.
+ */
+function DoneActions({ ps, onOpenArtifact }: { ps: Proposal[]; onOpenArtifact: (id: string) => void }) {
+  const undo = useMutation(api.chat.undo);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [kept, setKept] = useState<string[]>([]);
+  if (!ps.length) return null;
+  // Same tool and same state: one row, in the order they first ran.
+  const rows: Proposal[][] = [];
+  for (const p of ps) {
+    const hit = rows.find((r) => r[0]!.tool === p.tool && r[0]!.state === p.state);
+    if (hit) hit.push(p);
+    else rows.push([p]);
+  }
+  const undoable = (p: Proposal) => p.auto && p.state === "executed" && p.mine !== false;
+  const undoAll = async (items: Proposal[]) => {
+    setBusy(true);
+    setError("");
+    try {
+      const k: string[] = [];
+      // Newest first, so a later change is taken back before the one it built on.
+      for (const p of [...items].reverse()) k.push(...((await undo({ proposalId: p.id })) as { kept: string[] }).kept);
+      setKept(k);
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const all = ps.filter(undoable);
+  const auto = ps.every((p) => p.auto);
+  return (
+    <div className="rounded-lg border border-line bg-surface text-sm">
+      {rows.length > 1 && (
+        <div className="flex items-center gap-2 border-b border-rule px-3 py-2 text-xs text-muted">
+          <Icon name="check" size={14} className="text-positive" />
+          <span>
+            {auto ? "نفّذ المساعد" : "نُفّذ"} {ps.length} {ps.length === 1 ? "إجراء" : ps.length === 2 ? "إجراءين" : "إجراءات"}
+            {auto && ps.some((p) => p.tool !== "notify_colleague") ? " في مساحتك الخاصة" : ""}
+          </span>
+          {all.length > 1 && (
+            <button className="btn-ghost ms-auto h-7 px-2 text-xs" disabled={busy} onClick={() => void undoAll(all)}>
+              <Icon name="undo" size={13} /> تراجع عن الكل
+            </button>
+          )}
+        </div>
+      )}
+      <ul className="divide-y divide-rule">
+        {rows.map((items) => (
+          <DoneRow key={items[0]!.id} items={items} single={rows.length === 1} busy={busy} onUndo={() => void undoAll(items.filter(undoable))} onOpenArtifact={onOpenArtifact} />
+        ))}
+      </ul>
+      {(error || kept.length > 0) && (
+        <div className="border-t border-rule px-3 py-2 text-xs">
+          {error && <p className="text-negative">{error}</p>}
+          {kept.length > 0 && <p className="text-muted">بقي ما نُقل خارج مساحتك منذ ذلك: {kept.join("، ")}</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DoneRow({ items, single, busy, onUndo, onOpenArtifact }: { items: Proposal[]; single: boolean; busy: boolean; onUndo: () => void; onOpenArtifact: (id: string) => void }) {
+  const [open, setOpen] = useState(false);
+  const p = items[items.length - 1]!;
+  const view = ACTION_VIEW[p.tool];
+  const title = view?.title(p.args ?? {}) ?? p.label.replace(/…$/, "");
+  const ok = p.state === "executed";
+  const st = PROPOSAL_STATE[p.state] ?? { label: p.state, tone: "" };
+  const clean = (d: string) => d.replace(/\s*#\/(list|tasks)\/\w+$/, "").replace(/\s*https?:\/\/\S+\/p\/[\w-]+$/, "");
+  // One line under the title: what happened. Repeated runs say how many; the details hold each one.
+  const line = items.length > 1 ? (p.tool === "run_analysis" ? `${items.length} تشغيلات على ${filesAr(new Set(items.flatMap((x) => x.args?.fileIds ?? [])).size || 1)}` : "") : p.display ? clean(p.display) : "";
+  const lists = [...new Set(items.map((x) => (x.display ?? "").match(/#\/list\/\w+$/)?.[0]).filter(Boolean))] as string[];
+  const taskLinks = [...new Set(items.map((x) => (x.display ?? "").match(/#\/tasks\/\w+$/)?.[0]).filter(Boolean))] as string[];
+  const outputs = [...new Set(items.flatMap((x) => x.artifactIds))];
+  const canUndo = items.some((x) => x.auto && x.state === "executed" && x.mine !== false);
+  return (
+    <li>
+      <div className="flex items-start gap-3 px-3 py-2.5">
+        <span className={`mt-0.5 grid h-7 w-7 shrink-0 place-items-center rounded-md ${ok ? "bg-raised text-muted" : "bg-negative-soft text-negative"}`}>
+          <Icon name={view?.icon ?? "play"} size={15} />
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5">
+            <span className="font-medium" dir="auto">
+              {title}
+            </span>
+            {items.length > 1 && <span className="num rounded bg-raised px-1.5 text-xs text-muted">×{items.length}</span>}
+            {!ok && <span className={`rounded px-1.5 py-0.5 text-xs ${st.tone}`}>{st.label}</span>}
+            {single && ok && p.auto && <span className="meta">نُفّذ تلقائياً{p.tool === "notify_colleague" ? "" : " في مساحتك الخاصة"}</span>}
+          </div>
+          {line && (
+            <p className="mt-0.5 text-xs text-muted" dir="auto">
+              {line}
+            </p>
+          )}
+          {(lists.length > 0 || outputs.length > 0 || taskLinks.length > 0) && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              {outputs.map((id) => (
+                <OutputLink key={id} artifactId={id} onOpen={onOpenArtifact} />
+              ))}
+              {taskLinks.map((href) => (
+                <a key={href} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line px-2 text-xs hover:bg-sunken" href={href}>
+                  <Icon name="tasks" size={13} /> افتح المهمة
+                </a>
+              ))}
+              {lists.map((href) => (
+                <a key={href} className="inline-flex h-7 items-center gap-1.5 rounded-md border border-line px-2 text-xs hover:bg-sunken" href={href}>
+                  <Icon name="table" size={13} /> افتح القائمة
+                </a>
+              ))}
+            </div>
+          )}
+          {ok && p.tool === "publish_output" && /\/p\/[\w-]+/.test(p.display ?? "") && (
+            <div className="mt-1.5 flex flex-wrap gap-1.5">
+              <PublishedLinks url={(p.display ?? "").match(/https?:\/\/\S+\/p\/[\w-]+/)?.[0] ?? ""} listId={p.args?.form?.listId} />
+            </div>
+          )}
+        </div>
+        <div className="flex shrink-0 items-center gap-0.5">
+          {canUndo && (
+            <button className="btn-ghost h-7 px-2 text-xs" disabled={busy} onClick={onUndo} title={items.length > 1 ? "يتراجع عن كل ما في هذا السطر" : undefined}>
+              <Icon name="undo" size={13} /> تراجع
+            </button>
+          )}
+          <button className="btn-ghost h-7 w-7 justify-center px-0" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? "أخفِ التفاصيل" : "التفاصيل"} title={open ? "أخفِ التفاصيل" : "التفاصيل"}>
+            <Icon name={open ? "up" : "down"} size={14} />
+          </button>
+        </div>
+      </div>
+      {open && (
+        <div className="space-y-3 px-3 pb-3 ps-[3.25rem]">
+          {items.map((x, i) => (
+            <div key={x.id} className={items.length > 1 ? "rounded-md border border-rule p-2" : ""}>
+              {items.length > 1 && <p className="text-xs font-medium text-muted num">#{i + 1}{x.display ? ` · ${clean(x.display)}` : ""}</p>}
+              {proposalSummary(x)
+                .filter((l) => !l.startsWith("العنوان:") && !l.startsWith("المخرج:"))
+                .map((l) => (
+                  <p key={l} className="text-xs text-muted">
+                    {l}
+                  </p>
+                ))}
+              <ActionArgs args={x.args} skip={view?.shown} labels={view?.labels} />
+              {x.result && (
+                <details className="mt-2 text-xs text-muted">
+                  <summary className="cursor-pointer">الناتج</summary>
+                  <pre className="mt-1 max-h-72 overflow-auto rounded bg-raised p-2 font-mono text-[11px] leading-5" dir="ltr">
+                    {x.result}
+                  </pre>
+                </details>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** «ملف واحد / ملفين / 3 ملفات / 11 ملفاً»: the count with the noun Arabic gives it. */
+function filesAr(n: number) {
+  return n === 1 ? "ملف واحد" : n === 2 ? "ملفين" : n <= 10 ? `${n} ملفات` : `${n} ملفاً`;
+}
+
+/** A small link to an output, for rows (the full chip is for cards). */
+function OutputLink(props: { artifactId: string; onOpen: (id: string) => void }) {
+  return (
+    <OutputGone key={props.artifactId} fallback={<GoneChip small />}>
+      <OutputLinkInner {...props} />
+    </OutputGone>
+  );
+}
+
+function OutputLinkInner({ artifactId, onOpen }: { artifactId: string; onOpen: (id: string) => void }) {
+  const meta = useQuery(api.artifacts.versions, { artifactId: artifactId as any });
+  const a = meta?.artifact;
+  return (
+    <button className="inline-flex h-7 max-w-full items-center gap-1.5 rounded-md border border-line px-2 text-xs hover:bg-sunken" onClick={() => onOpen(artifactId)}>
+      <Icon name="file" size={13} />
+      <span className="truncate">{a?.title ?? "المخرج"}</span>
+      {a && <span className="num text-faint">· النسخة {a.currentVersion}</span>}
+    </button>
   );
 }
 
