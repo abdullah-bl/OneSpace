@@ -1,3 +1,4 @@
+import { useEffect, useState } from "react";
 import { anyApi } from "onebase/browser";
 import type { api as Api } from "../onebase/_generated/api";
 
@@ -59,4 +60,35 @@ export function formatDate(ms: number) {
 export function errorText(err: unknown) {
   const m = err instanceof Error ? err.message : String(err);
   return m.replace(/^.*Uncaught (OneBaseError: )?/, "").replace(/^\[.*?\]\s*/, "");
+}
+
+/** How this server lets people sign in (GET /api/auth/methods), fetched once per page load. */
+export type SignInMethods = { password: boolean; signUp: boolean; sso: { id: string; name: string } | null };
+let methodsPromise: Promise<SignInMethods> | null = null;
+export function loadSignInMethods(): Promise<SignInMethods> {
+  methodsPromise ??= fetch("/api/auth/methods")
+    .then((r) => r.json())
+    .then((body: { methods?: { id: string; kind: string; name: string; signUp?: boolean }[] }) => {
+      const list = body.methods ?? [];
+      const pw = list.find((m) => m.kind === "password");
+      const sso = list.find((m) => m.kind === "oauth");
+      return { password: !!pw, signUp: !!pw && pw.signUp !== false, sso: sso ? { id: sso.id, name: sso.name } : null };
+    })
+    .catch(() => {
+      methodsPromise = null;
+      return { password: true, signUp: false, sso: null };
+    });
+  return methodsPromise;
+}
+
+export function useSignInMethods(): SignInMethods | undefined {
+  const [m, setM] = useState<SignInMethods>();
+  useEffect(() => {
+    let live = true;
+    void loadSignInMethods().then((v) => live && setM(v));
+    return () => {
+      live = false;
+    };
+  }, []);
+  return m;
 }

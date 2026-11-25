@@ -78,6 +78,8 @@ export async function buildFixture(s: Server): Promise<Fixture> {
   must(await s.call("mutation", "tasks:remove", { taskId: dead }, tokens.mgr));
   tasks.P_mem = dead; // tasks can't live in a personal space: every call with this id must be denied
   must(await s.call("mutation", "admin:disable", { userId: ids.dis }, admin));
+  // Disabling ends dis's sessions; sign in again so the tests check a disabled account that holds a valid session.
+  tokens.dis = (await s.auth("signIn", emails.dis!, PW)).token;
   return { s, tokens, ids, spaces, files, tasks, emails };
 }
 

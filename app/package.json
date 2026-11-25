@@ -28,7 +28,7 @@
     "exceljs": "4.4.0",
     "jszip": "3.10.2",
     "marked": "15.0.12",
-    "onebase": "github:abdullah-bl/onebase#86728bac05d82dafd0393cc9cae237be48e9e233",
+    "onebase": "github:abdullah-bl/onebase#cc089456b43bf425fbb17508b9a89bb785fb5360",
     "onebase-components": "github:abdullah-bl/onebase-components#469185b3066afd51452a7a555f1324cf60060158",
     "pdf-lib": "1.17.1",
     "react": "19.3.1",

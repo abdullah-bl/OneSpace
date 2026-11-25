@@ -19,6 +19,7 @@ import { DECISIONS_COVERED } from "./decisions.coverage";
 import { SHARED_CHATS_COVERED } from "./shared-chats.coverage";
 import { LONGCHAT_COVERED } from "./longchat.coverage";
 import { STAFF_FILE_COVERED } from "./staff-file.coverage";
+import { ACCOUNTS_COVERED } from "./accounts.coverage";
 import { ACTORS, addFile, buildFixture, expectedAllowed, SPACES, type ActorKey, type Fixture, type Need, type SpaceKey } from "./fixture";
 
 let s: Server;
@@ -253,7 +254,7 @@ describe("permission matrix", () => {
 });
 
 describe("workspace-level functions", () => {
-  const ADMIN_ONLY: [string, "query" | "mutation", () => any][] = [
+  const ADMIN_ONLY: [string, "query" | "mutation" | "action", () => any][] = [
     ["admin:users", "query", () => ({})],
     ["admin:spaces", "query", () => ({})],
     ["admin:activate", "mutation", () => ({ userId: f.ids.tmp })],
@@ -262,6 +263,8 @@ describe("workspace-level functions", () => {
     ["admin:setSpaceManager", "mutation", () => ({ spaceId: f.spaces.S_plain, userId: f.ids.mgr })],
     ["admin:updateSpace", "mutation", () => ({ spaceId: f.spaces.S_plain, name: "لجنة-المشتريات-QX71" })],
     ["admin:disable", "mutation", () => ({ userId: f.ids.dis })],
+    ["admin:addAccount", "mutation", () => ({ email: `matrix-${crypto.randomUUID()}@onespace.test`, name: "حساب-اختبار" })],
+    ["passwords:issue", "action", () => ({ userId: f.ids.tmp })],
     ["audit:list", "query", () => ({})],
   ];
   for (const [fn, kind, args] of ADMIN_ONLY) {
@@ -343,6 +346,7 @@ describe("workspace-level functions", () => {
       ...MEMORY_COVERED, // checked in memory.test.ts
       ...LISTS_COVERED, // checked in lists.test.ts
       ...STAFF_FILE_COVERED, // checked in staff-file.test.ts
+      ...ACCOUNTS_COVERED, // checked in accounts.test.ts
       ...PUBLICATIONS_COVERED, // checked in publications.test.ts
       ...APPS_COVERED, // checked in apps.test.ts
       ...PLATFORM_COVERED, // checked in platform.test.ts

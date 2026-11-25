@@ -18,7 +18,7 @@
         "exceljs": "4.4.0",
         "jszip": "3.10.2",
         "marked": "15.0.12",
-        "onebase": "github:abdullah-bl/onebase#86728bac05d82dafd0393cc9cae237be48e9e233",
+        "onebase": "github:abdullah-bl/onebase#cc089456b43bf425fbb17508b9a89bb785fb5360",
         "onebase-components": "github:abdullah-bl/onebase-components#469185b3066afd51452a7a555f1324cf60060158",
         "pdf-lib": "1.17.1",
         "react": "19.3.1",
@@ -536,7 +536,7 @@
 
     "once": ["once@1.4.0", "", { "dependencies": { "wrappy": "1" } }, "sha512-lNaJgI+2Q5URQBkccEKHTQOPaXdUxnZZElQTZY0MFUAuaEqe1E+Nyvgdz/aIyNi6Z9MzO5dv1H8n58/GELp3+w=="],
 
-    "onebase": ["onebase@github:abdullah-bl/onebase#86728ba", { "dependencies": { "@libsql/client": "^0.18.0" }, "peerDependencies": { "react": ">=18", "typescript": "^7" }, "optionalPeers": ["react"], "bin": { "onebase": "./src/cli.ts" } }, "abdullah-bl-onebase-86728ba", "sha512-0/L4eYXFYyu/PnGTNERdjW9n/7BilfVq8QMuLpa3j+zmMEpqGWGA4Dd/YqJ2vloxZLiasnsvlJYVSD5OhgE5Rw=="],
+    "onebase": ["onebase@github:abdullah-bl/onebase#cc08945", { "dependencies": { "@libsql/client": "^0.18.0" }, "peerDependencies": { "react": ">=18", "typescript": "^7" }, "optionalPeers": ["react"], "bin": { "onebase": "./src/cli.ts" } }, "abdullah-bl-onebase-cc08945", "sha512-eMc9L3rxC6aJk4TpO06hXOnVx9W9PEe9fty5wF5iuyw7TEzYE6xjYAuYVDmy0iRFnivAU7p3KxHexUxSYKL2Vw=="],
 
     "onebase-components": ["onebase-components@github:abdullah-bl/onebase-components#469185b", {}, "abdullah-bl-onebase-components-469185b", "sha512-GmueZ/JSE2Oz9M+ITLsBL5ROfc3ix0bRNWaWuFua/d3zdl+ElazKLxeEjmV7Qx1Pmyvxnedlm5IVwA5BQiPglw=="],
 

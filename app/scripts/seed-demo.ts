@@ -1,6 +1,7 @@
 // Demo data for trying OneSpace locally: three accounts, a shared department space and an
 // "everyone" policies space. Passwords are random and written to app/.demo-users.md (gitignored),
 // never printed. Run against a fresh server: ONESPACE_URL defaults to http://127.0.0.1:8090.
+// The accounts sign up, so start that server with SELF_SIGNUP=on (sign-up is closed by default).
 //   bun scripts/seed-demo.ts
 
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -36,7 +37,7 @@ async function signUp(u: (typeof users)[number]) {
     body: JSON.stringify({ provider: "password", params: { flow: "signUp", email: u.email, password: u.password, name: u.name } }),
   });
   const body: any = await res.json();
-  if (!body.token) throw new Error(`signUp ${u.email}: ${JSON.stringify(body)}`);
+  if (!body.token) throw new Error(`signUp ${u.email}: ${JSON.stringify(body)}${res.status === 403 ? " (start the server with SELF_SIGNUP=on)" : ""}`);
   u.token = body.token;
   u.userId = body.userId;
 }

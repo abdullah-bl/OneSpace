@@ -1,5 +1,6 @@
 // Step 1 of the government demo: accounts, the workspace, shared spaces and memberships, on a FRESH
 // server. Passwords are random and written to app/.gov-demo-users.md (gitignored), never printed.
+// The personas sign up, so start that server with SELF_SIGNUP=on (sign-up is closed by default).
 //   ONESPACE_URL=http://127.0.0.1:8091 bun scripts/gov-demo/seed.ts
 // Then each domain script under scripts/gov-demo/spaces/ fills its space(s).
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
@@ -22,7 +23,7 @@ for (const u of people) {
     body: JSON.stringify({ provider: "password", params: { flow: "signUp", email: u.email, password: u.password, name: u.name } }),
   });
   const body: any = await res.json();
-  if (!body.token) throw new Error(`signUp ${u.email}: ${JSON.stringify(body)}`);
+  if (!body.token) throw new Error(`signUp ${u.email}: ${JSON.stringify(body)}${res.status === 403 ? " (start the server with SELF_SIGNUP=on)" : ""}`);
   u.token = body.token;
   u.userId = body.userId;
 }

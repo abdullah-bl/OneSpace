@@ -29,6 +29,7 @@ export default defineSchema({
     image: v.optional(v.string()),
     emailVerificationTime: v.optional(v.number()),
     status: v.optional(userStatus),
+    mustChangePassword: v.optional(v.boolean()), // an admin gave a temporary password; the app asks for a new one
     employeeNo: v.optional(v.string()),
     nationalId: v.optional(v.string()), // set by the workspace admin only; my_records matches on it (Phase 4)
   })
