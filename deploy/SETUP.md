@@ -57,13 +57,17 @@ Open `http://<server>:8090`.
 
 ## 5. The first admin
 
-1. In the app, create an account with your email. It stays «بانتظار التفعيل».
-2. On the server, run:
-   ```bash
-   docker compose exec -e ONESPACE_DATA=/data app bun scripts/bootstrap-admin.ts you@example.org "اسم الجهة"
-   ```
-3. Sign in again. You are now the workspace admin.
-4. Everyone else signs up, and you activate them in **إدارة المنصة ← الموظفون**. Check that the email belongs to the person first, because there is no email verification.
+Sign-up is closed: people don't create their own accounts. On the server, run:
+
+```bash
+docker compose exec -e ONESPACE_DATA=/data app bun scripts/bootstrap-admin.ts you@example.org "اسم الجهة" "اسمك"
+```
+
+It makes your account, makes you the workspace admin, and prints a temporary password once. Sign in with it, and the app asks you for a new one. With single sign-on and no passwords (step 6b), no password is printed: sign in with your organization account of that email.
+
+Then add employees in **إدارة المنصة ← الموظفون ← إضافة موظف**. Each one is active at once and gets a temporary password to hand over, or signs in with the organization account if you use single sign-on. A forgotten password is the same menu: «كلمة مرور مؤقتة».
+
+To let people create their own accounts instead (a pilot without SSO), set `SELF_SIGNUP=on` in `.env`. New accounts then wait as «بانتظار التفعيل» until you activate them. There is no email verification, so check that each email belongs to the person first.
 
 ## 6. First steps in the app
 
@@ -74,6 +78,38 @@ In **إدارة المنصة**:
 3. **الوكلاء:** «أضف الوكلاء المبدئيين», then review them and publish.
 4. **مصادر البيانات** (optional): connect a database, a REST system, a search engine or an MCP server.
 5. **مزامنة المجلدات** (optional): copy a network share into a space; see step 8.
+
+## 6b. Single sign-on with the organization's directory
+
+People sign in with their work account through OpenID Connect. This works with Microsoft Entra ID (Azure AD), AD FS on Windows Server 2016 or later, Keycloak, Okta, and any other OpenID Connect provider. Their passwords and MFA stay in the directory, and OneSpace never sees them.
+
+1. **Register an application in the directory:**
+   - Type: web application, confidential client.
+   - Redirect (reply) URL: `https://<ONEBASE_URL>/api/auth/callback/sso`.
+   - Scopes: `openid email profile`.
+   - Note the client id and secret.
+2. **Add the settings to `.env`:**
+   ```bash
+   SSO_ISSUER=https://login.microsoftonline.com/<tenant-id>/v2.0   # Entra ID
+   # SSO_ISSUER=https://adfs.example.org/adfs                       # AD FS
+   # SSO_ISSUER=https://sso.example.org/realms/<realm>              # Keycloak
+   SSO_CLIENT_ID=…
+   SSO_CLIENT_SECRET=…
+   SSO_NAME=الدخول بحساب الجهة          # the button's label
+   # PASSWORD_LOGIN=off                  # SSO only: hide passwords
+   ```
+3. Run `docker compose up -d`. The sign-in page now shows the button.
+
+How accounts match:
+- **Employees you added in «الموظفون»:** their first SSO sign-in joins that account by email. Later sign-ins use the directory's own id, so a changed email still finds the same person.
+- **Email source:** the email comes from the `email` claim, or from the user principal name (`upn`, `preferred_username`) when there is none.
+- **Not added yet:** someone who signs in through the directory before you add them gets an account «بانتظار التفعيل» and sees nothing until you activate it.
+- **Who may sign in:** limit this in the directory itself, for example "assignment required" on the Entra application or an AD FS access-control policy.
+
+Rules:
+- **Use your tenant's issuer.** For Entra ID, use your tenant id, never `common` or `organizations`. Those let any Microsoft account in.
+- **Trusted emails.** `SSO_TRUST_EMAIL` is on by default: the directory's addresses are the organization's own. Turn it off for a directory that lets people set their own email. Then an SSO sign-in matches an account only if the directory marks the email verified.
+- **Plain AD or LDAP without AD FS:** put Keycloak in front of it. Keycloak's user federation reads AD over LDAP, and OneSpace signs in through Keycloak.
 
 ## 7. HTTPS
 
@@ -147,7 +183,8 @@ docker compose up -d --build
 - **The sandbox runner is effectively root on the host.** It uses the Docker socket, so never publish its port. Keep `SANDBOX_SECRET` long and private.
 - **Each analysis run** has no network, a read-only root filesystem and a non-root user, with every capability dropped and memory, CPU and time limits. For stronger isolation, install gVisor (`runsc`). The runner uses it automatically when Docker has it.
 - **Secrets stay on the server.** API keys, connection strings and auth headers entered in the app are kept there and never shown again, in the browser or to the model.
-- **The audit log** («سجل التدقيق») records admin actions, file access in sensitive spaces, every data-source query and every assistant action.
+- **Disabling an employee** signs them out of every device at once. A temporary password ends their other sessions too.
+- **The audit log** («سجل التدقيق») records admin actions (including added employees and temporary passwords), file access in sensitive spaces, every data-source query and every assistant action.
 
 ## Troubleshooting
 

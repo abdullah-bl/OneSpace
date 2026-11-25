@@ -5,8 +5,8 @@
 // #/spaces, #/space/<id>[/<tab>|/new], #/tasks[/<taskId>], #/schedules, #/mentions, #/me, …
 
 import { Component, useEffect, useState, type ReactNode } from "react";
-import { useAuthActions, useMutation, useOnebaseAuth, useQuery } from "onebase/react";
-import { api, errorText, ROLE_LABELS, spaceName, type SpaceInfo } from "./lib";
+import { useAction, useAuthActions, useMutation, useOnebaseAuth, useQuery } from "onebase/react";
+import { api, errorText, ROLE_LABELS, spaceName, useSignInMethods, type SpaceInfo } from "./lib";
 import { Icon, Mark, type IconName } from "./icons";
 import { ChatScreen, ChatsPage, relTime, startChatWith } from "./ChatView";
 import { ListPage, ListsPage } from "./ListView";
@@ -26,11 +26,11 @@ import { ConfirmHost, tell } from "./ui";
 import { hasUnsaved, leaveUnsaved } from "./unsaved";
 
 export function App() {
-  const { isLoading, isAuthenticated } = useOnebaseAuth();
+  const { isLoading, isAuthenticated, error } = useOnebaseAuth() as { isLoading: boolean; isAuthenticated: boolean; error?: string | null };
   if (isLoading) return <Centered>جارٍ التحميل…</Centered>;
   return (
     <>
-      {isAuthenticated ? <Gate /> : <Login />}
+      {isAuthenticated ? <Gate /> : <Login ssoError={error ? "تعذّر الدخول بحساب الجهة. حاول مرة أخرى، أو راجع مسؤول الأنظمة." : ""} />}
       <ConfirmHost />
     </>
   );
@@ -40,11 +40,52 @@ function Centered({ children }: { children: ReactNode }) {
   return <div className="flex h-full items-center justify-center p-6 text-muted">{children}</div>;
 }
 
-function Login() {
+function Login({ ssoError }: { ssoError: string }) {
   const { signIn } = useAuthActions();
+  const methods = useSignInMethods();
   const [flow, setFlow] = useState<"signIn" | "signUp">("signIn");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
+  if (!methods) return <Centered>جارٍ التحميل…</Centered>;
+  const header = (
+    <>
+      <div className="flex items-center gap-2">
+        <Mark size={28} />
+        <h1 className="page-title">مساحة</h1>
+      </div>
+      <p className="text-sm text-muted">{flow === "signIn" ? "مساعد الإدارة: محادثات، ومساحات العمل، والمهام." : "إنشاء حساب: يُفعَّل بعد موافقة مدير مساحة العمل."}</p>
+    </>
+  );
+  const sso = methods.sso && flow === "signIn" && (
+    <button
+      type="button"
+      className={methods.password ? "btn-secondary w-full" : "btn-primary w-full"}
+      disabled={busy}
+      onClick={async () => {
+        setBusy(true);
+        setError("");
+        try {
+          await signIn(methods.sso!.id); // the browser goes to the directory and comes back signed in
+        } catch (err) {
+          setError(errorText(err));
+          setBusy(false);
+        }
+      }}
+    >
+      <Icon name="shield" size={16} /> {methods.sso.name}
+    </button>
+  );
+  if (!methods.password) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <div className="card w-full max-w-sm space-y-4 p-6">
+          {header}
+          {sso}
+          {(error || ssoError) && <p className="text-sm text-negative">{error || ssoError}</p>}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex h-full items-center justify-center p-4">
       <form
@@ -63,11 +104,13 @@ function Login() {
           }
         }}
       >
-        <div className="flex items-center gap-2">
-          <Mark size={28} />
-          <h1 className="page-title">مساحة</h1>
-        </div>
-        <p className="text-sm text-muted">{flow === "signIn" ? "مساعد الإدارة: محادثات، ومساحات العمل، والمهام." : "إنشاء حساب: يُفعَّل بعد موافقة مدير مساحة العمل."}</p>
+        {header}
+        {sso && (
+          <>
+            {sso}
+            <p className="flex items-center gap-3 text-xs text-faint before:h-px before:flex-1 before:bg-rule after:h-px after:flex-1 after:bg-rule">أو بالبريد وكلمة المرور</p>
+          </>
+        )}
         {flow === "signUp" && (
           <label className="block space-y-1 text-sm">
             <span>الاسم</span>
@@ -82,13 +125,17 @@ function Login() {
           <span>كلمة المرور</span>
           <input className="input w-full" name="password" type="password" dir="ltr" minLength={8} required />
         </label>
-        {error && <p className="text-sm text-negative">{error}</p>}
+        {(error || ssoError) && <p className="text-sm text-negative">{error || ssoError}</p>}
         <button className="btn-primary w-full" disabled={busy}>
           {flow === "signIn" ? "دخول" : "إنشاء الحساب"}
         </button>
-        <button type="button" className="btn-ghost w-full" onClick={() => setFlow(flow === "signIn" ? "signUp" : "signIn")}>
-          {flow === "signIn" ? "ليس لديك حساب؟ أنشئ حساباً" : "لديك حساب؟ سجّل الدخول"}
-        </button>
+        {methods.signUp ? (
+          <button type="button" className="btn-ghost w-full" onClick={() => setFlow(flow === "signIn" ? "signUp" : "signIn")}>
+            {flow === "signIn" ? "ليس لديك حساب؟ أنشئ حساباً" : "لديك حساب؟ سجّل الدخول"}
+          </button>
+        ) : (
+          <p className="text-center text-xs text-muted">ليس لديك حساب أو نسيت كلمة المرور؟ تواصل مع مدير مساحة العمل.</p>
+        )}
       </form>
     </div>
   );
@@ -114,6 +161,16 @@ function Gate() {
             تسجيل الخروج
           </button>
         </div>
+      </div>
+    );
+  }
+  if (me.mustChangePassword) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 p-4">
+        <ChangePassword required />
+        <button className="btn-ghost text-sm" onClick={() => void signOut()}>
+          تسجيل الخروج
+        </button>
       </div>
     );
   }
@@ -423,6 +480,8 @@ function NavLink({ href, icon, on, count, children }: { href: string; icon: Icon
 function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; managesAny: boolean; go: (p: string) => void }) {
   const { signOut } = useAuthActions();
   const [open, setOpen] = useState(false);
+  const [changing, setChanging] = useState(false);
+  const methods = useSignInMethods();
   const level = useQuery(api.levels.mine);
   const item = (label: string, path: string) => (
     <button
@@ -456,6 +515,17 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
           {isAdmin && item("إدارة المنصة", "/admin")}
           {!isAdmin && managesAny && item("سجل التدقيق", "/admin/audit")}
           <div className="my-1 border-t border-rule" />
+          {methods?.password && (
+            <button
+              className="block w-full rounded-md px-3 py-2 text-start text-sm hover:bg-active"
+              onClick={() => {
+                setOpen(false);
+                setChanging(true);
+              }}
+            >
+              تغيير كلمة المرور
+            </button>
+          )}
           <button className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-start text-sm hover:bg-active" onClick={() => void signOut()}>
             <Icon name="logout" size={16} /> تسجيل الخروج
           </button>
@@ -469,7 +539,76 @@ function UserMenu({ me, isAdmin, managesAny, go }: { me: Me; isAdmin: boolean; m
         </span>
         <Icon name="up" size={14} className="text-muted" />
       </button>
+      {changing && (
+        <div className="fixed inset-0 z-[100] grid place-items-center bg-black/30 p-4 backdrop-blur-[2px]" onMouseDown={(e) => e.target === e.currentTarget && setChanging(false)}>
+          <ChangePassword onDone={() => setChanging(false)} onCancel={() => setChanging(false)} />
+        </div>
+      )}
     </div>
+  );
+}
+
+/**
+ * The signed-in user's own password: the current one, then the new one twice. Shown from the user
+ * menu, and on its own after an admin gave a temporary password (`required`).
+ */
+function ChangePassword({ required = false, onDone, onCancel }: { required?: boolean; onDone?: () => void; onCancel?: () => void }) {
+  const change = useAction(api.passwords.change);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  return (
+    <form
+      role="dialog"
+      aria-modal={!required}
+      aria-labelledby="pw-title"
+      className="card w-full max-w-sm space-y-4 p-6"
+      onSubmit={async (e) => {
+        e.preventDefault();
+        const form = new FormData(e.currentTarget);
+        const next = String(form.get("next") ?? "");
+        if (next !== String(form.get("again") ?? "")) return setError("كلمتا المرور الجديدتان غير متطابقتين");
+        setBusy(true);
+        setError("");
+        try {
+          await change({ current: String(form.get("current") ?? ""), next });
+          if (!required) void tell("غُيّرت كلمة المرور", "خرجت حساباتك من الأجهزة الأخرى، وبقيت داخلاً هنا.");
+          onDone?.();
+        } catch (err) {
+          setError(errorText(err));
+        } finally {
+          setBusy(false);
+        }
+      }}
+    >
+      <h1 id="pw-title" className="page-title">
+        {required ? "اختر كلمة مرور جديدة" : "تغيير كلمة المرور"}
+      </h1>
+      {required && <p className="text-sm text-muted">دخلت بكلمة مرور مؤقتة من مدير مساحة العمل. اختر كلمة مرور لا يعرفها غيرك قبل المتابعة.</p>}
+      <label className="block space-y-1 text-sm">
+        <span>{required ? "كلمة المرور المؤقتة" : "كلمة المرور الحالية"}</span>
+        <input className="input w-full" name="current" type="password" dir="ltr" autoComplete="current-password" required autoFocus />
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span>كلمة المرور الجديدة</span>
+        <input className="input w-full" name="next" type="password" dir="ltr" autoComplete="new-password" minLength={8} required />
+        <span className="block text-xs text-muted">٨ أحرف على الأقل.</span>
+      </label>
+      <label className="block space-y-1 text-sm">
+        <span>أعد كتابتها</span>
+        <input className="input w-full" name="again" type="password" dir="ltr" autoComplete="new-password" minLength={8} required />
+      </label>
+      {error && <p className="text-sm text-negative">{error}</p>}
+      <div className="flex gap-2">
+        <button className="btn-primary flex-1" disabled={busy}>
+          {busy ? "جارٍ الحفظ…" : "احفظ"}
+        </button>
+        {onCancel && (
+          <button type="button" className="btn-ghost" onClick={onCancel}>
+            إلغاء
+          </button>
+        )}
+      </div>
+    </form>
   );
 }
 

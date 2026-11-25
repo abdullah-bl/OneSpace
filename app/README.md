@@ -33,18 +33,22 @@ proxies `/api` + WebSocket + `/download` to :8090).
 
 ### First admin (bootstrap)
 
-1. Start the server, open the app, and create an account (it is born `pending`).
-2. With the server running, on the server machine:
+Sign-up is closed by default (`SELF_SIGNUP=on` opens it; see `onebase/auth.config.ts`).
+
+1. Start the server.
+2. On the server machine, run:
    ```bash
-   bun scripts/bootstrap-admin.ts admin@example.org "اسم الإدارة"
+   bun scripts/bootstrap-admin.ts admin@example.org "اسم الإدارة" "اسم المدير"
    # ONESPACE_URL=http://127.0.0.1:8090, admin key from ONEBASE_ADMIN_KEY or ./onebase_data/admin.key
    ```
-   This calls the internal mutation `admin:bootstrap` through the admin API (admin key required).
-   It creates the workspace (a `@onebase/teams` team with roles `admin|member`), makes that account
-   the workspace admin and creates its personal space. It refuses once a workspace exists.
-3. Everyone else signs up and waits on the "pending" screen until the admin clicks
-   "إضافة لمساحة العمل" (which also creates their personal space). Check the person behind an email
-   before activating: there is no email verification.
+   This calls the internal action `passwords:bootstrap` through the admin API (admin key required).
+   - It makes the account when there is none and prints a temporary password once.
+   - It creates the workspace (a `@onebase/teams` team with roles `admin|member`), makes that account the workspace admin, and creates its personal space.
+   - It refuses once a workspace exists.
+3. The admin adds everyone else under «الموظفون ← إضافة موظف» (`admin:addAccount`, active at once, with `passwords:issue` for a temporary password).
+   - The app asks for a new password at the first sign-in (`users.mustChangePassword`).
+   - With single sign-on (`SSO_ISSUER`, see `deploy/SETUP.md` step 6b), the first sign-in with the same email joins the account the admin made.
+   - Anyone else who signs in through the directory waits as "pending" for activation.
 
 ## Permission model (where it lives)
 

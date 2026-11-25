@@ -26,7 +26,8 @@ export class Server {
     this.url = `http://127.0.0.1:${p}`;
     this.proc = Bun.spawn([join(APP, "node_modules/.bin/onebase"), "serve", "--port", String(p), "--host", "127.0.0.1", "--data", this.dataDir, "--dir", join(APP, "onebase"), "--url", this.url], {
       cwd: APP,
-      env: { ...process.env, ...this.env, ONEBASE_ADMIN_KEY: this.adminKey },
+      // Most tests make their accounts by signing up, so sign-up is open unless a test says otherwise.
+      env: { SELF_SIGNUP: "on", ...process.env, ...this.env, ONEBASE_ADMIN_KEY: this.adminKey },
       stdout: "pipe",
       stderr: "pipe",
     });

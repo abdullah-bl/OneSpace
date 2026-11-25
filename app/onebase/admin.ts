@@ -30,17 +30,43 @@ export async function ensurePersonalSpace(ctx: MutationCtx, workspace: Doc<"work
   return spaceId;
 }
 
+const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function cleanEmail(raw: string) {
+  const email = raw.trim().toLowerCase();
+  if (email.length > 254 || !EMAIL.test(email)) throw new OneBaseError("البريد الإلكتروني غير صالح");
+  return email;
+}
+
+const userByEmail = async (ctx: MutationCtx, email: string) =>
+  (await ctx.db.query("users").withIndex("email", (q) => q.eq("email", email)).first()) ?? null;
+
+/**
+ * An account made by the admin side rather than by signing up. Its email counts as confirmed:
+ * whoever makes it vouches for the address, so the first sign-in through the organization's SSO
+ * with that address joins this account instead of making a second one.
+ */
+async function insertAccount(ctx: MutationCtx, email: string, name: string) {
+  return await ctx.db.insert("users", { email, name: name.trim().slice(0, 100) || email, emailVerificationTime: Date.now(), status: "active" });
+}
+
 /**
  * First-admin bootstrap. Internal: only callable with the server's admin key (see
- * scripts/bootstrap-admin.ts). The account must have signed up first. Refuses once a
- * workspace exists, so it can't be used to take over a running workspace.
+ * scripts/bootstrap-admin.ts). With `create`, makes the account when there is none (sign-up is
+ * closed by default); the caller then gives it a password. Refuses once a workspace exists, so it
+ * can't be used to take over a running workspace.
  */
 export const bootstrap = internalMutation({
-  args: { email: v.string(), workspaceName: v.optional(v.string()) },
-  handler: async (ctx, { email, workspaceName }) => {
+  args: { email: v.string(), workspaceName: v.optional(v.string()), create: v.optional(v.boolean()), name: v.optional(v.string()) },
+  handler: async (ctx, { email, workspaceName, create, name }) => {
     if (await getWorkspace(ctx)) throw new OneBaseError("Workspace already exists; add admins from the admin screen.");
-    const user = await ctx.db.query("users").withIndex("email", (q) => q.eq("email", email.trim().toLowerCase())).first()
-      ?? (await ctx.db.query("users").withIndex("email", (q) => q.eq("email", email.trim())).first());
+    let user = (await userByEmail(ctx, email.trim().toLowerCase())) ?? (await ctx.db.query("users").withIndex("email", (q) => q.eq("email", email.trim())).first());
+    let created = false;
+    if (!user && create) {
+      const id = await insertAccount(ctx, cleanEmail(email), name ?? "");
+      user = (await ctx.db.get(id))!;
+      created = true;
+    }
     if (!user) throw new OneBaseError(`No account with email ${email}. Sign up in the app first, then run this again.`);
     const teamId = await ctx.components.workspace.createTeam({ userId: user._id, name: workspaceName ?? "الإدارة" });
     const workspaceId = await ctx.db.insert("workspaces", { teamId, name: workspaceName ?? "الإدارة", createdAt: Date.now() });
@@ -49,7 +75,28 @@ export const bootstrap = internalMutation({
     await ensurePersonalSpace(ctx, workspace, { ...user, status: "active" });
     await seedStarters(ctx, user._id); // Phase 6: the default agent and the three starters
     await writeAudit(ctx, { userId: user._id, action: "workspace.bootstrap", resourceType: "user", resourceId: user._id, detail: { email: user.email ?? null } });
-    return { workspaceId, userId: user._id };
+    return { workspaceId, userId: user._id, created };
+  },
+});
+
+/**
+ * Adds an employee directly: active at once, a workspace member with a personal space. With
+ * password sign-in the admin then gives a temporary password (passwords.issue); with SSO the
+ * employee just signs in with the organization account of the same email.
+ */
+export const addAccount = mutation({
+  args: { email: v.string(), name: v.string(), role: v.optional(wsRole), employeeNo: v.optional(v.string()) },
+  handler: async (ctx, { email: rawEmail, name, role, employeeNo }) => {
+    const me = await requireAdmin(ctx);
+    const email = cleanEmail(rawEmail);
+    if (!name.trim()) throw new OneBaseError("اكتب اسم الموظف");
+    if (await userByEmail(ctx, email)) throw new OneBaseError("يوجد حساب بهذا البريد. ابحث عنه في القائمة.");
+    const userId = await insertAccount(ctx, email, name);
+    await ctx.components.workspace.addMember({ teamId: me.workspace.teamId, userId, role: role ?? "member", by: me.userId });
+    if (employeeNo?.trim()) await assignIdentifiers(ctx, userId, { employeeNo: employeeNo.trim() });
+    await ensurePersonalSpace(ctx, me.workspace, (await ctx.db.get(userId))!);
+    await writeAudit(ctx, { userId: me.userId, action: "user.create", resourceType: "user", resourceId: userId, detail: { email, role: role ?? "member" } });
+    return userId;
   },
 });
 
@@ -130,6 +177,7 @@ export const disable = mutation({
     const user = await ctx.db.get(userId);
     if (!user) throw new Denied();
     await ctx.db.patch(userId, { status: "disabled" });
+    await ctx.auth.endSessions(userId); // signed out everywhere at once, with this commit
     await writeAudit(ctx, { userId: me.userId, action: "user.disable", resourceType: "user", resourceId: userId, detail: { email: user.email ?? null } });
   },
 });

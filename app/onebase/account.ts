@@ -19,6 +19,7 @@ export const me = query({
       name: user.name ?? null,
       email: user.email ?? null,
       status: statusOf(user),
+      mustChangePassword: user.mustChangePassword === true,
       workspaceRole: actor?.role ?? null,
       workspaceName: actor?.workspace.name ?? null,
     };

@@ -4,7 +4,7 @@
 
 import { useEffect, useState, type ReactNode } from "react";
 import { useAction, useMutation, useQuery } from "onebase/react";
-import { api, errorText, formatDate, STATUS_LABELS } from "./lib";
+import { api, errorText, formatDate, STATUS_LABELS, useSignInMethods } from "./lib";
 import { Icon } from "./icons";
 import { ask, EmptyState, Menu, PageHeader, type MenuItem } from "./ui";
 
@@ -31,7 +31,11 @@ export function UsersAdmin() {
   const users = useQuery(api.admin.users);
   const activate = useMutation(api.admin.activate);
   const disable = useMutation(api.admin.disable);
+  const issue = useAction(api.passwords.issue);
+  const methods = useSignInMethods();
   const { error, setError, run } = useRun();
+  const [adding, setAdding] = useState(false);
+  const [issued, setIssued] = useState<{ name: string; email: string; password: string | null } | null>(null);
   const [q, setQ] = useState("");
   const [filter, setFilter] = useState<"all" | "pending" | "active" | "disabled">("all");
   const [editing, setEditing] = useState<string | null>(null);
@@ -48,11 +52,16 @@ export function UsersAdmin() {
     <div>
       <PageHeader
         title="الموظفون"
-        subtitle="من ينشئ حساباً يبقى «بانتظار التفعيل» ولا يرى شيئاً حتى تفعّله. تأكد من هوية صاحب البريد قبل التفعيل."
+        subtitle="أضف الموظف بنفسك فيُفعَّل مباشرة. ومن يدخل لأول مرة دون أن تضيفه يبقى «بانتظار التفعيل» ولا يرى شيئاً حتى تفعّله، فتأكد من هويته قبل التفعيل."
         actions={
-          <button className="btn-secondary" onClick={() => setStaffFile(true)}>
-            <Icon name="table" /> الأرقام من ملف
-          </button>
+          <>
+            <button className="btn-secondary" onClick={() => setStaffFile(true)}>
+              <Icon name="table" /> الأرقام من ملف
+            </button>
+            <button className="btn-primary" onClick={() => setAdding(true)}>
+              <Icon name="plus" /> إضافة موظف
+            </button>
+          </>
         }
       />
       {error && <p className="alert-negative mb-4">{error}</p>}
@@ -99,6 +108,20 @@ export function UsersAdmin() {
           {shown.map((u) => {
             const who = u.name ?? u.email ?? "";
             const items: MenuItem[] = [{ label: "تعديل الدور والأرقام", icon: "pencil", onSelect: () => setEditing(u._id) }];
+            if (methods?.password && u.status !== "disabled" && u.email)
+              items.push({
+                label: "كلمة مرور مؤقتة",
+                icon: "lock",
+                hint: "لموظف جديد أو نسي كلمة مروره",
+                onSelect: () =>
+                  void ask(`كلمة مرور مؤقتة لـ${who}؟ يخرج من أجهزته كلها، ويختار كلمة مرور جديدة عند دخوله.`, { confirmLabel: "أنشئها" }).then((ok) => {
+                    if (ok)
+                      void run(async () => {
+                        const r = await issue({ userId: u._id as any });
+                        setIssued({ name: who, email: u.email!, password: r.password });
+                      });
+                  }),
+              });
             if (u.status === "active")
               items.push("divider", {
                 label: "تعطيل الحساب",
@@ -151,7 +174,109 @@ export function UsersAdmin() {
       )}
       {editUser && <EditUserDialog key={editUser._id} user={editUser} onClose={() => setEditing(null)} />}
       {staffFile && <StaffFileDialog onClose={() => setStaffFile(false)} />}
+      {adding && (
+        <AddUserDialog
+          // With SSO the employee signs in through the directory: no password to hand over (the menu still makes one if needed).
+          withPassword={!!methods?.password && !methods?.sso}
+          onClose={() => setAdding(false)}
+          onAdded={(r) => {
+            setAdding(false);
+            setIssued(r);
+          }}
+        />
+      )}
+      {issued && <IssuedDialog {...issued} sso={methods?.sso?.name ?? null} onClose={() => setIssued(null)} />}
     </div>
+  );
+}
+
+/**
+ * A new employee, active at once. With password sign-in it also makes a temporary password, shown
+ * once; with SSO only, the employee signs in with the organization account of that email.
+ */
+function AddUserDialog({ withPassword, onClose, onAdded }: { withPassword: boolean; onClose: () => void; onAdded: (r: { name: string; email: string; password: string | null }) => void }) {
+  const addAccount = useMutation(api.admin.addAccount);
+  const issue = useAction(api.passwords.issue);
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [role, setRole] = useState<"member" | "admin">("member");
+  const [employeeNo, setEmployeeNo] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const save = async () => {
+    setError("");
+    setBusy(true);
+    try {
+      const userId = await addAccount({ name, email, role, ...(employeeNo.trim() ? { employeeNo: employeeNo.trim() } : {}) });
+      const password = withPassword ? (await issue({ userId })).password : null;
+      onAdded({ name: name.trim(), email: email.trim().toLowerCase(), password });
+    } catch (err) {
+      setError(errorText(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <Sheet title="إضافة موظف" subtitle="يُفعَّل الحساب مباشرة، وتُنشأ له مساحته الخاصة." error={error} busy={busy} submitLabel="أضف" onSubmit={save} onClose={onClose}>
+      <div className="mt-4 space-y-3">
+        <label className="block text-sm">
+          <span className="label">الاسم</span>
+          <input className="input w-full" value={name} onChange={(e) => setName(e.target.value)} required autoFocus />
+        </label>
+        <label className="block text-sm">
+          <span className="label">البريد الإلكتروني</span>
+          <input className="input w-full" type="email" dir="ltr" value={email} onChange={(e) => setEmail(e.target.value)} required />
+          <span className="mt-1 block text-xs text-muted">بريد العمل نفسه الذي في دليل الجهة، ليدخل به.</span>
+        </label>
+        <div className="grid gap-3 sm:grid-cols-2">
+          <label className="block text-sm">
+            <span className="label">الدور</span>
+            <select className="input w-full" value={role} onChange={(e) => setRole(e.target.value as typeof role)}>
+              <option value="member">{ROLE_LABELS.member}</option>
+              <option value="admin">{ROLE_LABELS.admin}</option>
+            </select>
+          </label>
+          <label className="block text-sm">
+            <span className="label">الرقم الوظيفي (اختياري)</span>
+            <input className="input w-full" dir="ltr" inputMode="numeric" value={employeeNo} onChange={(e) => setEmployeeNo(e.target.value)} />
+          </label>
+        </div>
+      </div>
+    </Sheet>
+  );
+}
+
+/** What to hand the employee: the temporary password, shown this once, or how to sign in with SSO. */
+function IssuedDialog({ name, email, password, sso, onClose }: { name: string; email: string; password: string | null; sso: string | null; onClose: () => void }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <Sheet title={password ? `كلمة مرور مؤقتة لـ${name}` : `أُضيف ${name}`} subtitle={<span dir="ltr">{email}</span>} submitLabel="تم" onSubmit={onClose} onClose={onClose}>
+      {password ? (
+        <div className="mt-4 space-y-3">
+          <div className="flex items-center gap-2 rounded-lg border border-line bg-sunken p-3">
+            <code dir="ltr" className="flex-1 select-all text-lg tracking-wider">
+              {password}
+            </code>
+            <button
+              type="button"
+              className="btn-secondary h-8"
+              onClick={() => {
+                void navigator.clipboard?.writeText(password).then(() => setCopied(true));
+              }}
+            >
+              <Icon name="copy" size={14} /> {copied ? "نُسخت" : "انسخ"}
+            </button>
+          </div>
+          <p className="text-sm text-muted">لن تظهر مرة أخرى. سلّمها للموظف بنفسك، وسيختار كلمة مرور جديدة عند أول دخول.</p>
+          {sso && <p className="text-xs text-muted">ويمكنه أيضاً الدخول بزر «{sso}» بالبريد نفسه.</p>}
+        </div>
+      ) : (
+        <div className="mt-4 space-y-2 text-sm text-muted">
+          <p>{sso ? `يدخل بزر «${sso}» ببريده في دليل الجهة، فيصل إلى هذا الحساب مباشرة.` : "الحساب جاهز."}</p>
+          {sso && <p className="text-xs">إن احتاج كلمة مرور بدلاً من ذلك، اختر «كلمة مرور مؤقتة» من قائمة الموظف.</p>}
+        </div>
+      )}
+    </Sheet>
   );
 }
 
